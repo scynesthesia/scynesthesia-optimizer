@@ -21,7 +21,7 @@ powershell -Command "Start-Process powershell -Verb RunAs -ArgumentList '-Execut
 
 ## Architecture at a Glance
 - **setup.ps1** – Remote installer that fetches the packaged release and orchestrates extraction.
-- **scynesthesiaoptimizer.ps1** – Entry point and menu router (EN/ES) that calls individual modules.
+- **scynesthesiaoptimizer.ps1** – Entry point and bilingual menu router that exposes five main options (Safe, Aggressive, Gaming, Repair, Network) before dispatching to modules.
 - **modules/** – Feature-focused modules: `ui`, `debloat`, `privacy`, `performance`, `network`, `hardware`, `gaming`, `aggressive`, `repair`.
 - **config/** – Externalized config such as `apps.json` for uninstall lists.
 
@@ -44,7 +44,15 @@ Each module exposes discrete functions so new tweaks can be added without touchi
 | **Aggressive** | Deep clean for minimal background noise. | Everything in Safe, plus expanded debloat, faster service shutdown, disables background apps and visual effects. |
 | **Gaming** | Low-latency add-on for players. | Enables gaming scheduler priorities, custom gaming power plan, network Nagle/TCP tweaks, MSI mode where compatible. |
 
-Profiles can be combined: run Safe or Aggressive first, then apply Gaming add-on.
+Profiles are additive: run Safe or Aggressive first, then layer the Gaming add-on for latency tuning.
+
+### Network Tiers (Network Tweaks Menu)
+| Tier | Focus | Core Actions |
+| --- | --- | --- |
+| **Safe** | Stable connectivity with sensible defaults. | DNS hardening, TCP autotuning, reliability/stability policies. |
+| **Aggressive** | Privacy-centric footprint reduction. | Disables telemetry, Delivery Optimization, and LLMNR for lower background noise. |
+| **Gaming** | Latency-first networking. | Enables RSS, disables Nagle's algorithm and Energy Efficient Ethernet. |
+| **Hardcore** | Experimental throughput/latency edge. | Dynamic MTU discovery, PnPCapabilities overrides, advanced kernel parameters. |
 
 ## Notable Tweaks
 ### System & Performance
@@ -55,6 +63,7 @@ Profiles can be combined: run Safe or Aggressive first, then apply Gaming add-on
 ### Network
 - Sets **NetworkThrottlingIndex**, **TcpAckFrequency**, and **TCPNoDelay** for ultra-low latency.
 - Resets **WinSock** and related stacks via repair module when requested.
+- **Hardcore Network Engine**: optional lane with dynamic MTU discovery via fragmentation tests, bufferbloat mitigation through receive buffer tuning, and NIC power management annihilation (PnPCapabilities overrides).
 
 ### Gaming
 - Creates a dedicated **Scynesthesia Gaming Mode** power plan and can apply hardcore AC tweaks.
