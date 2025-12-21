@@ -1,0 +1,40 @@
+{
+  "SafeRemove": [
+    "Microsoft.BingNews",
+    "Microsoft.BingWeather",
+    "Microsoft.GetHelp",
+    "Microsoft.Getstarted",
+    "Microsoft.Microsoft3DViewer",
+    "Microsoft.MicrosoftSolitaireCollection",
+    "Microsoft.MixedReality.Portal",
+    "Microsoft.Xbox.TCUI",
+    "Microsoft.XboxApp",
+    "Microsoft.XboxGameOverlay",
+    "Microsoft.XboxGamingOverlay",
+    "Microsoft.XboxIdentityProvider",
+    "Microsoft.XboxSpeechToTextOverlay"
+  ],
+  "AggressiveRemove": [
+    "Microsoft.BingNews",
+    "Microsoft.BingWeather",
+    "Microsoft.GetHelp",
+    "Microsoft.Getstarted",
+    "Microsoft.Microsoft3DViewer",
+    "Microsoft.MicrosoftSolitaireCollection",
+    "Microsoft.MixedReality.Portal",
+    "Microsoft.Xbox.TCUI",
+    "Microsoft.XboxApp",
+    "Microsoft.XboxGameOverlay",
+    "Microsoft.XboxGamingOverlay",
+    "Microsoft.XboxIdentityProvider",
+    "Microsoft.XboxSpeechToTextOverlay"
+  ],
+  "AggressiveTweaksRemove": [
+    "Microsoft.People",
+    "Microsoft.SkypeApp",
+    "Microsoft.ZuneMusic",
+    "Microsoft.ZuneVideo",
+    "Microsoft.MicrosoftOfficeHub",
+    "Microsoft.OneConnect"
+  ]
+}

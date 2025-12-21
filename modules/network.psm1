@@ -1,0 +1,635 @@
+function Get-PhysicalNetAdapters {
+    try {
+        $adapters = Get-NetAdapter -Physical -ErrorAction Stop |
+            Where-Object {
+                $_.Status -ne 'Disabled' -and
+                $_.InterfaceDescription -notmatch '(?i)virtual|vmware|hyper-v|loopback|vpn|tap|wireguard|bluetooth'
+            }
+        return $adapters
+    } catch {
+        Handle-Error -Context 'Retrieving network adapters' -ErrorRecord $_
+        return @()
+    }
+}
+
+function Invoke-NetworkFlush {
+    Write-Host "  [+] Flushing DNS cache" -ForegroundColor Gray
+    try {
+        ipconfig /flushdns | Out-Null
+    } catch {
+        Handle-Error -Context 'Flushing DNS cache' -ErrorRecord $_
+    }
+}
+
+function Invoke-NetworkFullReset {
+    Write-Host "  [+] Resetting Winsock catalog" -ForegroundColor Gray
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    try {
+        netsh winsock reset | Out-Null
+        Write-Host "      Reset complete. A reboot is recommended." -ForegroundColor Yellow
+        $Global:NeedsReboot = $true
+        if ($logger) {
+            Write-Log "[Network] Executed 'netsh winsock reset'."
+        }
+    } catch {
+        Handle-Error -Context 'Resetting Winsock' -ErrorRecord $_
+    }
+}
+
+function Set-NetworkDnsSafe {
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $adapters = Get-PhysicalNetAdapters
+    if ($adapters.Count -eq 0) {
+        Write-Host "  [!] No eligible adapters found for DNS update." -ForegroundColor Yellow
+        return
+    }
+
+    foreach ($adapter in $adapters) {
+        try {
+            $dnsInfo = Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction Stop
+            $isManual = $dnsInfo.AddressOrigin -eq 'Static'
+            if ($isManual) {
+                if (-not (Ask-YesNo "Adapter '$($adapter.Name)' already has manual DNS. Overwrite with Cloudflare?" 'n')) {
+                    Write-Host "  [ ] DNS left unchanged for $($adapter.Name)." -ForegroundColor Gray
+                    continue
+                }
+            }
+
+            Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses @('1.1.1.1','1.0.0.1') -ErrorAction Stop
+            Write-Host "  [+] Cloudflare DNS applied to $($adapter.Name)." -ForegroundColor Green
+            if ($logger) {
+                Write-Log "[Network] DNS set to Cloudflare on '$($adapter.Name)' (1.1.1.1/1.0.0.1)."
+            }
+        } catch {
+            Handle-Error -Context "Setting DNS on $($adapter.Name)" -ErrorRecord $_
+        }
+    }
+}
+
+function Set-TcpAutotuningNormal {
+    Write-Host "  [+] Setting TCP autotuning to 'normal'" -ForegroundColor Gray
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    try {
+        netsh int tcp set global autotuninglevel=normal | Out-Null
+        if ($logger) {
+            Write-Log "[Network] TCP autotuning set to normal." 
+        }
+    } catch {
+        Handle-Error -Context 'Configuring TCP autotuning' -ErrorRecord $_
+    }
+}
+
+function Set-IPvPreferenceIPv4First {
+    Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6)" -ForegroundColor Gray
+    try {
+        Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" "DisabledComponents" 0x20
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "[Network] IPv4 preference set (DisabledComponents=0x20)."
+        }
+    } catch {
+        Handle-Error -Context 'Setting IPv4 preference' -ErrorRecord $_
+    }
+}
+
+function Disable-LLMNR {
+    Write-Host "  [+] Disabling LLMNR" -ForegroundColor Gray
+    Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "EnableMulticast" 0
+    if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+        Write-Log "[Network] Disabled LLMNR (EnableMulticast=0 under DNSClient policy)."
+    }
+}
+
+function Disable-NetBIOS {
+    $adapters = Get-PhysicalNetAdapters
+    if ($adapters.Count -eq 0) {
+        Write-Host "  [!] No eligible adapters found for NetBIOS change." -ForegroundColor Yellow
+        return
+    }
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    foreach ($adapter in $adapters) {
+        try {
+            $cim = Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter "Index=$($adapter.ifIndex)" -ErrorAction Stop
+            if (-not $cim) { continue }
+            $result = Invoke-CimMethod -InputObject $cim -MethodName SetTcpipNetbios -Arguments @{ TcpipNetbiosOptions = 2 } -ErrorAction Stop
+            if ($result.ReturnValue -eq 0) {
+                Write-Host "  [+] NetBIOS disabled on $($adapter.Name)." -ForegroundColor Green
+                if ($logger) {
+                    Write-Log "[Network] NetBIOS disabled on $($adapter.Name) via SetTcpipNetbios." 
+                }
+            } else {
+                Write-Host "  [!] NetBIOS change on $($adapter.Name) returned code $($result.ReturnValue)." -ForegroundColor Yellow
+            }
+        } catch {
+            Handle-Error -Context "Disabling NetBIOS on $($adapter.Name)" -ErrorRecord $_
+        }
+    }
+}
+
+function Disable-NetworkTelemetry {
+    Write-Host "  [+] Disabling network telemetry services" -ForegroundColor Gray
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    try {
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry" 0
+        if ($logger) {
+            Write-Log "[Network] Telemetry collection disabled (AllowTelemetry=0)."
+        }
+        foreach ($svc in 'DiagTrack','dmwappushservice') {
+            try {
+                Stop-Service -Name $svc -ErrorAction SilentlyContinue
+                if ($logger) {
+                    Write-Log "[Network] Service '$svc' stopped for telemetry reduction."
+                }
+                Set-Service -Name $svc -StartupType Disabled -ErrorAction SilentlyContinue
+                if ($logger) {
+                    Write-Log "[Network] Service '$svc' startup disabled."
+                }
+            } catch { }
+        }
+    } catch {
+        Handle-Error -Context 'Disabling telemetry' -ErrorRecord $_
+    }
+}
+
+function Disable-DeliveryOptimization {
+    Write-Host "  [+] Disabling Delivery Optimization (WUDO)" -ForegroundColor Gray
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    try {
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode" 0
+        if ($logger) {
+            Write-Log "[Network] Delivery Optimization disabled (DODownloadMode=0)."
+        }
+
+        try {
+            Stop-Service -Name "DoSvc" -ErrorAction SilentlyContinue
+            if ($logger) {
+                Write-Log "[Network] Delivery Optimization service (DoSvc) stopped."
+            }
+            Set-Service -Name "DoSvc" -StartupType Disabled -ErrorAction SilentlyContinue
+            if ($logger) {
+                Write-Log "[Network] Delivery Optimization service (DoSvc) disabled."
+            }
+        } catch { }
+    } catch {
+        Handle-Error -Context 'Disabling Delivery Optimization' -ErrorRecord $_
+    }
+}
+
+function Set-ReservableBandwidth {
+    Write-Host "  [+] Setting reservable bandwidth limit to 0%" -ForegroundColor Gray
+    Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Psched" "NonBestEffortLimit" 0
+    if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+        Write-Log "[Network] Reservable bandwidth limit set to 0% (NonBestEffortLimit=0)."
+    }
+}
+
+function Disable-RemoteAssistance {
+    Write-Host "  [+] Disabling Remote Assistance" -ForegroundColor Gray
+    try {
+        Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\Remote Assistance" "fAllowToGetHelp" 0
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "fAllowToGetHelp" 0
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "[Network] Remote Assistance disabled (fAllowToGetHelp=0)."
+        }
+    } catch {
+        Handle-Error -Context 'Disabling Remote Assistance' -ErrorRecord $_
+    }
+}
+
+function Disable-NetworkDiscovery {
+    Write-Host "  [+] Disabling Network Discovery firewall rules" -ForegroundColor Gray
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    try {
+        netsh advfirewall firewall set rule group="Network Discovery" new enable=No | Out-Null
+        if ($logger) {
+            Write-Log "[Network] Network Discovery firewall group disabled via netsh."
+        }
+    } catch {
+        Handle-Error -Context 'Disabling Network Discovery' -ErrorRecord $_
+    }
+}
+
+function Set-NetworkThrottling {
+    Write-Host "  [+] Disabling network throttling" -ForegroundColor Gray
+    Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "NetworkThrottlingIndex" 0xFFFFFFFF
+    if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+        Write-Log "[Network] NetworkThrottlingIndex set to 0xFFFFFFFF."
+    }
+}
+
+function Set-NagleState {
+    $adapters = Get-PhysicalNetAdapters
+    if ($adapters.Count -eq 0) {
+        Write-Host "  [!] No eligible adapters found for Nagle adjustments." -ForegroundColor Yellow
+        return
+    }
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $changesMade = $false
+
+    foreach ($adapter in $adapters) {
+        $guid = $adapter.InterfaceGuid
+        if (-not $guid) { continue }
+
+        $path = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{$guid}"
+        try {
+            $existing = @{}
+            foreach ($name in 'TcpAckFrequency','TCPNoDelay','TcpDelAckTicks') {
+                try {
+                    $existing[$name] = (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name
+                } catch { $existing[$name] = $null }
+            }
+
+            New-Item -Path $path -Force -ErrorAction Stop | Out-Null
+
+            $newValues = @{
+                TcpAckFrequency = 1
+                TCPNoDelay      = 1
+                TcpDelAckTicks  = 0
+            }
+
+            foreach ($entry in $newValues.GetEnumerator()) {
+                New-ItemProperty -Path $path -Name $entry.Key -Value $entry.Value -PropertyType DWord -Force | Out-Null
+                if ($logger) {
+                    Write-Log "[Nagle] Interface '$($adapter.Name)' $($entry.Key): $($existing[$entry.Key]) -> $($entry.Value)"
+                }
+                if ($existing[$entry.Key] -ne $entry.Value) {
+                    $changesMade = $true
+                }
+            }
+            Write-Host "  [+] Nagle-related parameters optimized for $($adapter.Name)." -ForegroundColor Green
+        } catch {
+            Handle-Error -Context "Setting Nagle parameters on $($adapter.Name)" -ErrorRecord $_
+        }
+    }
+
+    if ($changesMade) {
+        $Global:NeedsReboot = $true
+    }
+}
+
+function Set-AdapterAdvancedPropertyIfPresent {
+    param(
+        [Parameter(Mandatory)][Microsoft.Management.Infrastructure.CimInstance]$Adapter,
+        [Parameter(Mandatory)][string[]]$Keywords,
+        [Parameter(Mandatory)][string]$Value
+    )
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    try {
+        $properties = Get-NetAdapterAdvancedProperty -InterfaceDescription $Adapter.InterfaceDescription -ErrorAction Stop
+    } catch {
+        Handle-Error -Context "Reading advanced properties on $($Adapter.Name)" -ErrorRecord $_
+        return
+    }
+
+    foreach ($keyword in $Keywords) {
+        $matches = $properties | Where-Object { $_.RegistryKeyword -like $keyword }
+        foreach ($match in $matches) {
+            try {
+                Set-NetAdapterAdvancedProperty -InterfaceDescription $Adapter.InterfaceDescription -RegistryKeyword $match.RegistryKeyword -RegistryValue $Value -NoRestart -ErrorAction Stop
+                Write-Host "  [+] Set $($match.RegistryKeyword) on $($Adapter.Name) to $Value." -ForegroundColor Green
+                if ($logger) {
+                    Write-Log "[Network] $($Adapter.Name): $($match.RegistryKeyword) set to $Value."
+                }
+            } catch {
+                Handle-Error -Context "Setting advanced property $($match.RegistryKeyword) on $($Adapter.Name)" -ErrorRecord $_
+            }
+        }
+    }
+}
+
+function Set-EnergyEfficientEthernet {
+    $adapters = Get-PhysicalNetAdapters
+    if ($adapters.Count -eq 0) {
+        Write-Host "  [!] No eligible adapters found for Energy Efficient Ethernet adjustments." -ForegroundColor Yellow
+        return
+    }
+
+    foreach ($adapter in $adapters) {
+        Set-AdapterAdvancedPropertyIfPresent -Adapter $adapter -Keywords @('*EEE*','*EnergyEfficientEthernet*','*GreenEthernet*') -Value '0'
+    }
+}
+
+function Enable-RSS {
+    $adapters = Get-PhysicalNetAdapters
+    if ($adapters.Count -eq 0) {
+        Write-Host "  [!] No eligible adapters found for RSS." -ForegroundColor Yellow
+        return
+    }
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    foreach ($adapter in $adapters) {
+        try {
+            Enable-NetAdapterRss -Name $adapter.Name -ErrorAction Stop | Out-Null
+            Write-Host "  [+] RSS enabled on $($adapter.Name)." -ForegroundColor Green
+            if ($logger) {
+                Write-Log "[Network] RSS enabled on $($adapter.Name)."
+            }
+        } catch {
+            Handle-Error -Context "Enabling RSS on $($adapter.Name)" -ErrorRecord $_
+        }
+    }
+}
+
+function Set-InterruptModeration {
+    $adapters = Get-PhysicalNetAdapters
+    if ($adapters.Count -eq 0) {
+        Write-Host "  [!] No eligible adapters found for interrupt moderation changes." -ForegroundColor Yellow
+        return
+    }
+
+    foreach ($adapter in $adapters) {
+        Set-AdapterAdvancedPropertyIfPresent -Adapter $adapter -Keywords @('*InterruptModeration*') -Value '0'
+    }
+}
+
+function Invoke-NetworkTweaksSafe {
+    Write-Section "Network tweaks (Safe profile)"
+    Invoke-NetworkFlush
+
+    if (Ask-YesNo "Reset Winsock (requires reboot)?" 'n') {
+        Invoke-NetworkFullReset
+    } else {
+        Write-Host "  [ ] Winsock left unchanged." -ForegroundColor Gray
+    }
+
+    if (Ask-YesNo "Use Cloudflare DNS (1.1.1.1 / 1.0.0.1) on all adapters?" 'y') {
+        Set-NetworkDnsSafe
+    } else {
+        Write-Host "  [ ] DNS settings left unchanged." -ForegroundColor Gray
+    }
+
+    Set-TcpAutotuningNormal
+    Set-IPvPreferenceIPv4First
+}
+
+function Invoke-NetworkTweaksAggressive {
+    Write-Section "Network tweaks (Aggressive profile)"
+    Disable-LLMNR
+    Disable-DeliveryOptimization
+
+    if (Ask-YesNo "Disable NetBIOS over TCP/IP? This may break legacy LAN shares and printers." 'n') {
+        Disable-NetBIOS
+    } else {
+        Write-Host "  [ ] NetBIOS left enabled." -ForegroundColor Gray
+    }
+
+    Disable-NetworkTelemetry
+    Set-ReservableBandwidth
+
+    if (Ask-YesNo "Disable Remote Assistance?" 'y') {
+        Disable-RemoteAssistance
+    } else {
+        Write-Host "  [ ] Remote Assistance left enabled." -ForegroundColor Gray
+    }
+
+    if (Ask-YesNo "Queres desactivar completamente el Network Discovery? Vas a dejar de ver PCs y carpetas compartidas automaticamente en la red." 'n') {
+        Disable-NetworkDiscovery
+    } else {
+        Write-Host "  [ ] Network Discovery left enabled." -ForegroundColor Gray
+    }
+}
+
+function Invoke-NetworkTweaksGaming {
+    Write-Section "Network tweaks (Gaming profile)"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    Set-NetworkThrottling
+    Set-NagleState
+    Set-EnergyEfficientEthernet
+    Enable-RSS
+
+    if (Ask-YesNo "Disable interrupt moderation for lowest latency? (Higher CPU usage)" 'n') {
+        Set-InterruptModeration
+    } else {
+        Write-Host "  [ ] Interrupt moderation left unchanged." -ForegroundColor Gray
+    }
+
+    if (Ask-YesNo "Queres habilitar MSI Mode para tu placa de red (NIC)? Recomendado en hardware moderno. Nota: si ya aplicaste MSI Mode para la NIC desde otra opcion, no hace falta repetirlo." 'n') {
+        Enable-MsiModeSafe -Target 'NIC'
+        if ($logger) {
+            Write-Log "[Network] MSI Mode enabled for NIC via gaming profile."
+        }
+    } else {
+        Write-Host "  [ ] MSI Mode for NIC skipped." -ForegroundColor Gray
+    }
+
+    if (Ask-YesNo "Queres aplicar tambien tweaks TCP avanzados (Chimney Offload / DCA)? Son experimentales y pueden causar inestabilidad en hardware viejo o drivers raros." 'n') {
+        try {
+            netsh int tcp set global chimney=disabled | Out-Null
+            Write-Host "  [+] TCP Chimney Offload disabled." -ForegroundColor Green
+            if ($logger) {
+                Write-Log "[Network] TCP Chimney Offload set to disabled."
+            }
+
+            netsh int tcp set global dca=enabled | Out-Null
+            Write-Host "  [+] Direct Cache Access enabled." -ForegroundColor Green
+            if ($logger) {
+                Write-Log "[Network] Direct Cache Access set to enabled."
+            }
+        } catch {
+            Write-Host "  [!] No se pudieron aplicar los tweaks Chimney/DCA: $($_.Exception.Message)" -ForegroundColor Yellow
+            if ($logger) {
+                Write-Log "[Network] ERROR aplicando Chimney/DCA: $($_.Exception.Message)"
+            }
+        }
+    } else {
+        Write-Host "  [ ] Tweaks Chimney/DCA omitidos." -ForegroundColor Gray
+    }
+}
+
+function Save-NetworkBackupState {
+    $backupDir = "C:\ProgramData\Scynesthesia"
+    $file = Join-Path $backupDir "network_backup.json"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $backup = [ordered]@{
+        Version                = 1
+        Created                = Get-Date
+        NetworkThrottlingIndex = $null
+        Nagle                  = @()
+        QoS                    = [ordered]@{ NonBestEffortLimit = $null }
+        LLMNR                  = [ordered]@{ EnableMulticast = $null }
+        NetBIOS                = @()
+        DeliveryOptimization   = [ordered]@{ DODownloadMode = $null; DoSvcStartup = $null }
+        NetworkDiscovery       = [ordered]@{ FirewallGroupDisabled = $null }
+    }
+
+    try {
+        $backup.NetworkThrottlingIndex = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name 'NetworkThrottlingIndex' -ErrorAction Stop).NetworkThrottlingIndex
+    } catch { }
+
+    try {
+        $interfaces = Get-ChildItem -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces' -ErrorAction Stop
+        foreach ($iface in $interfaces) {
+            $entry = [ordered]@{ InterfaceKey = $iface.PSPath; TcpAckFrequency = $null; TCPNoDelay = $null; TcpDelAckTicks = $null }
+            foreach ($name in 'TcpAckFrequency','TCPNoDelay','TcpDelAckTicks') {
+                try {
+                    $entry[$name] = (Get-ItemProperty -Path $iface.PSPath -Name $name -ErrorAction Stop).$name
+                } catch { }
+            }
+            $backup.Nagle += $entry
+        }
+    } catch { }
+
+    try {
+        $backup.QoS.NonBestEffortLimit = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched' -Name 'NonBestEffortLimit' -ErrorAction Stop).NonBestEffortLimit
+    } catch { }
+
+    try {
+        $backup.LLMNR.EnableMulticast = (Get-ItemProperty -Path 'HKLM:\Software\Policies\Microsoft\Windows NT\DNSClient' -Name 'EnableMulticast' -ErrorAction Stop).EnableMulticast
+    } catch { }
+
+    try {
+        $nbtInterfaces = Get-ChildItem -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces' -ErrorAction Stop
+        foreach ($iface in $nbtInterfaces) {
+            $entry = [ordered]@{ Key = $iface.PSPath; NetbiosOptions = $null }
+            try {
+                $entry.NetbiosOptions = (Get-ItemProperty -Path $iface.PSPath -Name 'NetbiosOptions' -ErrorAction Stop).NetbiosOptions
+            } catch { }
+            $backup.NetBIOS += $entry
+        }
+    } catch { }
+
+    try {
+        $backup.DeliveryOptimization.DODownloadMode = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization' -Name 'DODownloadMode' -ErrorAction Stop).DODownloadMode
+    } catch { }
+
+    try {
+        $backup.DeliveryOptimization.DoSvcStartup = (Get-Service -Name 'DoSvc' -ErrorAction Stop).StartType.ToString()
+    } catch { }
+
+    try {
+        $rules = Get-NetFirewallRule -DisplayGroup 'Network Discovery' -ErrorAction Stop
+        if ($rules) {
+            $enabledStates = $rules | Select-Object -ExpandProperty Enabled -Unique
+            if ($enabledStates -contains 'False' -and -not ($enabledStates -contains 'True')) {
+                $backup.NetworkDiscovery.FirewallGroupDisabled = $true
+            } elseif ($enabledStates -contains 'True') {
+                $backup.NetworkDiscovery.FirewallGroupDisabled = $false
+            }
+        }
+    } catch { }
+
+    try {
+        if (-not (Test-Path $backupDir)) {
+            New-Item -Path $backupDir -ItemType Directory -Force | Out-Null
+        }
+        $backup | ConvertTo-Json -Depth 6 | Set-Content -Path $file -Encoding UTF8
+        if ($logger) { Write-Log "[Backup] Network backup saved to $file" }
+        Write-Host "[Backup] Network backup saved to $file" -ForegroundColor Green
+    } catch {
+        Write-Host "[Backup] Failed to save network backup." -ForegroundColor Yellow
+        if ($logger) { Write-Log "[Backup] Failed to save network backup: $($_.Exception.Message)" }
+    }
+}
+
+function Restore-NetworkBackupState {
+    $file = "C:\ProgramData\Scynesthesia\network_backup.json"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    if (-not (Test-Path $file)) {
+        Write-Host "[Backup] No se encontro backup de red para restaurar." -ForegroundColor Yellow
+        return
+    }
+
+    try {
+        $data = Get-Content -Path $file -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        Write-Host "[Backup] No se pudo leer el archivo de backup de red." -ForegroundColor Yellow
+        return
+    }
+
+    try {
+        if ($null -ne $data.NetworkThrottlingIndex) {
+            New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Force | Out-Null
+            New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name 'NetworkThrottlingIndex' -Value $data.NetworkThrottlingIndex -PropertyType DWord -Force | Out-Null
+            if ($logger) { Write-Log "[Backup] Restored NetworkThrottlingIndex=$($data.NetworkThrottlingIndex)" }
+        }
+    } catch { }
+
+    if ($data.Nagle) {
+        foreach ($entry in $data.Nagle) {
+            $path = $entry.InterfaceKey
+            if (-not $path) { continue }
+            foreach ($name in 'TcpAckFrequency','TCPNoDelay','TcpDelAckTicks') {
+                $value = $entry.$name
+                try {
+                    New-Item -Path $path -Force -ErrorAction Stop | Out-Null
+                    if ($null -ne $value) {
+                        New-ItemProperty -Path $path -Name $name -Value $value -PropertyType DWord -Force | Out-Null
+                        if ($logger) { Write-Log "[Backup] Restored $name=$value at $path" }
+                    } else {
+                        Remove-ItemProperty -Path $path -Name $name -ErrorAction SilentlyContinue
+                        if ($logger) { Write-Log "[Backup] Removed $name at $path (was null)" }
+                    }
+                } catch { }
+            }
+        }
+    }
+
+    try {
+        if ($null -ne $data.QoS.NonBestEffortLimit) {
+            New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched' -Force | Out-Null
+            New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched' -Name 'NonBestEffortLimit' -Value $data.QoS.NonBestEffortLimit -PropertyType DWord -Force | Out-Null
+            if ($logger) { Write-Log "[Backup] Restored NonBestEffortLimit=$($data.QoS.NonBestEffortLimit)" }
+        }
+    } catch { }
+
+    try {
+        if ($null -ne $data.LLMNR.EnableMulticast) {
+            New-Item -Path 'HKLM:\Software\Policies\Microsoft\Windows NT\DNSClient' -Force | Out-Null
+            New-ItemProperty -Path 'HKLM:\Software\Policies\Microsoft\Windows NT\DNSClient' -Name 'EnableMulticast' -Value $data.LLMNR.EnableMulticast -PropertyType DWord -Force | Out-Null
+            if ($logger) { Write-Log "[Backup] Restored EnableMulticast=$($data.LLMNR.EnableMulticast)" }
+        }
+    } catch { }
+
+    if ($data.NetBIOS) {
+        foreach ($entry in $data.NetBIOS) {
+            $path = $entry.Key
+            if (-not $path) { continue }
+            try {
+                New-Item -Path $path -Force -ErrorAction Stop | Out-Null
+                if ($null -ne $entry.NetbiosOptions) {
+                    New-ItemProperty -Path $path -Name 'NetbiosOptions' -Value $entry.NetbiosOptions -PropertyType DWord -Force | Out-Null
+                    if ($logger) { Write-Log "[Backup] Restored NetbiosOptions=$($entry.NetbiosOptions) at $path" }
+                } else {
+                    Remove-ItemProperty -Path $path -Name 'NetbiosOptions' -ErrorAction SilentlyContinue
+                    if ($logger) { Write-Log "[Backup] Removed NetbiosOptions at $path (was null)" }
+                }
+            } catch { }
+        }
+    }
+
+    try {
+        if ($null -ne $data.DeliveryOptimization.DODownloadMode) {
+            New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization' -Force | Out-Null
+            New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization' -Name 'DODownloadMode' -Value $data.DeliveryOptimization.DODownloadMode -PropertyType DWord -Force | Out-Null
+            if ($logger) { Write-Log "[Backup] Restored DODownloadMode=$($data.DeliveryOptimization.DODownloadMode)" }
+        }
+    } catch { }
+
+    try {
+        if ($null -ne $data.DeliveryOptimization.DoSvcStartup) {
+            Set-Service -Name 'DoSvc' -StartupType $data.DeliveryOptimization.DoSvcStartup -ErrorAction Stop
+            if ($logger) { Write-Log "[Backup] Restored DoSvc startup type to $($data.DeliveryOptimization.DoSvcStartup)" }
+        }
+    } catch { }
+
+    try {
+        if ($data.NetworkDiscovery.FirewallGroupDisabled -eq $true -or $data.NetworkDiscovery.FirewallGroupDisabled -eq $false) {
+            if ($data.NetworkDiscovery.FirewallGroupDisabled -eq $true) {
+                try {
+                    Set-NetFirewallRule -DisplayGroup 'Network Discovery' -Enabled True -ErrorAction Stop | Out-Null
+                    if ($logger) { Write-Log "[Backup] Network Discovery firewall group re-enabled." }
+                } catch { }
+            }
+        }
+    } catch { }
+
+    Write-Host "[Backup] Configuracion de red restaurada desde backup." -ForegroundColor Cyan
+    if ($logger) { Write-Log "[Backup] Network settings restored from $file" }
+}
+
+Export-ModuleMember -Function Invoke-NetworkTweaksSafe, Invoke-NetworkTweaksAggressive, Invoke-NetworkTweaksGaming, Set-NetworkDnsSafe, Save-NetworkBackupState, Restore-NetworkBackupState
