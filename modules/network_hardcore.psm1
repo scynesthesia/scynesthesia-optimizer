@@ -1,4 +1,4 @@
-function Get-EligibleNetAdapters {
+﻿function Get-EligibleNetAdapters {
     try {
         $adapters = Get-NetAdapter -Physical -ErrorAction Stop |
             Where-Object {
@@ -71,7 +71,7 @@ function Find-OptimalMtu {
         while ($low -le $high) {
             $mid = [int](($low + $high) / 2)
             $mtuCandidate = $mid + 28
-            Write-Host "  [>] MTU test step $step: payload $mid bytes (candidate MTU $mtuCandidate) / Prueba MTU paso $step: carga $mid bytes (MTU candidato $mtuCandidate)" -ForegroundColor Cyan
+            Write-Host "  [>] MTU test step ${step}: payload $mid bytes (candidate MTU $mtuCandidate) / Prueba MTU paso ${step}: carga $mid bytes (MTU candidato $mtuCandidate)" -ForegroundColor Cyan
             if (Test-MtuSize -PayloadSize $mid -Target $Target) {
                 $best = $mid
                 $low = $mid + 1
@@ -155,7 +155,7 @@ function Set-TcpCongestionProvider {
             $bbrAvailable = $supplemental -match '(?i)bbr'
         }
 
-        if ($bbrAvailable -and Ask-YesNo "Enable experimental BBR congestion control? / ¿Habilitar control de congestión BBR experimental?" 'n') {
+        if ($bbrAvailable -and (Ask-YesNo "Enable experimental BBR congestion control? / ¿Habilitar control de congestión BBR experimental?" 'n')) {
             try {
                 netsh int tcp set global congestionprovider=bbr | Out-Null
                 Write-Host "  [+] TCP congestion provider set to BBR (experimental, favors throughput+latency). / Proveedor de congestión TCP configurado a BBR (experimental, prioriza rendimiento y latencia)." -ForegroundColor Green
