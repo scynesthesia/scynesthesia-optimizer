@@ -514,9 +514,9 @@ function Save-NetworkBackupState {
 
     try {
         if (-not (Test-Path $backupDir)) {
-            New-Item -Path $backupDir -ItemType Directory -Force | Out-Null
+            New-Item -Path $backupDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
         }
-        $backup | ConvertTo-Json -Depth 6 | Set-Content -Path $file -Encoding UTF8
+        $backup | ConvertTo-Json -Depth 6 | Set-Content -Path $file -Encoding UTF8 -ErrorAction Stop
         if ($logger) { Write-Log "[Backup] Network backup saved to $file" }
         Write-Host "[Backup] Network backup saved to $file" -ForegroundColor Green
     } catch {
