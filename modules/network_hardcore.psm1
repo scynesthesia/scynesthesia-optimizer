@@ -197,17 +197,39 @@ function Get-NicRegistryPaths {
         $adapters = Get-EligibleNetAdapters
         $results = @()
 
+        function Normalize-GuidString {
+            param($Value)
+
+            try {
+                if ($null -eq $Value) { return $null }
+
+                if ($Value -is [string]) {
+                    $trimmed = $Value.Trim('{}').Trim()
+                    if (-not $trimmed) { return $null }
+                    return "{$trimmed}".ToUpperInvariant()
+                }
+
+                if ($Value -is [guid]) {
+                    return $Value.ToString('B').ToUpperInvariant()
+                }
+
+                return ([guid]$Value).ToString('B').ToUpperInvariant()
+            } catch {
+                return $null
+            }
+        }
+
         foreach ($adapter in $adapters) {
             try {
-                $guid = $adapter.InterfaceGuid
-                if (-not $guid) { continue }
-                $guidString = $guid.ToString('B').ToUpper()
+                $guidString = Normalize-GuidString -Value $adapter.InterfaceGuid
+                if (-not $guidString) { continue }
                 $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
                 foreach ($entry in $entries) {
                     try {
-                        $netCfg = (Get-ItemProperty -Path $entry.PSPath -Name 'NetCfgInstanceId' -ErrorAction Stop).NetCfgInstanceId
-                        if ($netCfg -and ($netCfg.ToString('B').ToUpper() -eq $guidString)) {
-                            $results += [pscustomobject]@{ Adapter = $adapter; Path = $entry.PSPath }
+                        $netCfg = (Get-ItemProperty -Path $entry.PSPath -Name 'NetCfgInstanceId' -ErrorAction SilentlyContinue).NetCfgInstanceId
+                        $netCfgString = Normalize-GuidString -Value $netCfg
+                        if ($netCfgString -and ($netCfgString -eq $guidString)) {
+                            $results += [pscustomobject]@{ Adapter = $adapter; Path = $entry.PSPath; Guid = $guidString }
                             break
                         }
                     } catch { }
@@ -233,28 +255,28 @@ function Set-NicRegistryHardcore {
         }
 
         $powerOffload = @{
-            'AutoPowerSaveModeEnabled' = 0
-            'AdvancedEEE'              = 0
-            '*EEE'                     = 0
-            'EEELinkAdvertisement'     = 0
-            'EnableGreenEthernet'      = 0
-            'EnablePowerManagement'    = 0
-            'EnablePME'                = 0
-            'EnableWoL'                = 0
-            'LinkDownPowerSaving'      = 0
-            'PowerSavingMode'          = 0
-            'SelectiveSuspend'         = 0
-            'S5WakeOnLAN'              = 0
-            'ULPMode'                  = 0
-            'ShutdownWakeOnLan'        = 0
-            'WakeOnLink'               = 0
+            'AutoPowerSaveModeEnabled' = '0'
+            'AdvancedEEE'              = '0'
+            '*EEE'                     = '0'
+            'EEELinkAdvertisement'     = '0'
+            'EnableGreenEthernet'      = '0'
+            'EnablePowerManagement'    = '0'
+            'EnablePME'                = '0'
+            'EnableWoL'                = '0'
+            'LinkDownPowerSaving'      = '0'
+            'PowerSavingMode'          = '0'
+            'SelectiveSuspend'         = '0'
+            'S5WakeOnLAN'              = '0'
+            'ULPMode'                  = '0'
+            'ShutdownWakeOnLan'        = '0'
+            'WakeOnLink'               = '0'
         }
 
         $interruptDelays = @{
-            'TxIntDelay'   = 0
-            'RxIntDelay'   = 0
-            'TxAbsIntDelay'= 0
-            'RxAbsIntDelay'= 0
+            'TxIntDelay'   = '0'
+            'RxIntDelay'   = '0'
+            'TxAbsIntDelay'= '0'
+            'RxAbsIntDelay'= '0'
         }
 
         foreach ($item in $nicPaths) {
@@ -262,7 +284,7 @@ function Set-NicRegistryHardcore {
             Write-Host "  [>] Applying registry tweaks to $adapterName / Aplicando ajustes de registro a $adapterName" -ForegroundColor Cyan
             foreach ($entry in $powerOffload.GetEnumerator()) {
                 try {
-                    Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type DWord
+                    Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type String
                     Write-Host "    [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
                 } catch {
                     Handle-Error -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
@@ -271,7 +293,7 @@ function Set-NicRegistryHardcore {
 
             foreach ($entry in $interruptDelays.GetEnumerator()) {
                 try {
-                    Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type DWord
+                    Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type String
                     Write-Host "    [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
                 } catch {
                     Handle-Error -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
@@ -279,7 +301,7 @@ function Set-NicRegistryHardcore {
             }
 
             try {
-                $interfacePath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$([string]$item.Adapter.InterfaceGuid)"
+                $interfacePath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$($item.Guid)"
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TcpAckFrequency' -Value 1 -Type DWord
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TCPNoDelay' -Value 1 -Type DWord
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TcpDelAckTicks' -Value 0 -Type DWord
