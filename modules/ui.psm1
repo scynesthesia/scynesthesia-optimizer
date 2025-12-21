@@ -78,7 +78,7 @@ function Set-RegistryValueSafe {
     try {
         # Auto-fix: HKLM\ / HKCU\ -> HKLM:\ / HKCU:\
         if ($Path -match "^HK(LM|CU)\\" -and $Path -notmatch "^HK(LM|CU):\\") {
-            $Path = $Path -replace "^HK(LM|CU)\\", 'HK$1:\\'
+            $Path = $Path -replace "^HK(LM|CU)\\", 'HK$1:\'
         }
 
         if (-not (Test-Path $Path)) {
