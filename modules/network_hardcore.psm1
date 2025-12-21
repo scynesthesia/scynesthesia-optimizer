@@ -43,6 +43,258 @@ function Convert-LinkSpeedToBytes {
     return $null
 }
 
+function Set-TcpIpAdvancedParameters {
+    try {
+        $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
+        $values = @{
+            DefaultTTL          = 64
+            Tcp1323Opts         = 1
+            TcpMaxDupAcks       = 2
+            SackOpts            = 0
+            MaxUserPort         = 65534
+            TcpTimedWaitDelay   = 30
+        }
+
+        foreach ($entry in $values.GetEnumerator()) {
+            try {
+                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
+                Write-Host "  [+] $($entry.Key) set to $($entry.Value) in TCP parameters / $($entry.Key) configurado a $($entry.Value) en parámetros TCP." -ForegroundColor Green
+            } catch {
+                Handle-Error -Context "Setting $($entry.Key) in TCP parameters" -ErrorRecord $_
+            }
+        }
+
+        $Global:NeedsReboot = $true
+    } catch {
+        Handle-Error -Context 'Configuring advanced TCP/IP parameters' -ErrorRecord $_
+    }
+}
+
+function Set-NetworkThrottlingHardcore {
+    try {
+        $path = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
+        try {
+            Set-RegistryValueSafe -Path $path -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type DWord
+            Write-Host "  [+] NetworkThrottlingIndex set to maximum performance / NetworkThrottlingIndex configurado para máximo rendimiento." -ForegroundColor Green
+            $Global:NeedsReboot = $true
+        } catch {
+            Handle-Error -Context 'Setting NetworkThrottlingIndex' -ErrorRecord $_
+        }
+    } catch {
+        Handle-Error -Context 'Configuring network throttling' -ErrorRecord $_
+    }
+}
+
+function Set-ServicePriorities {
+    try {
+        $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\ServiceProvider'
+        $values = @{
+            LocalPriority  = 4
+            HostsPriority  = 5
+            DnsPriority    = 6
+            NetbtPriority  = 7
+        }
+
+        foreach ($entry in $values.GetEnumerator()) {
+            try {
+                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
+                Write-Host "  [+] $($entry.Key) set to $($entry.Value) in ServiceProvider / $($entry.Key) configurado a $($entry.Value) en ServiceProvider." -ForegroundColor Green
+            } catch {
+                Handle-Error -Context "Setting $($entry.Key) service priority" -ErrorRecord $_
+            }
+        }
+
+        $Global:NeedsReboot = $true
+    } catch {
+        Handle-Error -Context 'Configuring ServiceProvider priorities' -ErrorRecord $_
+    }
+}
+
+function Set-WinsockOptimizations {
+    try {
+        $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters'
+        $values = @{
+            MinSockAddrLength = 16
+            MaxSockAddrLength = 16
+        }
+
+        foreach ($entry in $values.GetEnumerator()) {
+            try {
+                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
+                Write-Host "  [+] $($entry.Key) set to $($entry.Value) for Winsock / $($entry.Key) configurado a $($entry.Value) para Winsock." -ForegroundColor Green
+            } catch {
+                Handle-Error -Context "Setting Winsock $($entry.Key)" -ErrorRecord $_
+            }
+        }
+
+        $Global:NeedsReboot = $true
+    } catch {
+        Handle-Error -Context 'Applying Winsock optimizations' -ErrorRecord $_
+    }
+}
+
+function Optimize-LanmanServer {
+    try {
+        $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters'
+        $values = @{
+            autodisconnect = 0
+            Size           = 3
+            EnableOplocks  = 0
+            IRPStackSize   = 20
+        }
+
+        foreach ($entry in $values.GetEnumerator()) {
+            try {
+                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
+                Write-Host "  [+] $($entry.Key) set to $($entry.Value) for LanmanServer / $($entry.Key) configurado a $($entry.Value) para LanmanServer." -ForegroundColor Green
+            } catch {
+                Handle-Error -Context "Setting LanmanServer $($entry.Key)" -ErrorRecord $_
+            }
+        }
+
+        $Global:NeedsReboot = $true
+    } catch {
+        Handle-Error -Context 'Optimizing LanmanServer parameters' -ErrorRecord $_
+    }
+}
+
+function Set-NetshHardcoreGlobals {
+    try {
+        $commands = @(
+            @{ Cmd = 'netsh int tcp set global dca=enabled'; Description = 'DCA enabled / DCA habilitado' },
+            @{ Cmd = 'netsh int tcp set global netdma=enabled'; Description = 'NetDMA enabled / NetDMA habilitado' },
+            @{ Cmd = 'netsh int tcp set global nonsackrttresiliency=disabled'; Description = 'NonSackRTTResiliency disabled / NonSackRTTResiliency deshabilitado' },
+            @{ Cmd = 'netsh int tcp set global maxsynretransmissions=2'; Description = 'MaxSynRetransmissions set / MaxSynRetransmissions configurado' },
+            @{ Cmd = 'netsh int tcp set global mpp=disabled'; Description = 'MPP disabled / MPP deshabilitado' },
+            @{ Cmd = 'netsh int tcp set security profiles=disabled'; Description = 'Security profiles disabled / Perfiles de seguridad deshabilitados' },
+            @{ Cmd = 'netsh int tcp set heuristics disabled'; Description = 'Heuristics disabled / Heurísticas deshabilitadas' },
+            @{ Cmd = 'netsh int ip set global neighborcachelimit=4096'; Description = 'NeighborCacheLimit set / NeighborCacheLimit configurado' }
+        )
+
+        Push-Location -Path ($env:SystemRoot | ForEach-Object { if ($_ -and (Test-Path $_)) { $_ } else { $env:WINDIR } })
+        try {
+            foreach ($command in $commands) {
+                try {
+                    & cmd.exe /c $command.Cmd 2>&1 | Out-Null
+                    Write-Host "  [+] $($command.Description)." -ForegroundColor Green
+                } catch {
+                    Handle-Error -Context "Running $($command.Cmd)" -ErrorRecord $_
+                }
+            }
+        } finally {
+            Pop-Location -ErrorAction SilentlyContinue
+        }
+
+        $Global:NeedsReboot = $true
+    } catch {
+        Handle-Error -Context 'Applying hardcore netsh globals' -ErrorRecord $_
+    }
+}
+
+function Get-NicRegistryPaths {
+    try {
+        $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002bE10318}'
+        $adapters = Get-EligibleNetAdapters
+        $results = @()
+
+        foreach ($adapter in $adapters) {
+            try {
+                $guid = $adapter.InterfaceGuid
+                if (-not $guid) { continue }
+                $guidString = $guid.ToString('B').ToUpper()
+                $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
+                foreach ($entry in $entries) {
+                    try {
+                        $netCfg = (Get-ItemProperty -Path $entry.PSPath -Name 'NetCfgInstanceId' -ErrorAction Stop).NetCfgInstanceId
+                        if ($netCfg -and ($netCfg.ToString('B').ToUpper() -eq $guidString)) {
+                            $results += [pscustomobject]@{ Adapter = $adapter; Path = $entry.PSPath }
+                            break
+                        }
+                    } catch { }
+                }
+            } catch {
+                Handle-Error -Context "Finding registry path for $($adapter.Name)" -ErrorRecord $_
+            }
+        }
+
+        return $results
+    } catch {
+        Handle-Error -Context 'Enumerating NIC registry paths' -ErrorRecord $_
+        return @()
+    }
+}
+
+function Set-NicRegistryHardcore {
+    try {
+        $nicPaths = Get-NicRegistryPaths
+        if ($nicPaths.Count -eq 0) {
+            Write-Host "  [!] No NIC registry paths found for tweaks. / No se encontraron rutas de registro de NIC para ajustes." -ForegroundColor Yellow
+            return
+        }
+
+        $powerOffload = @{
+            'AutoPowerSaveModeEnabled' = 0
+            'AdvancedEEE'              = 0
+            '*EEE'                     = 0
+            'EEELinkAdvertisement'     = 0
+            'EnableGreenEthernet'      = 0
+            'EnablePowerManagement'    = 0
+            'EnablePME'                = 0
+            'EnableWoL'                = 0
+            'LinkDownPowerSaving'      = 0
+            'PowerSavingMode'          = 0
+            'SelectiveSuspend'         = 0
+            'S5WakeOnLAN'              = 0
+            'ULPMode'                  = 0
+            'ShutdownWakeOnLan'        = 0
+            'WakeOnLink'               = 0
+        }
+
+        $interruptDelays = @{
+            'TxIntDelay'   = 0
+            'RxIntDelay'   = 0
+            'TxAbsIntDelay'= 0
+            'RxAbsIntDelay'= 0
+        }
+
+        foreach ($item in $nicPaths) {
+            $adapterName = $item.Adapter.Name
+            Write-Host "  [>] Applying registry tweaks to $adapterName / Aplicando ajustes de registro a $adapterName" -ForegroundColor Cyan
+            foreach ($entry in $powerOffload.GetEnumerator()) {
+                try {
+                    Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type DWord
+                    Write-Host "    [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
+                } catch {
+                    Handle-Error -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
+                }
+            }
+
+            foreach ($entry in $interruptDelays.GetEnumerator()) {
+                try {
+                    Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type DWord
+                    Write-Host "    [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
+                } catch {
+                    Handle-Error -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
+                }
+            }
+
+            try {
+                $interfacePath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$([string]$item.Adapter.InterfaceGuid)"
+                Set-RegistryValueSafe -Path $interfacePath -Name 'TcpAckFrequency' -Value 1 -Type DWord
+                Set-RegistryValueSafe -Path $interfacePath -Name 'TCPNoDelay' -Value 1 -Type DWord
+                Set-RegistryValueSafe -Path $interfacePath -Name 'TcpDelAckTicks' -Value 0 -Type DWord
+                Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0) / Parámetros Nagle configurados (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
+            } catch {
+                Handle-Error -Context "Setting Nagle parameters for $adapterName" -ErrorRecord $_
+            }
+        }
+
+        $Global:NeedsReboot = $true
+    } catch {
+        Handle-Error -Context 'Applying NIC-specific registry tweaks' -ErrorRecord $_
+    }
+}
+
 function Get-PrimaryNetAdapter {
     try {
         $adapters = Get-EligibleNetAdapters
@@ -258,6 +510,13 @@ function Invoke-NetworkTweaksHardcore {
     }
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
+    Set-TcpIpAdvancedParameters
+    Set-NetworkThrottlingHardcore
+    Set-ServicePriorities
+    Set-WinsockOptimizations
+    Optimize-LanmanServer
+    Set-NetshHardcoreGlobals
+
     $adapters = Get-EligibleNetAdapters
     if ($adapters.Count -eq 0) {
         Write-Host "  [!] No active physical adapters detected. / No se detectaron adaptadores físicos activos." -ForegroundColor Yellow
@@ -280,6 +539,8 @@ function Invoke-NetworkTweaksHardcore {
         }
         Write-Host "  [i] Primary adapter detected: $($primary.Name) ($speedLabel). / Adaptador primario detectado: $($primary.Name) ($speedLabel)." -ForegroundColor Cyan
     }
+
+    Set-NicRegistryHardcore
 
     foreach ($adapter in $adapters) {
         try {
