@@ -276,7 +276,7 @@ function Set-NicRegistryHardcore {
             'WakeOnLink'               = '0'
             'WakeOnMagicPacket'        = '0'
             'WakeOnPatternMatch'       = '0'
-            'WolShutdownLinkSpeed'     = '0'
+            'WolShutdownLinkSpeed'     = '2'
         }
 
         $interruptDelays = @{
