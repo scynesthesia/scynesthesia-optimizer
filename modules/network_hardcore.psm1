@@ -12,11 +12,49 @@
     }
 }
 
+function Convert-LinkSpeedToBytes {
+    param(
+        [Parameter(Mandatory)]$LinkSpeed
+    )
+
+    try {
+        if ($null -eq $LinkSpeed) { return $null }
+
+        if ($LinkSpeed -is [string]) {
+            $match = [regex]::Match($LinkSpeed, '(?i)(\d+(?:\.\d+)?)\s*(g|m)?bps')
+            if ($match.Success) {
+                $value = [double]$match.Groups[1].Value
+                $unit = $match.Groups[2].Value.ToLower()
+                switch ($unit) {
+                    'g' { return [int64]($value * 1GB) }
+                    'm' { return [int64]($value * 1MB) }
+                    default { return [int64]$value }
+                }
+            }
+        }
+
+        if ($LinkSpeed -is [IConvertible]) {
+            return [int64][double]$LinkSpeed
+        }
+    } catch {
+        Handle-Error -Context 'Parsing adapter link speed' -ErrorRecord $_
+    }
+
+    return $null
+}
+
 function Get-PrimaryNetAdapter {
     try {
         $adapters = Get-EligibleNetAdapters
         if ($adapters.Count -eq 0) { return $null }
-        return $adapters | Sort-Object -Property LinkSpeed -Descending | Select-Object -First 1
+        $sortedAdapters = $adapters |
+            Sort-Object -Property @{ Expression = {
+                    $parsed = Convert-LinkSpeedToBytes -LinkSpeed $_.LinkSpeed
+                    if ($null -eq $parsed) { return 0 }
+                    return $parsed
+                }
+            } -Descending
+        return $sortedAdapters | Select-Object -First 1
     } catch {
         Handle-Error -Context 'Selecting primary network adapter' -ErrorRecord $_
         return $null
@@ -182,13 +220,20 @@ function Set-TcpCongestionProvider {
 function Invoke-NetworkTweaksHardcore {
     Write-Section "Network Tweaks: Hardcore (Competitive Gaming) / Tweaks de Red: Hardcore (Gaming Competitivo)"
     Write-Host "  [!] Warning: MTU discovery will send test packets and adapters may reset, causing temporary disconnects. / Advertencia: El descubrimiento de MTU enviará paquetes de prueba y los adaptadores pueden reiniciarse, causando desconexiones temporales." -ForegroundColor Yellow
+    $backupFile = "C:\\ProgramData\\Scynesthesia\\network_backup.json"
     if (Get-Command Save-NetworkBackupState -ErrorAction SilentlyContinue) {
         try {
-            Write-Host "  [i] Ensuring network backup is saved before hardcore tweaks... / [i] Asegurando backup de red antes de los tweaks hardcore..." -ForegroundColor Gray
-            Save-NetworkBackupState
+            if (-not (Test-Path -Path $backupFile)) {
+                Write-Host "  [i] No existing network backup found at $backupFile; creating one now. / [i] No se encontró un respaldo de red en $backupFile; se creará uno ahora." -ForegroundColor Gray
+                Save-NetworkBackupState
+            } else {
+                Write-Host "  [i] Network backup already present at $backupFile; proceeding with tweaks. / [i] Respaldo de red ya existente en $backupFile; se continúa con los tweaks." -ForegroundColor Gray
+            }
         } catch {
             Handle-Error -Context 'Saving network backup before hardcore tweaks' -ErrorRecord $_
         }
+    } else {
+        Write-Host "  [!] Backup helper not available; proceeding without automatic network backup. / [!] Herramienta de respaldo no disponible; se continúa sin backup automático de red." -ForegroundColor Yellow
     }
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
@@ -204,8 +249,14 @@ function Invoke-NetworkTweaksHardcore {
         $primaryAdapters = $adapters
     } else {
         $primaryAdapters = @($primary)
-        $speedMbps = [math]::Round($primary.LinkSpeed / 1MB, 2)
-        $speedLabel = if ($speedMbps -ge 1000) { "{0} Gbps" -f ([math]::Round($speedMbps / 1000, 2)) } else { "{0} Mbps" -f $speedMbps }
+        $parsedSpeed = Convert-LinkSpeedToBytes -LinkSpeed $primary.LinkSpeed
+        if ($null -eq $parsedSpeed) { $parsedSpeed = 0 }
+        $speedMbps = [math]::Round($parsedSpeed / 1MB, 2)
+        $speedLabel = if ($parsedSpeed -gt 0) {
+            if ($speedMbps -ge 1000) { "{0} Gbps" -f ([math]::Round($speedMbps / 1000, 2)) } else { "{0} Mbps" -f $speedMbps }
+        } else {
+            'Unknown speed / Velocidad desconocida'
+        }
         Write-Host "  [i] Primary adapter detected: $($primary.Name) ($speedLabel). / Adaptador primario detectado: $($primary.Name) ($speedLabel)." -ForegroundColor Cyan
     }
 
