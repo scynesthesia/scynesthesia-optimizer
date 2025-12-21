@@ -154,7 +154,14 @@ function Apply-DebloatAggressive {
     }
 
     if (Ask-YesNo -Question "Also remove provisioned packages for future users? (More aggressive) [y/N]" -Default 'n') {
-        $prov = Get-AppxProvisionedPackage -Online | Where-Object { $AppList -contains $_.PackageName }
+        try {
+            $prov = Get-AppxProvisionedPackage -Online | Where-Object { $AppList -contains $_.PackageName }
+        } catch {
+            $warningMessage = "[Debloat] Failed to enumerate provisioned packages: $($_.Exception.Message). Skipping provisioned removal."
+            Write-Host $warningMessage -ForegroundColor Yellow
+            Write-Log -Message $warningMessage -Level 'Warning'
+            $prov = @()
+        }
         foreach ($p in $prov) {
             Write-Host "  [+] Removing provisioned package $($p.PackageName)"
             try {
