@@ -15,6 +15,67 @@ function Get-PhysicalNetAdapters {
     }
 }
 
+# Description: Normalizes GUID input into uppercase brace-enclosed string form.
+# Parameters: Value - Input GUID or string representation.
+# Returns: Normalized GUID string or null when conversion fails.
+function Normalize-GuidString {
+    param($Value)
+
+    try {
+        if ($null -eq $Value) { return $null }
+
+        if ($Value -is [string]) {
+            $trimmed = $Value.Trim('{}').Trim()
+            if (-not $trimmed) { return $null }
+            return "{$trimmed}".ToUpperInvariant()
+        }
+
+        if ($Value -is [guid]) {
+            return $Value.ToString('B').ToUpperInvariant()
+        }
+
+        return ([guid]$Value).ToString('B').ToUpperInvariant()
+    } catch {
+        return $null
+    }
+}
+
+# Description: Maps physical adapters to their registry class paths for advanced tweaks.
+# Parameters: None.
+# Returns: Collection of objects containing adapter references and registry paths.
+function Get-NicRegistryPaths {
+    try {
+        $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002bE10318}'
+        $adapters = Get-PhysicalNetAdapters
+        $results = @()
+
+        foreach ($adapter in $adapters) {
+            try {
+                $guidString = Normalize-GuidString -Value $adapter.InterfaceGuid
+                if (-not $guidString) { continue }
+                $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
+                foreach ($entry in $entries) {
+                    try {
+                        $netCfg = (Get-ItemProperty -Path $entry.PSPath -Name 'NetCfgInstanceId' -ErrorAction SilentlyContinue).NetCfgInstanceId
+                        $netCfgString = Normalize-GuidString -Value $netCfg
+                        if ($netCfgString -and ($netCfgString -eq $guidString)) {
+                            $results += [pscustomobject]@{ Adapter = $adapter; Path = $entry.PSPath; Guid = $guidString }
+                            break
+                        }
+                    } catch { }
+                }
+            } catch {
+                Handle-Error -Context "Finding registry path for $($adapter.Name)" -ErrorRecord $_
+            }
+        }
+
+        return $results
+    } catch {
+        Handle-Error -Context 'Enumerating NIC registry paths' -ErrorRecord $_
+        return @()
+    }
+}
+
 # Description: Flushes the DNS cache to clear resolver entries.
 # Parameters: None.
 # Returns: None.
@@ -363,6 +424,65 @@ function Set-EnergyEfficientEthernet {
     }
 }
 
+# Description: Disables NIC-level power saving flags for gaming performance via registry.
+# Parameters: None.
+# Returns: None.
+function Set-NicPowerManagementGaming {
+    Write-Host "  [>] Applying NIC power management overrides / Aplicando reemplazos de gestión de energía NIC" -ForegroundColor Cyan
+    $nicPaths = Get-NicRegistryPaths
+    if ($nicPaths.Count -eq 0) {
+        Write-Host "  [!] No NIC registry paths found for gaming power tweaks. / No se encontraron rutas de registro NIC para ajustes de energía de gaming." -ForegroundColor Yellow
+        return
+    }
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $powerFlags = @{
+        '*WakeOnMagicPacket'  = '0'
+        '*WakeOnPattern'      = '0'
+        '*EEE'                = '0'
+        'WakeOnMagicPacket'   = '0'
+        'WakeOnPatternMatch'  = '0'
+        'WolShutdownLinkSpeed'= '0'
+        'AllowIdleIrp'        = '0'
+        'DeepSleepMode'       = '0'
+        'EnableGreenEthernet' = '0'
+    }
+
+    foreach ($item in $nicPaths) {
+        $adapterName = $item.Adapter.Name
+        Write-Host "  [>] Optimizing $adapterName power profile / Optimizando perfil de energía de $adapterName" -ForegroundColor Cyan
+        try {
+            Set-RegistryValueSafe -Path $item.Path -Name 'PnPCapabilities' -Value 24 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+            Write-Host "    [+] PnPCapabilities set to 24 (power management disabled) / PnPCapabilities configurado a 24 (gestión de energía deshabilitada)" -ForegroundColor Green
+            if ($logger) { Write-Log "[Network] $adapterName PnPCapabilities set to 24 for gaming profile." }
+        } catch {
+            Handle-Error -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
+        }
+
+        foreach ($entry in $powerFlags.GetEnumerator()) {
+            try {
+                Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String)
+                Write-Host "    [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
+                if ($logger) { Write-Log "[Network] $adapterName $($entry.Key) set to $($entry.Value) for gaming power." }
+            } catch {
+                Handle-Error -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
+            }
+        }
+
+        try {
+            $interfacePath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$($item.Guid)"
+            $cleanupKeys = @($powerFlags.Keys) + @('PnPCapabilities')
+            foreach ($noiseKey in $cleanupKeys | Select-Object -Unique) {
+                try {
+                    Remove-ItemProperty -Path $interfacePath -Name $noiseKey -ErrorAction SilentlyContinue
+                } catch { }
+            }
+        } catch {
+            Handle-Error -Context "Cleaning interface overrides for $adapterName" -ErrorRecord $_
+        }
+    }
+}
+
 # Description: Enables Receive Side Scaling (RSS) on supported adapters without a restart.
 # Parameters: None.
 # Returns: None.
@@ -475,6 +595,8 @@ function Invoke-NetworkTweaksAggressive {
 # Returns: None. May set global reboot flag for certain changes.
 function Invoke-NetworkTweaksGaming {
     Write-Section "Network tweaks (Gaming profile)"
+    Write-Host "  [i] Applying hardware power optimizations... / Aplicando optimizaciones de energía de hardware..." -ForegroundColor Gray
+    Set-NicPowerManagementGaming
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     Set-NetworkThrottling
     Set-NagleState
