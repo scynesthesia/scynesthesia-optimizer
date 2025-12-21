@@ -14,7 +14,7 @@ A modular, hardware-aware Windows PowerShell optimizer that debloats safely, har
 Run in **PowerShell as Administrator**:
 
 ```powershell
-powershell -Command "Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass','-NoExit','-Command','irm https://raw.githubusercontent.com/scynesthesia/scynesthesia-optimizer/v1.0/setup.ps1 | iex'"
+powershell -Command "Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass','-NoExit','-Command','irm https://raw.githubusercontent.com/scynesthesia/scynesthesia-optimizer/main/setup.ps1 | iex'"
 ```
 
 > The installer downloads the latest release, extracts modules to a temporary folder, and launches the interactive menu.
