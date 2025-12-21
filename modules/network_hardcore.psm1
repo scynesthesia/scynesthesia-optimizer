@@ -255,28 +255,16 @@ function Set-NicRegistryHardcore {
         }
 
         $powerOffload = @{
-            'AutoPowerSaveModeEnabled' = '0'
-            'AdvancedEEE'              = '0'
-            '*EEE'                     = '0'
-            '*WakeOnMagicPacket'       = '0'
-            '*WakeOnPattern'           = '0'
-            'AllowIdleIrp'             = '0'
-            'DeepSleepMode'            = '0'
-            'EEELinkAdvertisement'     = '0'
-            'EnableGreenEthernet'      = '0'
-            'EnablePowerManagement'    = '0'
-            'EnablePME'                = '0'
-            'EnableWoL'                = '0'
-            'LinkDownPowerSaving'      = '0'
-            'PowerSavingMode'          = '0'
-            'SelectiveSuspend'         = '0'
-            'S5WakeOnLAN'              = '0'
-            'ULPMode'                  = '0'
-            'ShutdownWakeOnLan'        = '0'
-            'WakeOnLink'               = '0'
-            'WakeOnMagicPacket'        = '0'
-            'WakeOnPatternMatch'       = '0'
-            'WolShutdownLinkSpeed'     = '2'
+            '*EEE'                 = '0'
+            '*WakeOnMagicPacket'   = '0'
+            '*WakeOnPattern'       = '0'
+            'AllowIdleIrp'         = '0'
+            'DeepSleepMode'        = '0'
+            'EEE'                  = '0'
+            'EnableGreenEthernet'  = '0'
+            'WakeOnMagicPacket'    = '0'
+            'WakeOnPatternMatch'   = '0'
+            'WolShutdownLinkSpeed' = '0'
         }
 
         $interruptDelays = @{
@@ -295,6 +283,7 @@ function Set-NicRegistryHardcore {
             } catch {
                 Handle-Error -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
             }
+
             foreach ($entry in $powerOffload.GetEnumerator()) {
                 try {
                     Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type String
@@ -314,7 +303,14 @@ function Set-NicRegistryHardcore {
             }
 
             try {
-                $interfacePath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$($item.Guid)"
+                $interfacePath = "${'HKLM'}:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$($item.Guid)"
+                $noiseKeys = @($powerOffload.Keys + $interruptDelays.Keys)
+                foreach ($noiseKey in $noiseKeys | Select-Object -Unique) {
+                    try {
+                        Remove-ItemProperty -Path $interfacePath -Name $noiseKey -ErrorAction SilentlyContinue
+                    } catch { }
+                }
+
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TcpAckFrequency' -Value 1 -Type DWord
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TCPNoDelay' -Value 1 -Type DWord
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TcpDelAckTicks' -Value 0 -Type DWord
