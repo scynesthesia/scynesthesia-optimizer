@@ -1,4 +1,7 @@
-﻿function Get-EligibleNetAdapters {
+﻿# Description: Retrieves active physical adapters excluding virtual or VPN interfaces.
+# Parameters: None.
+# Returns: Collection of eligible adapters or empty array on failure.
+function Get-EligibleNetAdapters {
     try {
         $adapters = Get-NetAdapter -Physical -ErrorAction Stop |
             Where-Object {
@@ -12,6 +15,9 @@
     }
 }
 
+# Description: Converts a link speed value to bytes per second, handling string units.
+# Parameters: LinkSpeed - Raw speed value or string with units.
+# Returns: Int64 representing bytes per second, or null when parsing fails.
 function Convert-LinkSpeedToBytes {
     param(
         [Parameter(Mandatory)]$LinkSpeed
@@ -43,6 +49,9 @@ function Convert-LinkSpeedToBytes {
     return $null
 }
 
+# Description: Applies advanced TCP/IP registry parameters for performance tuning.
+# Parameters: None.
+# Returns: None. Sets global reboot flag after changes.
 function Set-TcpIpAdvancedParameters {
     try {
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
@@ -70,6 +79,9 @@ function Set-TcpIpAdvancedParameters {
     }
 }
 
+# Description: Disables network throttling via registry for maximum throughput.
+# Parameters: None.
+# Returns: None. Sets global reboot flag on success.
 function Set-NetworkThrottlingHardcore {
     try {
         $path = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
@@ -85,6 +97,9 @@ function Set-NetworkThrottlingHardcore {
     }
 }
 
+# Description: Configures TCP/IP service provider priorities for resolution order.
+# Parameters: None.
+# Returns: None. Sets global reboot flag after applying values.
 function Set-ServicePriorities {
     try {
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\ServiceProvider'
@@ -110,6 +125,9 @@ function Set-ServicePriorities {
     }
 }
 
+# Description: Applies Winsock parameter adjustments to align socket behavior.
+# Parameters: None.
+# Returns: None. Sets global reboot flag when updates are made.
 function Set-WinsockOptimizations {
     try {
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters'
@@ -133,6 +151,9 @@ function Set-WinsockOptimizations {
     }
 }
 
+# Description: Tunes LanmanServer parameters for reduced latency and connection stability.
+# Parameters: None.
+# Returns: None. Sets global reboot flag when registry changes occur.
 function Optimize-LanmanServer {
     try {
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters'
@@ -158,6 +179,9 @@ function Optimize-LanmanServer {
     }
 }
 
+# Description: Runs netsh commands to set advanced TCP/IP global options for performance.
+# Parameters: None.
+# Returns: None. Sets global reboot flag following configuration.
 function Set-NetshHardcoreGlobals {
     try {
         $commands = @(
@@ -191,12 +215,18 @@ function Set-NetshHardcoreGlobals {
     }
 }
 
+# Description: Maps physical adapters to their registry class paths for advanced tweaks.
+# Parameters: None.
+# Returns: Collection of objects containing adapter references and registry paths.
 function Get-NicRegistryPaths {
     try {
         $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002bE10318}'
         $adapters = Get-EligibleNetAdapters
         $results = @()
 
+        # Description: Normalizes GUID input into uppercase brace-enclosed string form.
+        # Parameters: Value - Input GUID or string representation.
+        # Returns: Normalized GUID string or null when conversion fails.
         function Normalize-GuidString {
             param($Value)
 
@@ -246,6 +276,9 @@ function Get-NicRegistryPaths {
     }
 }
 
+# Description: Applies hardcore NIC registry tweaks for power, wake, and latency behaviors.
+# Parameters: None.
+# Returns: None. Sets global reboot flag after applying changes.
 function Set-NicRegistryHardcore {
     try {
         $nicPaths = Get-NicRegistryPaths
@@ -270,7 +303,7 @@ function Set-NicRegistryHardcore {
             'S5WakeOnLan'          = '0'
             'WakeOnLink'           = '0'
             'WakeOnDisconnect'     = '0'
-            # Keep shutdown link at full rate to prevent hidden wake conditions / Mantener el enlace en apagado a velocidad completa para evitar condiciones de wake ocultas.
+            # Keep the shutdown link at full speed to avoid wake triggers from low-power renegotiation.
             'WolShutdownLinkSpeed' = '2'
         }
 
@@ -351,6 +384,9 @@ function Set-NicRegistryHardcore {
     }
 }
 
+# Description: Identifies the primary adapters based on speed and connection status.
+# Parameters: Adapters - Collection of adapters to evaluate.
+# Returns: Array of primary adapters or empty array when none qualify.
 function Get-PrimaryNetAdapter {
     try {
         $adapters = Get-EligibleNetAdapters
@@ -369,6 +405,9 @@ function Get-PrimaryNetAdapter {
     }
 }
 
+# Description: Sets an adapter advanced property when a matching display name exists.
+# Parameters: AdapterName - Target adapter name; DisplayName - Property display label; DisplayValue - Desired value.
+# Returns: None.
 function Set-NetAdapterAdvancedPropertySafe {
     param(
         [Parameter(Mandatory)][string]$AdapterName,
@@ -404,12 +443,13 @@ function Set-NetAdapterAdvancedPropertySafe {
     }
 }
 
+# Description: Hardens Wake-on-LAN settings through registry and adapter UI properties.
+# Parameters: None.
+# Returns: None. Sets global reboot flag after changes.
 function Set-WakeOnLanHardcore {
     <#
         Wake-on-LAN needs both registry and UI alignment because many drivers honor multiple flags at once.
-        Wake-on-LAN requiere alineación entre registro y UI porque muchos drivers evalúan múltiples banderas simultáneas.
         WolShutdownLinkSpeed "2" keeps the link in "Not Speed Down" to avoid low-power renegotiation that re-enables WOL paths.
-        WolShutdownLinkSpeed "2" mantiene el enlace en "Not Speed Down" para evitar renegociación de bajo consumo que reactive rutas WOL.
     #>
     Write-Host "  [>] Applying Wake-on-LAN hardening (registry + driver UI) / Aplicando refuerzo Wake-on-LAN (registro + UI del controlador)" -ForegroundColor Cyan
     $adapters = Get-EligibleNetAdapters
@@ -434,7 +474,6 @@ function Set-WakeOnLanHardcore {
         'WakeOnLink'           = '0'
         'WakeOnDisconnect'     = '0'
         # "2" = Not Speed Down to keep the link at full speed during shutdown states.
-        # "2" = Not Speed Down para mantener el enlace a velocidad completa durante apagado.
         'WolShutdownLinkSpeed' = '2'
     }
 
@@ -494,6 +533,9 @@ function Set-WakeOnLanHardcore {
     }
 }
 
+# Description: Tests whether a given ICMP payload size passes without fragmentation.
+# Parameters: PayloadSize - Size of the ICMP payload; Target - Host to ping.
+# Returns: Boolean indicating success of the ping test.
 function Test-MtuSize {
     param(
         [Parameter(Mandatory)][int]$PayloadSize,
@@ -511,6 +553,9 @@ function Test-MtuSize {
     }
 }
 
+# Description: Performs a binary search to discover the optimal MTU for the target host.
+# Parameters: Target - Hostname or IP used for MTU discovery.
+# Returns: Integer MTU size when successful, otherwise null.
 function Find-OptimalMtu {
     param(
         [string]$Target = '1.1.1.1'
@@ -545,6 +590,9 @@ function Find-OptimalMtu {
     }
 }
 
+# Description: Applies a specified MTU to a collection of adapters.
+# Parameters: Mtu - MTU value to set; Adapters - Target adapters.
+# Returns: None.
 function Apply-MtuToAdapters {
     param(
         [Parameter(Mandatory)][int]$Mtu,
@@ -563,6 +611,9 @@ function Apply-MtuToAdapters {
     }
 }
 
+# Description: Estimates hardware age in years based on BIOS release date.
+# Parameters: None.
+# Returns: Integer years when available, otherwise null.
 function Get-HardwareAgeYears {
     try {
         $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction Stop
@@ -581,6 +632,9 @@ function Get-HardwareAgeYears {
     }
 }
 
+# Description: Suggests core affinity ranges for network IRQs to improve latency.
+# Parameters: None.
+# Returns: None.
 function Suggest-NetworkIrqCores {
     try {
         $logical = [Environment]::ProcessorCount
@@ -592,6 +646,9 @@ function Suggest-NetworkIrqCores {
     }
 }
 
+# Description: Configures the TCP congestion provider, preferring BBR when available.
+# Parameters: None.
+# Returns: None. Writes status messages for chosen provider.
 function Set-TcpCongestionProvider {
     try {
         $osVersion = [System.Environment]::OSVersion.Version
@@ -636,6 +693,9 @@ function Set-TcpCongestionProvider {
     }
 }
 
+# Description: Applies advanced network optimizations including registry, driver, MTU, and congestion tweaks.
+# Parameters: None.
+# Returns: None. Sets global reboot flag due to extensive changes.
 function Invoke-NetworkTweaksHardcore {
     Write-Section "Network Tweaks: Hardcore (Competitive Gaming) / Tweaks de Red: Hardcore (Gaming Competitivo)"
     Write-Host "  [!] Warning: MTU discovery will send test packets and adapters may reset, causing temporary disconnects. / Advertencia: El descubrimiento de MTU enviará paquetes de prueba y los adaptadores pueden reiniciarse, causando desconexiones temporales." -ForegroundColor Yellow

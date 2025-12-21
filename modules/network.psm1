@@ -1,3 +1,6 @@
+# Description: Retrieves active physical network adapters excluding virtual or VPN interfaces.
+# Parameters: None.
+# Returns: Collection of adapter objects; returns empty array on failure.
 function Get-PhysicalNetAdapters {
     try {
         $adapters = Get-NetAdapter -Physical -ErrorAction Stop |
@@ -12,6 +15,9 @@ function Get-PhysicalNetAdapters {
     }
 }
 
+# Description: Flushes the DNS cache to clear resolver entries.
+# Parameters: None.
+# Returns: None.
 function Invoke-NetworkFlush {
     Write-Host "  [+] Flushing DNS cache" -ForegroundColor Gray
     try {
@@ -21,6 +27,9 @@ function Invoke-NetworkFlush {
     }
 }
 
+# Description: Performs a Winsock reset to rebuild network stack defaults.
+# Parameters: None.
+# Returns: None. Sets global reboot flag when reset runs.
 function Invoke-NetworkFullReset {
     Write-Host "  [+] Resetting Winsock catalog" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -36,6 +45,9 @@ function Invoke-NetworkFullReset {
     }
 }
 
+# Description: Sets Cloudflare DNS servers on eligible adapters after prompting when manual DNS exists.
+# Parameters: None.
+# Returns: None.
 function Set-NetworkDnsSafe {
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     $adapters = Get-PhysicalNetAdapters
@@ -66,6 +78,9 @@ function Set-NetworkDnsSafe {
     }
 }
 
+# Description: Configures TCP autotuning level to normal for compatibility.
+# Parameters: None.
+# Returns: None.
 function Set-TcpAutotuningNormal {
     Write-Host "  [+] Setting TCP autotuning to 'normal'" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -79,6 +94,9 @@ function Set-TcpAutotuningNormal {
     }
 }
 
+# Description: Prefers IPv4 addressing without disabling IPv6.
+# Parameters: None.
+# Returns: None.
 function Set-IPvPreferenceIPv4First {
     Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6)" -ForegroundColor Gray
     try {
@@ -91,6 +109,9 @@ function Set-IPvPreferenceIPv4First {
     }
 }
 
+# Description: Disables Link-Local Multicast Name Resolution to reduce noisy broadcasts.
+# Parameters: None.
+# Returns: None.
 function Disable-LLMNR {
     Write-Host "  [+] Disabling LLMNR" -ForegroundColor Gray
     Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "EnableMulticast" 0
@@ -99,6 +120,9 @@ function Disable-LLMNR {
     }
 }
 
+# Description: Disables NetBIOS over TCP/IP on eligible adapters.
+# Parameters: None.
+# Returns: None.
 function Disable-NetBIOS {
     $adapters = Get-PhysicalNetAdapters
     if ($adapters.Count -eq 0) {
@@ -127,6 +151,9 @@ function Disable-NetBIOS {
     }
 }
 
+# Description: Disables telemetry-related services and policies for networking.
+# Parameters: None.
+# Returns: None.
 function Disable-NetworkTelemetry {
     Write-Host "  [+] Disabling network telemetry services" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -152,6 +179,9 @@ function Disable-NetworkTelemetry {
     }
 }
 
+# Description: Disables Delivery Optimization downloads and service startup.
+# Parameters: None.
+# Returns: None.
 function Disable-DeliveryOptimization {
     Write-Host "  [+] Disabling Delivery Optimization (WUDO)" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -176,6 +206,9 @@ function Disable-DeliveryOptimization {
     }
 }
 
+# Description: Sets reservable bandwidth policy to 0% to avoid QoS reservation overhead.
+# Parameters: None.
+# Returns: None.
 function Set-ReservableBandwidth {
     Write-Host "  [+] Setting reservable bandwidth limit to 0%" -ForegroundColor Gray
     Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Psched" "NonBestEffortLimit" 0
@@ -184,6 +217,9 @@ function Set-ReservableBandwidth {
     }
 }
 
+# Description: Disables Remote Assistance via registry policy values.
+# Parameters: None.
+# Returns: None.
 function Disable-RemoteAssistance {
     Write-Host "  [+] Disabling Remote Assistance" -ForegroundColor Gray
     try {
@@ -197,6 +233,9 @@ function Disable-RemoteAssistance {
     }
 }
 
+# Description: Disables the Network Discovery firewall rule group.
+# Parameters: None.
+# Returns: None.
 function Disable-NetworkDiscovery {
     Write-Host "  [+] Disabling Network Discovery firewall rules" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -210,6 +249,9 @@ function Disable-NetworkDiscovery {
     }
 }
 
+# Description: Disables multimedia network throttling by setting the registry index.
+# Parameters: None.
+# Returns: None.
 function Set-NetworkThrottling {
     Write-Host "  [+] Disabling network throttling" -ForegroundColor Gray
     Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "NetworkThrottlingIndex" 0xFFFFFFFF
@@ -218,6 +260,9 @@ function Set-NetworkThrottling {
     }
 }
 
+# Description: Optimizes TCP acknowledgement parameters (Nagle-related) per adapter.
+# Parameters: None.
+# Returns: None. Sets global reboot flag if registry changes occur.
 function Set-NagleState {
     $adapters = Get-PhysicalNetAdapters
     if ($adapters.Count -eq 0) {
@@ -269,6 +314,9 @@ function Set-NagleState {
     }
 }
 
+# Description: Sets advanced adapter properties when matching registry keywords exist.
+# Parameters: Adapter - Target network adapter; Keywords - Patterns for registry keywords; Value - Desired registry value.
+# Returns: None.
 function Set-AdapterAdvancedPropertyIfPresent {
     param(
         [Parameter(Mandatory)][Microsoft.Management.Infrastructure.CimInstance]$Adapter,
@@ -300,6 +348,9 @@ function Set-AdapterAdvancedPropertyIfPresent {
     }
 }
 
+# Description: Disables Energy Efficient Ethernet features on applicable adapters.
+# Parameters: None.
+# Returns: None.
 function Set-EnergyEfficientEthernet {
     $adapters = Get-PhysicalNetAdapters
     if ($adapters.Count -eq 0) {
@@ -312,6 +363,9 @@ function Set-EnergyEfficientEthernet {
     }
 }
 
+# Description: Enables Receive Side Scaling (RSS) on supported adapters without a restart.
+# Parameters: None.
+# Returns: None.
 function Enable-RSS {
     $adapters = Get-PhysicalNetAdapters
     if ($adapters.Count -eq 0) {
@@ -348,6 +402,9 @@ function Enable-RSS {
     }
 }
 
+# Description: Disables interrupt moderation on adapters supporting the setting.
+# Parameters: None.
+# Returns: None.
 function Set-InterruptModeration {
     $adapters = Get-PhysicalNetAdapters
     if ($adapters.Count -eq 0) {
@@ -360,6 +417,9 @@ function Set-InterruptModeration {
     }
 }
 
+# Description: Applies safe network tweaks focused on stability and privacy.
+# Parameters: None.
+# Returns: None.
 function Invoke-NetworkTweaksSafe {
     Write-Section "Network tweaks (Safe profile)"
     Invoke-NetworkFlush
@@ -380,6 +440,9 @@ function Invoke-NetworkTweaksSafe {
     Set-IPvPreferenceIPv4First
 }
 
+# Description: Applies aggressive network tweaks including autotuning and disabled discovery.
+# Parameters: None.
+# Returns: None. May prompt for backup before changes.
 function Invoke-NetworkTweaksAggressive {
     Write-Section "Network tweaks (Aggressive profile)"
     Disable-LLMNR
@@ -407,6 +470,9 @@ function Invoke-NetworkTweaksAggressive {
     }
 }
 
+# Description: Applies gaming-focused network tweaks for lower latency.
+# Parameters: None.
+# Returns: None. May set global reboot flag for certain changes.
 function Invoke-NetworkTweaksGaming {
     Write-Section "Network tweaks (Gaming profile)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -465,6 +531,9 @@ function Invoke-NetworkTweaksGaming {
     }
 }
 
+# Description: Saves current network-related registry and firewall settings to a JSON backup.
+# Parameters: None.
+# Returns: None. Writes backup file to ProgramData when possible.
 function Save-NetworkBackupState {
     $backupDir = "C:\ProgramData\Scynesthesia"
     $file = Join-Path $backupDir "network_backup.json"
@@ -551,6 +620,9 @@ function Save-NetworkBackupState {
     }
 }
 
+# Description: Restores network settings from the saved JSON backup if present.
+# Parameters: None.
+# Returns: None.
 function Restore-NetworkBackupState {
     $file = "C:\ProgramData\Scynesthesia\network_backup.json"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue

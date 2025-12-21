@@ -1,3 +1,6 @@
+# Description: Applies privacy-focused registry changes suitable for the Safe preset.
+# Parameters: None.
+# Returns: None. Prompts for optional Cortana and Storage Sense adjustments.
 function Apply-PrivacyTelemetrySafe {
     Write-Section "Applying privacy/telemetry tweaks (Safe preset)"
 
@@ -48,6 +51,9 @@ function Apply-PrivacyTelemetrySafe {
     Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\PowerShellCore\Telemetry" "EnableTelemetry" 0
 }
 
+# Description: Configures user experience preferences for Explorer, mouse, and keyboard behavior.
+# Parameters: None.
+# Returns: None. Writes registry values for consistent UX defaults.
 function Apply-PreferencesSafe {
     Write-Section "Adjusting UX preferences (Start, Explorer, etc.)"
 

@@ -1,3 +1,6 @@
+# Description: Enables MSI Mode for supported device classes to reduce DPC latency.
+# Parameters: Target - Array of device categories (GPU, NIC, STORAGE) to evaluate.
+# Returns: PSCustomObject with count of devices updated; sets global reboot flag when changes occur.
 function Enable-MsiModeSafe {
     param(
         [string[]]$Target = 'GPU'

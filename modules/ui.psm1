@@ -1,9 +1,15 @@
+# Description: Prints a formatted section header to the console.
+# Parameters: Text - Section title to display.
+# Returns: None.
 function Write-Section {
     param([string]$Text)
     Write-Host ""
     Write-Host "========== $Text ==========" -ForegroundColor Cyan
 }
 
+# Description: Writes a timestamped log message to the console with severity coloring.
+# Parameters: Message - Text to log; Level - Severity level (Info, Warning, Error).
+# Returns: None.
 function Write-Log {
     param(
         [Parameter(Mandatory)]
@@ -22,6 +28,9 @@ function Write-Log {
     }
 }
 
+# Description: Logs and displays a warning message for an encountered error.
+# Parameters: Context - Operation being performed; ErrorRecord - Error details from the exception.
+# Returns: None.
 function Handle-Error {
     param(
         [Parameter(Mandatory)]
@@ -35,6 +44,9 @@ function Handle-Error {
     Write-Log -Message $message -Level 'Warning'
 }
 
+# Description: Prompts the user for a yes/no response with default handling.
+# Parameters: Question - Prompt text; Default - Default answer when input is empty.
+# Returns: Boolean indicating user choice.
 function Ask-YesNo {
     param(
         [string]$Question,
@@ -57,6 +69,9 @@ function Ask-YesNo {
     }
 }
 
+# Description: Reads user input until a valid menu option is provided.
+# Parameters: Prompt - Displayed prompt text; ValidOptions - Allowed option values.
+# Returns: The selected option string.
 function Read-MenuChoice {
     param(
         [string]$Prompt,
@@ -70,6 +85,9 @@ function Read-MenuChoice {
     }
 }
 
+# Description: Safely creates or updates a registry value with basic validation and logging.
+# Parameters: Path - Registry path; Name - Value name; Value - Data to set; Type - Registry value type.
+# Returns: None.
 function Set-RegistryValueSafe {
     param(
         [string]$Path,
@@ -102,6 +120,9 @@ function Set-RegistryValueSafe {
     }
 }
 
+# Description: Prints a summary of tweak results including package removal and reboot status.
+# Parameters: Status - Hashtable containing outcome details such as PackagesFailed and RebootRequired.
+# Returns: None.
 function Write-OutcomeSummary {
     param(
         [hashtable]$Status
