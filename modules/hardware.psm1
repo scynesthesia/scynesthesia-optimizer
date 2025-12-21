@@ -28,7 +28,7 @@ function Enable-MsiModeSafe {
 
     if (-not $classQueries) {
         Write-Host "  [!] No valid targets supplied for MSI Mode." -ForegroundColor Yellow
-        return
+        return [pscustomobject]@{ Touched = 0 }
     }
 
     $touched = 0
@@ -68,6 +68,8 @@ function Enable-MsiModeSafe {
     } else {
         Write-Host "  [i] No applicable devices found or already enabled." -ForegroundColor DarkGray
     }
+
+    return [pscustomobject]@{ Touched = $touched }
 }
 
 Export-ModuleMember -Function Enable-MsiModeSafe

@@ -273,9 +273,11 @@ do {
             Apply-CustomGamingPowerSettings
             Optimize-ProcessorScheduling
             if (Ask-YesNo "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.) / Habilitar MSI Mode para GPU y controladores de almacenamiento? (Recomendado para Gaming Mode. La placa de red (NIC) se puede ajustar aparte desde el menu de Network Tweaks.)" 'y') {
-                Enable-MsiModeSafe -Target @('GPU','STORAGE')
-                if ($logger) {
+                $msiResult = Enable-MsiModeSafe -Target @('GPU','STORAGE')
+                if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {
                     Write-Log "[Gaming] MSI Mode enabled for GPU and storage controllers from main Gaming Mode."
+                } elseif ($logger) {
+                    Write-Log "[Gaming] MSI Mode for GPU/storage already enabled or not applicable." -Level 'Info'
                 }
             } else {
                 Write-Host "  [ ] MSI Mode skipped." -ForegroundColor DarkGray
