@@ -8,9 +8,13 @@ function Get-AppRemovalListFromConfig {
     )
 
     if (-not $script:AppRemovalConfig) {
+        $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
         $configPath = Join-Path (Split-Path $PSScriptRoot -Parent) "config/apps.json"
         if (-not (Test-Path $configPath)) {
-            throw "App removal configuration not found at $configPath"
+            $message = "[Debloat] No se encontro el archivo de configuracion de apps: $configPath. Saltando la fase de App Removal."
+            Write-Host $message -ForegroundColor Yellow
+            if ($logger) { Write-Log $message }
+            return @()
         }
 
         try {

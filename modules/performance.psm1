@@ -97,10 +97,18 @@ function Get-UltimatePerformancePlanGuid {
             return $ultimateTemplateGuid
         }
 
-        $existingUltimatePlan = $powerPlans | Select-String -Pattern 'Power Scheme GUID:\s*([A-Fa-f0-9-]{36}).*Ultimate Performance' -IgnoreCase | Select-Object -First 1
-        if ($existingUltimatePlan) {
+        $existingUltimatePlanGuid = $null
+        foreach ($planLine in $powerPlans) {
+            $normalizedLine = $planLine.ToLowerInvariant()
+            if ($normalizedLine -match 'power scheme guid:\s*([a-f0-9-]{36}).*ultimate performance') {
+                $existingUltimatePlanGuid = $matches[1]
+                break
+            }
+        }
+
+        if ($existingUltimatePlanGuid) {
             Write-Host "  [+] Ultimate Performance plan already available."
-            return $existingUltimatePlan.Matches[0].Groups[1].Value
+            return $existingUltimatePlanGuid
         }
     } catch {
         Write-Warning "  [!] Could not inspect power plans: $($_.Exception.Message)"

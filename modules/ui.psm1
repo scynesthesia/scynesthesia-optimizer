@@ -78,6 +78,13 @@ function Set-RegistryValueSafe {
         [Microsoft.Win32.RegistryValueKind]$Type = [Microsoft.Win32.RegistryValueKind]::DWord
     )
 
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        $warning = "[!] Attempted to set registry value with empty name at path $Path. Skipping."
+        Write-Host $warning -ForegroundColor Yellow
+        Write-Log -Message $warning -Level 'Warning'
+        return
+    }
+
     try {
         # Auto-fix: HKLM\ / HKCU\ -> HKLM:\ / HKCU:\
         if ($Path -match "^HK(LM|CU)\\" -and $Path -notmatch "^HK(LM|CU):\\") {
