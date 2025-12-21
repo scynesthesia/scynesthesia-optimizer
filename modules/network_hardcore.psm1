@@ -266,7 +266,12 @@ function Set-NicRegistryHardcore {
             'NicAutoPowerSaver'    = '0'
             'WakeOnMagicPacket'    = '0'
             'WakeOnPatternMatch'   = '0'
-            'WolShutdownLinkSpeed' = '0'
+            'EnableWakeOnLan'      = '0'
+            'S5WakeOnLan'          = '0'
+            'WakeOnLink'           = '0'
+            'WakeOnDisconnect'     = '0'
+            # Keep shutdown link at full rate to prevent hidden wake conditions / Mantener el enlace en apagado a velocidad completa para evitar condiciones de wake ocultas.
+            'WolShutdownLinkSpeed' = '2'
         }
 
         $interruptDelays = @{
@@ -396,6 +401,96 @@ function Set-NetAdapterAdvancedPropertySafe {
         Write-Host "  [!] Unable to set $DisplayName on $AdapterName after fallbacks. / No se pudo configurar $DisplayName en $AdapterName tras alternativas." -ForegroundColor Yellow
     } catch {
         Handle-Error -Context "Setting $DisplayName on $AdapterName" -ErrorRecord $_
+    }
+}
+
+function Set-WakeOnLanHardcore {
+    <#
+        Wake-on-LAN needs both registry and UI alignment because many drivers honor multiple flags at once.
+        Wake-on-LAN requiere alineación entre registro y UI porque muchos drivers evalúan múltiples banderas simultáneas.
+        WolShutdownLinkSpeed "2" keeps the link in "Not Speed Down" to avoid low-power renegotiation that re-enables WOL paths.
+        WolShutdownLinkSpeed "2" mantiene el enlace en "Not Speed Down" para evitar renegociación de bajo consumo que reactive rutas WOL.
+    #>
+    Write-Host "  [>] Applying Wake-on-LAN hardening (registry + driver UI) / Aplicando refuerzo Wake-on-LAN (registro + UI del controlador)" -ForegroundColor Cyan
+    $adapters = Get-EligibleNetAdapters
+    if ($adapters.Count -eq 0) {
+        Write-Host "  [!] No adapters available for Wake-on-LAN hardening. / [!] No hay adaptadores disponibles para refuerzo Wake-on-LAN." -ForegroundColor Yellow
+        return
+    }
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $nicPaths = Get-NicRegistryPaths
+    if ($nicPaths.Count -eq 0) {
+        Write-Host "  [!] Unable to map NIC registry paths; skipping WOL registry enforcement. / [!] No se pudieron mapear rutas de registro NIC; se omite la aplicación WOL en registro." -ForegroundColor Yellow
+    }
+
+    $wolRegistryValues = @{
+        '*WakeOnMagicPacket'   = '0'
+        '*WakeOnPattern'       = '0'
+        'WakeOnMagicPacket'    = '0'
+        'WakeOnPatternMatch'   = '0'
+        'EnableWakeOnLan'      = '0'
+        'S5WakeOnLan'          = '0'
+        'WakeOnLink'           = '0'
+        'WakeOnDisconnect'     = '0'
+        # "2" = Not Speed Down to keep the link at full speed during shutdown states.
+        # "2" = Not Speed Down para mantener el enlace a velocidad completa durante apagado.
+        'WolShutdownLinkSpeed' = '2'
+    }
+
+    foreach ($adapter in $adapters) {
+        $adapterName = $adapter.Name
+        try {
+            $pathEntry = $nicPaths | Where-Object { $_.Adapter.ifIndex -eq $adapter.ifIndex }
+            if ($pathEntry) {
+                Write-Host "    [>] Registry WOL sweep on $adapterName / Barrido WOL en registro para $adapterName" -ForegroundColor Cyan
+                foreach ($entry in $wolRegistryValues.GetEnumerator()) {
+                    try {
+                        Set-RegistryValueSafe -Path $pathEntry.Path -Name $entry.Key -Value $entry.Value -Type String
+                        Write-Host "      [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
+                    } catch {
+                        Handle-Error -Context "Setting $($entry.Key) on $adapterName (WOL)" -ErrorRecord $_
+                    }
+                }
+            } else {
+                Write-Host "    [!] No registry path found for $adapterName; skipping registry WOL keys. / [!] No se encontró ruta de registro para $adapterName; se omiten claves WOL." -ForegroundColor Yellow
+            }
+
+            Write-Host "    [>] Driver UI WOL enforcement on $adapterName / Refuerzo WOL en UI del controlador para $adapterName" -ForegroundColor Cyan
+            $uiTargets = @(
+                @{ Name = 'Wake on Magic Packet';   Value = 'Disabled' },
+                @{ Name = 'Wake on Pattern Match';  Value = 'Disabled' },
+                @{ Name = 'Shutdown Wake-on-LAN';   Value = 'Disabled' },
+                @{ Name = 'WOL & Shutdown Link Speed'; Value = 'Not Speed Down' }
+            )
+
+            foreach ($target in $uiTargets) {
+                Set-NetAdapterAdvancedPropertySafe -AdapterName $adapterName -DisplayName $target.Name -DisplayValue $target.Value
+            }
+
+            Write-Host "    [>] Verifying WOL properties via Get-NetAdapterAdvancedProperty / Verificando propiedades WOL con Get-NetAdapterAdvancedProperty" -ForegroundColor Cyan
+            foreach ($target in $uiTargets) {
+                try {
+                    $current = Get-NetAdapterAdvancedProperty -Name $adapterName -DisplayName $target.Name -ErrorAction SilentlyContinue
+                    if (-not $current) {
+                        Write-Host "      [!] $($target.Name) not exposed on $adapterName; confirm driver limitations. / [!] $($target.Name) no expuesto en $adapterName; confirmar limitaciones del controlador." -ForegroundColor Yellow
+                        continue
+                    }
+
+                    $effective = $current.DisplayValue
+                    if ($effective -eq $target.Value) {
+                        Write-Host "      [+] $($target.Name) = $effective (OK) / $($target.Name) = $effective (OK)" -ForegroundColor Green
+                        if ($logger) { Write-Log "[NetworkHardcore] $($target.Name) confirmed as $effective on $adapterName. / $($target.Name) confirmado como $effective en $adapterName." }
+                    } else {
+                        Write-Host "      [!] $($target.Name) expected $($target.Value) but found $effective on $adapterName. / [!] $($target.Name) esperaba $($target.Value) pero se encontró $effective en $adapterName." -ForegroundColor Yellow
+                    }
+                } catch {
+                    Handle-Error -Context "Verifying $($target.Name) on $adapterName" -ErrorRecord $_
+                }
+            }
+        } catch {
+            Handle-Error -Context "Applying Wake-on-LAN hardening on $adapterName" -ErrorRecord $_
+        }
     }
 }
 
@@ -592,6 +687,7 @@ function Invoke-NetworkTweaksHardcore {
     }
 
     Set-NicRegistryHardcore
+    Set-WakeOnLanHardcore
 
     foreach ($adapter in $adapters) {
         try {
