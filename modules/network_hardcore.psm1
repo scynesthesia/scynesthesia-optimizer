@@ -307,6 +307,12 @@ function Invoke-NetworkTweaksHardcore {
     if ($primaryAdapters) {
         foreach ($adapter in $primaryAdapters) {
             try {
+                $rssCapabilities = Get-NetAdapterRss -Name $adapter.Name -ErrorAction SilentlyContinue
+                if (-not $rssCapabilities) {
+                    Write-Host "  [i] RSS not supported by this hardware; skipping. / RSS no soportado por este hardware; se omite." -ForegroundColor Gray
+                    continue
+                }
+
                 Set-NetAdapterRss -Name $adapter.Name -Profile Closest -ErrorAction Stop | Out-Null
                 Write-Host "  [+] RSS profile set to Closest on $($adapter.Name). / Perfil RSS configurado en Closest para $($adapter.Name)." -ForegroundColor Green
                 if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to Closest on $($adapter.Name). / Perfil RSS configurado en Closest para $($adapter.Name)." }
@@ -354,8 +360,9 @@ function Invoke-NetworkTweaksHardcore {
     }
     try {
         netsh int tcp set global autotuninglevel=$autotuneLevel | Out-Null
-        Write-Host "  [+] Network autotuning set to $autotuneLevel. / Autotuning de red configurado a $autotuneLevel." -ForegroundColor Green
-        if ($logger) { Write-Log "[NetworkHardcore] Autotuning level set to $autotuneLevel (hardware age: $ageYears years). / Nivel de autotuning configurado a $autotuneLevel (edad de hardware: $ageYears años)." }
+        $ageLabel = if ($null -ne $ageYears -and "$ageYears" -ne '') { "$ageYears years / $ageYears años" } else { 'Unknown / Desconocida' }
+        Write-Host "  [+] Network autotuning set to $autotuneLevel (hardware age: $ageLabel). / Autotuning de red configurado a $autotuneLevel (edad de hardware: $ageLabel)." -ForegroundColor Green
+        if ($logger) { Write-Log "[NetworkHardcore] Autotuning level set to $autotuneLevel (hardware age: $ageLabel). / Nivel de autotuning configurado a $autotuneLevel (edad de hardware: $ageLabel)." }
     } catch {
         Handle-Error -Context 'Setting TCP autotuning level' -ErrorRecord $_
     }
