@@ -289,10 +289,6 @@ do {
         '0' { break }
     }
 
-    if ($choice -ne '0') {
-        Write-Host ""
-        Read-Host "Press Enter to return to the menu"
-    }
 } while ($choice -ne '0')
 
 $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
