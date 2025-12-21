@@ -322,6 +322,21 @@ function Enable-RSS {
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     foreach ($adapter in $adapters) {
         try {
+            $rssData = Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetAdapterRssSettingData' -Filter "Name='$($adapter.Name)'" -ErrorAction SilentlyContinue
+        } catch {
+            Handle-Error -Context "Checking RSS support on $($adapter.Name)" -ErrorRecord $_
+            continue
+        }
+
+        if (-not $rssData) {
+            Write-Host "  [i] RSS not supported/configurable for adapter '$($adapter.Name)'. Skipping RSS tweak." -ForegroundColor DarkGray
+            if ($logger) {
+                Write-Log "[Network] RSS not supported/configurable for adapter '$($adapter.Name)'." -Level 'Warning'
+            }
+            continue
+        }
+
+        try {
             Enable-NetAdapterRss -Name $adapter.Name -ErrorAction Stop | Out-Null
             Write-Host "  [+] RSS enabled on $($adapter.Name)." -ForegroundColor Green
             if ($logger) {
@@ -407,9 +422,11 @@ function Invoke-NetworkTweaksGaming {
     }
 
     if (Ask-YesNo "Queres habilitar MSI Mode para tu placa de red (NIC)? Recomendado en hardware moderno. Nota: si ya aplicaste MSI Mode para la NIC desde otra opcion, no hace falta repetirlo." 'n') {
-        Enable-MsiModeSafe -Target 'NIC'
-        if ($logger) {
+        $msiResult = Enable-MsiModeSafe -Target 'NIC'
+        if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {
             Write-Log "[Network] MSI Mode enabled for NIC via gaming profile."
+        } elseif ($logger) {
+            Write-Log "[Network] MSI Mode for NIC already enabled or not applicable." -Level 'Info'
         }
     } else {
         Write-Host "  [ ] MSI Mode for NIC skipped." -ForegroundColor Gray
@@ -417,21 +434,30 @@ function Invoke-NetworkTweaksGaming {
 
     if (Ask-YesNo "Queres aplicar tambien tweaks TCP avanzados (Chimney Offload / DCA)? Son experimentales y pueden causar inestabilidad en hardware viejo o drivers raros." 'n') {
         try {
-            netsh int tcp set global chimney=disabled | Out-Null
-            Write-Host "  [+] TCP Chimney Offload disabled." -ForegroundColor Green
-            if ($logger) {
-                Write-Log "[Network] TCP Chimney Offload set to disabled."
-            }
+            $safePath = $env:SystemRoot
+            if (-not $safePath) { $safePath = $env:WINDIR }
+            if (-not $safePath) { $safePath = 'C:\Windows' }
 
-            netsh int tcp set global dca=enabled | Out-Null
-            Write-Host "  [+] Direct Cache Access enabled." -ForegroundColor Green
-            if ($logger) {
-                Write-Log "[Network] Direct Cache Access set to enabled."
+            Push-Location -Path $safePath
+            try {
+                netsh int tcp set global chimney=disabled | Out-Null
+                Write-Host "  [+] TCP Chimney Offload disabled." -ForegroundColor Green
+                if ($logger) {
+                    Write-Log "[Network] TCP Chimney Offload set to disabled."
+                }
+
+                netsh int tcp set global dca=enabled | Out-Null
+                Write-Host "  [+] Direct Cache Access enabled." -ForegroundColor Green
+                if ($logger) {
+                    Write-Log "[Network] Direct Cache Access set to enabled."
+                }
+            } finally {
+                Pop-Location -ErrorAction SilentlyContinue
             }
         } catch {
             Write-Host "  [!] No se pudieron aplicar los tweaks Chimney/DCA: $($_.Exception.Message)" -ForegroundColor Yellow
             if ($logger) {
-                Write-Log "[Network] ERROR aplicando Chimney/DCA: $($_.Exception.Message)"
+                Write-Log "[Network] Could not apply Chimney/DCA tweaks: $($_.Exception.Message)" -Level 'Warning'
             }
         }
     } else {
