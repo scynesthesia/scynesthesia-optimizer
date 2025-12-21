@@ -65,6 +65,9 @@ if (Ask-YesNo "Enable session logging to a file? / Habilitar registro de sesion 
 
 # ---------- 4. LOCAL FUNCTIONS ----------
 
+# Description: Displays the application banner with version and active power plan details.
+# Parameters: None.
+# Returns: None.
 function Show-Banner {
     Clear-Host
     $activePlanName = 'Unknown'
@@ -101,6 +104,9 @@ function Show-Banner {
     Write-Host "------------------------------------------------------------`n" -ForegroundColor DarkGray
 }
 
+# Description: Ensures the requested Windows power plan is active.
+# Parameters: Mode - Chooses between Balanced or HighPerformance power plans.
+# Returns: None.
 function Ensure-PowerPlan {
     param([ValidateSet('Balanced','HighPerformance')][string]$Mode = 'HighPerformance')
     Write-Host "  [i] Setting base power plan to: $Mode" -ForegroundColor Gray
@@ -111,6 +117,9 @@ function Ensure-PowerPlan {
     }
 }
 
+# Description: Presents optional safe tweaks and applies selections based on user input.
+# Parameters: None.
+# Returns: None.
 function Invoke-SafeOptionalPrompts {
     Write-Section "Additional options for Safe preset"
     $options = @(
@@ -131,6 +140,9 @@ function Invoke-SafeOptionalPrompts {
 
 # ---------- 5. PRESETS ----------
 
+# Description: Executes the Safe preset workflow focused on stability and baseline performance.
+# Parameters: None.
+# Returns: None. Updates global reboot flag as needed.
 function Run-SafePreset {
     $Status = @{ PackagesFailed = @(); RebootRequired = $false }
     $HWProfile = Get-HardwareProfile
@@ -156,6 +168,9 @@ function Run-SafePreset {
     Write-Host "[+] Safe preset applied. Restart when possible." -ForegroundColor Green
 }
 
+# Description: Executes the Slow PC/Aggressive preset for deeper cleanup and performance tuning.
+# Parameters: None.
+# Returns: None. Updates global reboot flag and failed package list.
 function Run-PCSlowPreset {
     $Status = @{ PackagesFailed = @(); RebootRequired = $false }
     $HWProfile = Get-HardwareProfile
@@ -185,6 +200,9 @@ function Run-PCSlowPreset {
     Write-Host "[+] Slow PC / Aggressive preset applied. Please restart." -ForegroundColor Green
 }
 
+# Description: Presents the interactive menu for network tweak profiles and restoration.
+# Parameters: None.
+# Returns: None. May set global reboot flag when hardcore tweaks run.
 function Show-NetworkTweaksMenu {
     do {
         Write-Section "Network Tweaks"

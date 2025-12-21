@@ -1,5 +1,8 @@
 $script:AppRemovalConfig = $null
 
+# Description: Retrieves a list of applications to remove based on the provided config key.
+# Parameters: Key - The JSON property name to extract from the app removal configuration.
+# Returns: Array of application names corresponding to the requested key.
 function Get-AppRemovalListFromConfig {
     param(
         [Parameter(Mandatory)]
@@ -32,6 +35,9 @@ function Get-AppRemovalListFromConfig {
     return [string[]]$list
 }
 
+# Description: Applies aggressive performance and debloat tweaks for slow PCs.
+# Parameters: HardwareProfile - Detected system characteristics; FailedPackages - Reference to collection of failed removals; OemServices - OEM services to protect.
+# Returns: None. May update failed package list and global reboot flag.
 function Apply-AggressiveTweaks {
     param(
         [Parameter(Mandatory)]

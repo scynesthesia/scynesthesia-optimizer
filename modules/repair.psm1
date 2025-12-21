@@ -1,3 +1,6 @@
+# Description: Performs a basic network repair including DNS flush and IP renewal.
+# Parameters: None.
+# Returns: None. Can set global reboot flag if Winsock reset is run.
 function Invoke-NetworkSoftReset {
     Write-Section "Basic Network Repair"
 
@@ -17,6 +20,9 @@ function Invoke-NetworkSoftReset {
     }
 }
 
+# Description: Runs System File Checker to scan and repair Windows integrity issues.
+# Parameters: None.
+# Returns: None.
 function Invoke-SystemRepair {
     Write-Section "Windows Integrity Check (SFC)"
     Write-Host "This scans for corrupt system files and repairs them automatically." -ForegroundColor Gray

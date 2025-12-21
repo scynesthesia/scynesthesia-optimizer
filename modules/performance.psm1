@@ -1,3 +1,6 @@
+# Description: Collects hardware traits such as battery presence, memory size, and disk types.
+# Parameters: None.
+# Returns: PSCustomObject summarizing laptop status, memory category, and storage mix.
 function Get-HardwareProfile {
     $battery = Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue
     $system = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
@@ -26,12 +29,18 @@ function Get-HardwareProfile {
     }
 }
 
+# Description: Retrieves OEM-related services based on common vendor name patterns.
+# Parameters: None.
+# Returns: Collection of services matching OEM identifiers.
 function Get-OEMServiceInfo {
     $patterns = 'Dell','Alienware','HP','Hewlett','Lenovo','Acer','ASUS','MSI','Samsung','Razer'
     $services = Get-Service | Where-Object { $patterns -contains ($_.DisplayName.Split(' ')[0]) -or $patterns -contains ($_.ServiceName.Split(' ')[0]) }
     $services
 }
 
+# Description: Guides the user to enable or disable SysMain based on detected hardware.
+# Parameters: HardwareProfile - Hardware characteristics influencing default choices.
+# Returns: None.
 function Handle-SysMainPrompt {
     param(
         [Parameter(Mandatory)]
@@ -64,6 +73,9 @@ function Handle-SysMainPrompt {
     }
 }
 
+# Description: Applies baseline performance registry adjustments using hardware context.
+# Parameters: HardwareProfile - Used to select appropriate prefetch and visual effect settings.
+# Returns: None.
 function Apply-PerformanceBaseline {
     param(
         [Parameter(Mandatory)]
@@ -87,6 +99,9 @@ function Apply-PerformanceBaseline {
     Enable-UltimatePerformancePlan
 }
 
+# Description: Ensures the Ultimate Performance power plan GUID is available, duplicating if necessary.
+# Parameters: None.
+# Returns: GUID string for the Ultimate Performance power plan when found or created.
 function Get-UltimatePerformancePlanGuid {
     $ultimateTemplateGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
 
@@ -130,6 +145,9 @@ function Get-UltimatePerformancePlanGuid {
     return $null
 }
 
+# Description: Activates the Ultimate Performance power plan when available.
+# Parameters: None.
+# Returns: None. Writes warnings if activation fails.
 function Enable-UltimatePerformancePlan {
     Write-Section "Enabling Ultimate Performance power plan"
     $guid = Get-UltimatePerformancePlanGuid
@@ -145,6 +163,9 @@ function Enable-UltimatePerformancePlan {
     }
 }
 
+# Description: Creates or updates a registry value with logging and error handling.
+# Parameters: Path, Name, Value, Type, Context, SuccessMessage - specify registry target and log messages.
+# Returns: None.
 function Set-RegistryPerformanceValue {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -168,10 +189,9 @@ function Set-RegistryPerformanceValue {
     }
 }
 
-<#
-.SYNOPSIS
-Disables NTFS Last Access time updates to reduce filesystem overhead.
-#>
+# Description: Disables NTFS Last Access time updates to reduce filesystem overhead.
+# Parameters: None.
+# Returns: None. Writes registry values to control last access behavior.
 function Set-NtfsLastAccessUpdate {
     [CmdletBinding()]
     param()
@@ -185,10 +205,9 @@ function Set-NtfsLastAccessUpdate {
         -SuccessMessage "Set $name to 1 under $path to disable NTFS Last Access updates."
 }
 
-<#
-.SYNOPSIS
-Adjusts menu display delay for the current user to improve responsiveness.
-#>
+# Description: Adjusts menu display delay for the current user to improve responsiveness.
+# Parameters: DelayMs - Desired delay in milliseconds.
+# Returns: None. Updates registry value controlling menu display timing.
 function Set-MenuShowDelay {
     [CmdletBinding()]
     param(
@@ -206,10 +225,9 @@ function Set-MenuShowDelay {
         -SuccessMessage "Set $name to $value under $path to adjust menu display delay."
 }
 
-<#
-.SYNOPSIS
-Disables Windows transparency effects for the current user to reduce GPU overhead.
-#>
+# Description: Disables Windows transparency effects for the current user to reduce GPU overhead.
+# Parameters: None.
+# Returns: None. Sets registry key to turn off transparency effects.
 function Disable-TransparencyEffects {
     [CmdletBinding()]
     param()
@@ -223,10 +241,9 @@ function Disable-TransparencyEffects {
         -SuccessMessage "Set $name to 0 under $path to disable transparency effects."
 }
 
-<#
-.SYNOPSIS
-Forces visual effects to the Best Performance preset for the current user.
-#>
+# Description: Forces visual effects to the Best Performance preset for the current user.
+# Parameters: None.
+# Returns: None. Writes registry setting for visual effects mode.
 function Set-VisualEffectsBestPerformance {
     [CmdletBinding()]
     param()
@@ -240,10 +257,9 @@ function Set-VisualEffectsBestPerformance {
         -SuccessMessage "Set $name to 2 under $path to enforce Best Performance visual effects."
 }
 
-<#
-.SYNOPSIS
-Reduces the service shutdown timeout to speed up system shutdowns.
-#>
+# Description: Reduces the service shutdown timeout to speed up system shutdowns.
+# Parameters: Milliseconds - Target timeout value as a string-compatible integer.
+# Returns: None. Updates registry value controlling service shutdown wait time.
 function Set-WaitToKillServiceTimeout {
     [CmdletBinding()]
     param(
@@ -260,6 +276,9 @@ function Set-WaitToKillServiceTimeout {
         -SuccessMessage "Set $name to $value under $path to reduce service shutdown timeout."
 }
 
+# Description: Applies conservative performance tweaks suitable for most systems.
+# Parameters: None.
+# Returns: None. Calls supporting registry tweak functions.
 function Apply-SafePerformanceTweaks {
     [CmdletBinding()]
     param()
@@ -269,6 +288,9 @@ function Apply-SafePerformanceTweaks {
     Set-MenuShowDelay -DelayMs 20
 }
 
+# Description: Applies more aggressive performance tweaks for low-end systems.
+# Parameters: None.
+# Returns: None. Invokes multiple registry adjustments for responsiveness.
 function Apply-AggressivePerformanceTweaks {
     [CmdletBinding()]
     param()

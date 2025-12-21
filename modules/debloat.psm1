@@ -1,5 +1,8 @@
 $script:AppRemovalConfig = $null
 
+# Description: Retrieves an app removal list from the configuration JSON using the specified key.
+# Parameters: Key - Config property to read; Path - Optional path to the apps configuration file.
+# Returns: Array of app package names; empty array when config missing or invalid.
 function Get-AppRemovalList {
     param(
         [Parameter(Mandatory)]
@@ -38,6 +41,9 @@ function Get-AppRemovalList {
     return [string[]]$list
 }
 
+# Description: Creates a system restore point for rollback safety.
+# Parameters: None.
+# Returns: None.
 function Create-RestorePointSafe {
     Write-Section "Creating restore point"
     try {
@@ -48,6 +54,9 @@ function Create-RestorePointSafe {
     }
 }
 
+# Description: Clears common temporary directories and Windows Update cache.
+# Parameters: None.
+# Returns: None.
 function Clear-TempFiles {
     Write-Section "Clearing basic temporary files"
     $paths = @(
@@ -77,6 +86,9 @@ function Clear-TempFiles {
     }
 }
 
+# Description: Performs deeper cleanup including thumbnail cache removal.
+# Parameters: None.
+# Returns: None.
 function Clear-DeepTempAndThumbs {
     Write-Section "Extra cleanup (temp + thumbnails)"
     Clear-TempFiles
@@ -92,6 +104,9 @@ function Clear-DeepTempAndThumbs {
     }
 }
 
+# Description: Removes common bloatware while preserving core Windows Store functionality.
+# Parameters: AppList - Optional list of packages to remove instead of default SafeRemove list.
+# Returns: PSCustomObject containing any failed package removals.
 function Apply-DebloatSafe {
     param(
         [string[]] $AppList
@@ -125,6 +140,9 @@ function Apply-DebloatSafe {
     }
 }
 
+# Description: Removes a broader set of apps and optionally provisioned packages.
+# Parameters: AppList - Optional list of packages to remove instead of default AggressiveRemove list.
+# Returns: PSCustomObject containing any failed package removals.
 function Apply-DebloatAggressive {
     param(
         [string[]] $AppList

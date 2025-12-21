@@ -1,3 +1,6 @@
+# Description: Adjusts scheduler priorities to favor foreground gaming workloads.
+# Parameters: None.
+# Returns: None. Logs actions when logger available.
 function Optimize-GamingScheduler {
     Write-Section "Process Priority (Gaming)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -20,6 +23,9 @@ function Optimize-GamingScheduler {
 }
 
 
+# Description: Retrieves or creates the custom 'Scynesthesia Gaming Mode' power plan.
+# Parameters: None.
+# Returns: Power plan CIM instance for the gaming profile.
 function Get-OrCreate-GamingPlan {
     $planName = "Scynesthesia Gaming Mode"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -71,6 +77,9 @@ function Get-OrCreate-GamingPlan {
     return $gamingPlan
 }
 
+# Description: Applies high-performance power settings tailored for gaming scenarios.
+# Parameters: None.
+# Returns: None. Activates or updates the gaming power plan.
 function Apply-CustomGamingPowerSettings {
     Write-Section "Power Plan: 'Custom Gaming Tweaks'"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -124,6 +133,9 @@ function Apply-CustomGamingPowerSettings {
         Write-Host "  [ ] Hardcore power tweaks skipped." -ForegroundColor DarkGray
     }
 }
+# Description: Tunes processor scheduling registry settings for lower input latency.
+# Parameters: None.
+# Returns: None. Records changes when logger is present.
 function Optimize-ProcessorScheduling {
     Write-Section "Processor Scheduling (Win32Priority)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
