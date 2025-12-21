@@ -74,8 +74,23 @@ function Set-NetAdapterAdvancedPropertySafe {
             return
         }
 
-        Set-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -DisplayValue $DisplayValue -ErrorAction Stop | Out-Null
-        Write-Host "  [+] $DisplayName set to $DisplayValue on $AdapterName / $DisplayName configurado a $DisplayValue en $AdapterName" -ForegroundColor Green
+        $valuesToTry = @($DisplayValue)
+        if ($DisplayName -eq 'Transmit Buffers') {
+            $fallbackDefault = if ($property.DefaultDisplayValue) { $property.DefaultDisplayValue } else { $property.DisplayValue }
+            $valuesToTry = @('4096', '128', $fallbackDefault) | Where-Object { $_ }
+        }
+
+        foreach ($value in $valuesToTry) {
+            try {
+                Set-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -DisplayValue $value -ErrorAction Stop | Out-Null
+                Write-Host "  [+] $DisplayName set to $value on $AdapterName / $DisplayName configurado a $value en $AdapterName" -ForegroundColor Green
+                return
+            } catch {
+                Write-Host "  [!] Failed to set $DisplayName to $value on $AdapterName; trying fallback. / Falló configurar $DisplayName a $value en $AdapterName; probando alternativa." -ForegroundColor Yellow
+            }
+        }
+
+        Write-Host "  [!] Unable to set $DisplayName on $AdapterName after fallbacks. / No se pudo configurar $DisplayName en $AdapterName tras alternativas." -ForegroundColor Yellow
     } catch {
         Handle-Error -Context "Setting $DisplayName on $AdapterName" -ErrorRecord $_
     }
@@ -87,9 +102,11 @@ function Test-MtuSize {
         [string]$Target = '1.1.1.1'
     )
     try {
-        $pingResult = ping -f -l $PayloadSize -n 1 $Target 2>&1
-        $success = $pingResult -notmatch 'frag' -and $pingResult -match 'TTL='
-        return $success
+        $cmd = "ping -n 1 -w 1500 -f -l $PayloadSize $Target"
+        $pingResult = & cmd.exe /c $cmd 2>&1
+        $successExit = $LASTEXITCODE -eq 0
+        $successTtl = $pingResult -match '(?i)ttl='
+        return ($successExit -and $successTtl)
     } catch {
         Handle-Error -Context "Testing MTU payload size $PayloadSize" -ErrorRecord $_
         return $false
@@ -153,7 +170,11 @@ function Get-HardwareAgeYears {
         $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction Stop
         $releaseDate = $bios.ReleaseDate
         if (-not $releaseDate) { return $null }
-        $parsedDate = [Management.ManagementDateTimeConverter]::ToDateTime($releaseDate)
+        try {
+            $parsedDate = [Management.ManagementDateTimeConverter]::ToDateTime($releaseDate)
+        } catch {
+            return $null
+        }
         $years = ((Get-Date) - $parsedDate).TotalDays / 365
         return [int][Math]::Round($years, 0)
     } catch {
@@ -286,9 +307,9 @@ function Invoke-NetworkTweaksHardcore {
     if ($primaryAdapters) {
         foreach ($adapter in $primaryAdapters) {
             try {
-                Set-NetAdapterRss -Name $adapter.Name -Profile ClosestProcessor -ErrorAction Stop | Out-Null
-                Write-Host "  [+] RSS profile set to ClosestProcessor on $($adapter.Name). / Perfil RSS configurado en ClosestProcessor para $($adapter.Name)." -ForegroundColor Green
-                if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to ClosestProcessor on $($adapter.Name). / Perfil RSS configurado en ClosestProcessor para $($adapter.Name)." }
+                Set-NetAdapterRss -Name $adapter.Name -Profile Closest -ErrorAction Stop | Out-Null
+                Write-Host "  [+] RSS profile set to Closest on $($adapter.Name). / Perfil RSS configurado en Closest para $($adapter.Name)." -ForegroundColor Green
+                if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to Closest on $($adapter.Name). / Perfil RSS configurado en Closest para $($adapter.Name)." }
             } catch {
                 Handle-Error -Context "Configuring RSS on $($adapter.Name)" -ErrorRecord $_
             }
@@ -341,7 +362,7 @@ function Invoke-NetworkTweaksHardcore {
 
     $mtu = Find-OptimalMtu
     if ($mtu) {
-        Apply-MtuToAdapters -Mtu $mtu -Adapters $adapters
+        Apply-MtuToAdapters -Mtu $mtu -Adapters @($adapters)
     }
 
     Set-TcpCongestionProvider
