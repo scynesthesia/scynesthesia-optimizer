@@ -192,7 +192,7 @@ function Show-NetworkTweaksMenu {
         Write-Host "2) Aggressive (Privacidad / menos ruido LAN)"
         Write-Host "3) Gaming (Ping bajo / baja latencia)"
         Write-Host "4) Revertir tweaks de red (usar backup)"
-        Write-Host "5) Hardcore (Competitivo / Avanzado)"
+        Write-Host "5) Hardcore (Competitive / Avanzado)"
         Write-Host "6) Volver"
         Write-Host ""
 
@@ -247,16 +247,16 @@ function Show-NetworkTweaksMenu {
                 Read-Host "Presiona Enter para volver al menu de Network Tweaks"
             }
             '5' {
-                & $ensureBackup
-                if (-not (Test-Path $backupFile)) {
-                    Write-Host "  [!] No network backup found; please create one before running Hardcore tweaks. / No se encontró backup de red; por favor crea uno antes de ejecutar los tweaks Hardcore." -ForegroundColor Yellow
-                    Write-Host ""
-                    Read-Host "Press Enter to return to the Network Tweaks menu"
-                    continue
-                }
+                if (Ask-YesNo "Apply Hardcore Network Tweaks (Bufferbloat/MTU)? / ¿Aplicar Tweaks de Red Hardcore (Bufferbloat/MTU)?" 'n') {
+                    if (-not (Test-Path $backupFile)) {
+                        try {
+                            Save-NetworkBackupState
+                        } catch {
+                            Handle-Error -Context "Creating network backup before Hardcore tweaks (Network Tweaks menu)" -ErrorRecord $_
+                        }
+                    }
 
-                if (Ask-YesNo "Apply Hardcore Network Tweaks (may cause brief disconnects due to MTU discovery)? / Aplicar Tweaks de Red Hardcore (pueden causar cortes breves por descubrimiento MTU)?" 'n') {
-                    Write-Host "  [!] Warning: MTU discovery will run and may cause brief network disconnects. / Advertencia: El descubrimiento MTU se ejecutará y puede causar desconexiones breves." -ForegroundColor Yellow
+                    Write-Host "  [!] Warning: MTU discovery will run and may cause brief network disconnects. / Advertencia: El descubrimiento de MTU se ejecutará y puede causar desconexiones breves." -ForegroundColor Yellow
                     try {
                         Invoke-NetworkTweaksHardcore
                         $Global:NeedsReboot = $true
@@ -264,7 +264,7 @@ function Show-NetworkTweaksMenu {
                         Handle-Error -Context "Applying Hardcore Network Tweaks from Network Tweaks menu" -ErrorRecord $_
                     }
                 } else {
-                    Write-Host "[ ] Hardcore Network Tweaks skipped." -ForegroundColor Gray
+                    Write-Host "[ ] Hardcore Network Tweaks skipped. / [ ] Tweaks de Red Hardcore omitidos." -ForegroundColor Gray
                 }
                 Write-Host ""
                 Read-Host "Press Enter to return to the Network Tweaks menu"
@@ -309,7 +309,7 @@ do {
             Write-Host "[+] Gaming tweaks applied." -ForegroundColor Magenta
 
             $backupFile = "C:\ProgramData\Scynesthesia\network_backup.json"
-            if (Ask-YesNo "Apply Hardcore Network Tweaks for competitive gaming (may run MTU discovery)? / ¿Aplicar Tweaks de Red Hardcore para gaming competitivo (puede ejecutar descubrimiento MTU)?" 'n') {
+            if (Ask-YesNo "Apply Hardcore Network Tweaks (Bufferbloat/MTU)? / ¿Aplicar Tweaks de Red Hardcore (Bufferbloat/MTU)?" 'n') {
                 if (-not (Test-Path $backupFile)) {
                     try {
                         Save-NetworkBackupState
@@ -318,7 +318,7 @@ do {
                     }
                 }
 
-                Write-Host "  [!] Warning: MTU discovery will run and may cause brief network disconnects. / Advertencia: El descubrimiento MTU se ejecutará y puede causar desconexiones breves." -ForegroundColor Yellow
+                Write-Host "  [!] Warning: MTU discovery will run and may cause brief network disconnects. / Advertencia: El descubrimiento de MTU se ejecutará y puede causar desconexiones breves." -ForegroundColor Yellow
                 try {
                     Invoke-NetworkTweaksHardcore
                     $Global:NeedsReboot = $true
@@ -326,7 +326,7 @@ do {
                     Handle-Error -Context "Applying Hardcore Network Tweaks from Gaming preset" -ErrorRecord $_
                 }
             } else {
-                Write-Host "  [ ] Hardcore Network Tweaks skipped." -ForegroundColor DarkGray
+                Write-Host "  [ ] Hardcore Network Tweaks skipped. / [ ] Tweaks de Red Hardcore omitidos." -ForegroundColor DarkGray
             }
         }
         '4' {
