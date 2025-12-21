@@ -41,12 +41,15 @@ function Ask-YesNo {
         [string]$Default = 'n'
     )
 
-    $defaultText = if ($Default -match '^[yY]$') { '[Y/n]' } else { '[y/N]' }
+    $defaultNormalized = if ([string]::IsNullOrWhiteSpace($Default)) { 'n' } else { [string]$Default }
+    $defaultText = if ($defaultNormalized.ToLowerInvariant() -eq 'y' -or $defaultNormalized.ToLowerInvariant() -eq 'yes') { '[Y/n]' } else { '[y/N]' }
+
     while ($true) {
         $resp = Read-Host "$Question $defaultText"
-        if ([string]::IsNullOrWhiteSpace($resp)) { $resp = $Default }
+        if ([string]::IsNullOrWhiteSpace($resp)) { $resp = $defaultNormalized }
 
-        switch ($resp.ToLower()) {
+        $resp = [string]$resp
+        switch ($resp.ToLowerInvariant()) {
             { $_ -in 'y', 'yes' } { return $true }
             { $_ -in 'n', 'no' } { return $false }
             default { Write-Host "  [!] Invalid option. Please respond with y or n." -ForegroundColor Yellow }

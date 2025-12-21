@@ -67,9 +67,16 @@ if (Ask-YesNo "Enable session logging to a file? / Habilitar registro de sesion 
 
 function Show-Banner {
     Clear-Host
+    $activePlanName = 'Unknown'
+    try {
+        $activePlanOutput = powercfg -getactivescheme 2>$null
+        if ($activePlanOutput -match '\((.+)\)') {
+            $activePlanName = $Matches[1].Trim()
+        }
+    } catch { }
     $banner = @'
 
- _____                                                                _____ 
+ _____                                                                _____
 ( ___ )--------------------------------------------------------------( ___ )
  |   |                                                                |   | 
  |   |                                  _   _               _         |   | 
@@ -90,7 +97,7 @@ function Show-Banner {
     Write-Host $banner -ForegroundColor Magenta
     Write-Host " Scynesthesia Windows Optimizer v1.0" -ForegroundColor Green
     Write-Host " Preset 1: Safe | Preset 2: Slow PC / Aggressive" -ForegroundColor Gray
-    Write-Host " Base power plan: High performance" -ForegroundColor Yellow
+    Write-Host " Active power plan: $activePlanName" -ForegroundColor Yellow
     Write-Host "------------------------------------------------------------`n" -ForegroundColor DarkGray
 }
 
@@ -98,7 +105,7 @@ function Ensure-PowerPlan {
     param([ValidateSet('Balanced','HighPerformance')][string]$Mode = 'HighPerformance')
     Write-Host "  [i] Setting base power plan to: $Mode" -ForegroundColor Gray
     if ($Mode -eq 'HighPerformance') {
-        powercfg /setactive SCHEME_MIN
+        powercfg /setactive SCHEME_MAX
     } else {
         powercfg /setactive SCHEME_BALANCED
     }
@@ -113,7 +120,7 @@ function Invoke-SafeOptionalPrompts {
     )
     foreach ($opt in $options) {
         $label = "$($opt.Key) $($opt.Description)"
-        if (Ask-YesNo $label -Default $false) {
+        if (Ask-YesNo $label -Default 'n') {
             & $opt.Action
             Write-Host "[OK] $($opt.Description) applied." -ForegroundColor Green
         } else {
@@ -144,10 +151,7 @@ function Run-SafePreset {
     Apply-SafePerformanceTweaks
     Ensure-PowerPlan -Mode 'HighPerformance'
 
-    $Status.RebootRequired = $true
-    if ($Status.RebootRequired) {
-        $Global:NeedsReboot = $true
-    }
+    $Status.RebootRequired = $Global:NeedsReboot
     Write-OutcomeSummary -Status $Status
     Write-Host "[+] Safe preset applied. Restart when possible." -ForegroundColor Green
 }
@@ -176,10 +180,7 @@ function Run-PCSlowPreset {
     Apply-AggressivePerformanceTweaks
     Apply-AggressiveTweaks -HardwareProfile $HWProfile -FailedPackages ([ref]$Status.PackagesFailed) -OemServices $OemServices
 
-    $Status.RebootRequired = $true
-    if ($Status.RebootRequired) {
-        $Global:NeedsReboot = $true
-    }
+    $Status.RebootRequired = $Global:NeedsReboot
     Write-OutcomeSummary -Status $Status
     Write-Host "[+] Slow PC / Aggressive preset applied. Please restart." -ForegroundColor Green
 }
@@ -232,6 +233,9 @@ function Show-NetworkTweaksMenu {
                     Invoke-NetworkTweaksGaming
                 } else {
                     Write-Host "[ ] Gaming Network Tweaks skipped." -ForegroundColor Gray
+                }
+                if ($Global:NeedsReboot) {
+                    Write-Host "  [i] Some network/gaming changes will require a reboot. You will be prompted before exiting." -ForegroundColor Yellow
                 }
                 Write-Host ""
                 Read-Host "Press Enter to return to the Network Tweaks menu"

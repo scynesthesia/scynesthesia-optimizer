@@ -8,30 +8,35 @@ function Enable-MsiModeSafe {
     Write-Host "WARNING: Only compatible devices will be touched. Reboot required." -ForegroundColor Yellow
 
     $targetMap = @{
-        'GPU'     = @{ Classes = @('{4d36e968-e325-11ce-bfc1-08002be10318}'); Description = 'GPU/Display adapters' }
-        'NIC'     = @{ Classes = @('{4d36e972-e325-11ce-bfc1-08002be10318}'); Description = 'Network adapters' }
-        'STORAGE' = @{ Classes = @('{4d36e97b-e325-11ce-bfc1-08002be10318}', '{4d36e96a-e325-11ce-bfc1-08002be10318}'); Description = 'Storage controllers' }
+        'GPU'     = @{ Classes = @('Display'); ClassGuids = @('{4d36e968-e325-11ce-bfc1-08002be10318}'); Description = 'GPU/Display adapters' }
+        'NIC'     = @{ Classes = @('Net'); ClassGuids = @('{4d36e972-e325-11ce-bfc1-08002be10318}'); Description = 'Network adapters' }
+        'STORAGE' = @{ Classes = @('SCSIAdapter','HDC'); ClassGuids = @('{4d36e97b-e325-11ce-bfc1-08002be10318}', '{4d36e96a-e325-11ce-bfc1-08002be10318}'); Description = 'Storage controllers' }
     }
 
     $normalizedTargets = $Target | ForEach-Object { $_.ToUpperInvariant() } | Select-Object -Unique
-    $classGuids = @()
+    $classQueries = @()
     foreach ($t in $normalizedTargets) {
         if ($targetMap.ContainsKey($t)) {
-            $classGuids += $targetMap[$t].Classes
+            foreach ($className in $targetMap[$t].Classes) {
+                $classQueries += [pscustomobject]@{ Class = $className; ClassGuids = $targetMap[$t].ClassGuids }
+            }
             Write-Host "  [>] Targeting: $($targetMap[$t].Description)" -ForegroundColor Gray
         } else {
             Write-Host "  [!] Unknown target '$t'. Skipping." -ForegroundColor Yellow
         }
     }
 
-    if (-not $classGuids) {
+    if (-not $classQueries) {
         Write-Host "  [!] No valid targets supplied for MSI Mode." -ForegroundColor Yellow
         return
     }
 
     $touched = 0
-    foreach ($classGuid in ($classGuids | Select-Object -Unique)) {
-        $devices = Get-PnpDevice -Class $classGuid -Status OK -ErrorAction SilentlyContinue
+    foreach ($query in ($classQueries | Sort-Object Class -Unique)) {
+        $devices = Get-PnpDevice -Class $query.Class -Status OK -ErrorAction SilentlyContinue
+        if ($devices -and $query.ClassGuids) {
+            $devices = $devices | Where-Object { $query.ClassGuids -contains $_.ClassGuid }
+        }
         foreach ($dev in $devices) {
             try {
                 $regPath = "HKLM\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
