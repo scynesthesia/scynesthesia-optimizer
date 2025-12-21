@@ -260,6 +260,8 @@ function Set-NicRegistryHardcore {
             '*EEE'                     = '0'
             '*WakeOnMagicPacket'       = '0'
             '*WakeOnPattern'           = '0'
+            'AllowIdleIrp'             = '0'
+            'DeepSleepMode'            = '0'
             'EEELinkAdvertisement'     = '0'
             'EnableGreenEthernet'      = '0'
             'EnablePowerManagement'    = '0'
@@ -287,6 +289,12 @@ function Set-NicRegistryHardcore {
         foreach ($item in $nicPaths) {
             $adapterName = $item.Adapter.Name
             Write-Host "  [>] Applying registry tweaks to $adapterName / Aplicando ajustes de registro a $adapterName" -ForegroundColor Cyan
+            try {
+                Set-RegistryValueSafe -Path $item.Path -Name 'PnPCapabilities' -Value 24 -Type DWord
+                Write-Host "    [+] PnPCapabilities set to 24 (power management disabled) / PnPCapabilities configurado a 24 (gestión de energía deshabilitada)" -ForegroundColor Green
+            } catch {
+                Handle-Error -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
+            }
             foreach ($entry in $powerOffload.GetEnumerator()) {
                 try {
                     Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type String
@@ -311,26 +319,17 @@ function Set-NicRegistryHardcore {
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TCPNoDelay' -Value 1 -Type DWord
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TcpDelAckTicks' -Value 0 -Type DWord
                 Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0) / Parámetros Nagle configurados (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
-
-                foreach ($entry in $powerOffload.GetEnumerator()) {
-                    try {
-                        Set-RegistryValueSafe -Path $interfacePath -Name $entry.Key -Value $entry.Value -Type String
-                        Write-Host "    [+] $($entry.Key) synced in interface parameters / $($entry.Key) sincronizado en parámetros de interfaz" -ForegroundColor Green
-                    } catch {
-                        Handle-Error -Context "Syncing $($entry.Key) for $adapterName in interface parameters" -ErrorRecord $_
-                    }
-                }
-
-                foreach ($entry in $interruptDelays.GetEnumerator()) {
-                    try {
-                        Set-RegistryValueSafe -Path $interfacePath -Name $entry.Key -Value $entry.Value -Type String
-                        Write-Host "    [+] $($entry.Key) synced in interface parameters / $($entry.Key) sincronizado en parámetros de interfaz" -ForegroundColor Green
-                    } catch {
-                        Handle-Error -Context "Syncing $($entry.Key) for $adapterName in interface parameters" -ErrorRecord $_
-                    }
-                }
             } catch {
                 Handle-Error -Context "Setting Nagle parameters for $adapterName" -ErrorRecord $_
+            }
+
+            try {
+                Disable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
+                Start-Sleep -Seconds 2
+                Enable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
+                Write-Host "    [+] Adapter reset to reload driver settings / Adaptador reiniciado para recargar configuraciones del controlador" -ForegroundColor Green
+            } catch {
+                Handle-Error -Context "Resetting adapter $adapterName" -ErrorRecord $_
             }
         }
 
