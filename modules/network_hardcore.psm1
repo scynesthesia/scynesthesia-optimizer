@@ -258,6 +258,8 @@ function Set-NicRegistryHardcore {
             'AutoPowerSaveModeEnabled' = '0'
             'AdvancedEEE'              = '0'
             '*EEE'                     = '0'
+            '*WakeOnMagicPacket'       = '0'
+            '*WakeOnPattern'           = '0'
             'EEELinkAdvertisement'     = '0'
             'EnableGreenEthernet'      = '0'
             'EnablePowerManagement'    = '0'
@@ -270,6 +272,9 @@ function Set-NicRegistryHardcore {
             'ULPMode'                  = '0'
             'ShutdownWakeOnLan'        = '0'
             'WakeOnLink'               = '0'
+            'WakeOnMagicPacket'        = '0'
+            'WakeOnPatternMatch'       = '0'
+            'WolShutdownLinkSpeed'     = '0'
         }
 
         $interruptDelays = @{
@@ -306,12 +311,31 @@ function Set-NicRegistryHardcore {
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TCPNoDelay' -Value 1 -Type DWord
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TcpDelAckTicks' -Value 0 -Type DWord
                 Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0) / Parámetros Nagle configurados (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
+
+                foreach ($entry in $powerOffload.GetEnumerator()) {
+                    try {
+                        Set-RegistryValueSafe -Path $interfacePath -Name $entry.Key -Value $entry.Value -Type String
+                        Write-Host "    [+] $($entry.Key) synced in interface parameters / $($entry.Key) sincronizado en parámetros de interfaz" -ForegroundColor Green
+                    } catch {
+                        Handle-Error -Context "Syncing $($entry.Key) for $adapterName in interface parameters" -ErrorRecord $_
+                    }
+                }
+
+                foreach ($entry in $interruptDelays.GetEnumerator()) {
+                    try {
+                        Set-RegistryValueSafe -Path $interfacePath -Name $entry.Key -Value $entry.Value -Type String
+                        Write-Host "    [+] $($entry.Key) synced in interface parameters / $($entry.Key) sincronizado en parámetros de interfaz" -ForegroundColor Green
+                    } catch {
+                        Handle-Error -Context "Syncing $($entry.Key) for $adapterName in interface parameters" -ErrorRecord $_
+                    }
+                }
             } catch {
                 Handle-Error -Context "Setting Nagle parameters for $adapterName" -ErrorRecord $_
             }
         }
 
         $Global:NeedsReboot = $true
+        Write-Host "  [i] Some Device Manager changes may require a full reboot to reflect visually. / [i] Algunos cambios en el Administrador de dispositivos pueden requerir un reinicio completo para reflejarse visualmente." -ForegroundColor Gray
     } catch {
         Handle-Error -Context 'Applying NIC-specific registry tweaks' -ErrorRecord $_
     }
