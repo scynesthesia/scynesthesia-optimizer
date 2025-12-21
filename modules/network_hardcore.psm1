@@ -262,6 +262,8 @@ function Set-NicRegistryHardcore {
             'DeepSleepMode'        = '0'
             'EEE'                  = '0'
             'EnableGreenEthernet'  = '0'
+            'GigaLite'             = '0'
+            'NicAutoPowerSaver'    = '0'
             'WakeOnMagicPacket'    = '0'
             'WakeOnPatternMatch'   = '0'
             'WolShutdownLinkSpeed' = '0'
@@ -320,8 +322,16 @@ function Set-NicRegistryHardcore {
             }
 
             try {
+                & cmd.exe /c 'netsh int ip reset' 2>&1 | Out-Null
+                & cmd.exe /c 'netsh winsock reset' 2>&1 | Out-Null
+                Write-Host "    [+] Network stack cache cleared (IP/Winsock reset) / Caché de pila de red borrada (reinicio IP/Winsock)" -ForegroundColor Green
+            } catch {
+                Handle-Error -Context "Resetting network stack for $adapterName" -ErrorRecord $_
+            }
+
+            try {
                 Disable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
-                Start-Sleep -Seconds 2
+                Start-Sleep -Seconds 3
                 Enable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
                 Write-Host "    [+] Adapter reset to reload driver settings / Adaptador reiniciado para recargar configuraciones del controlador" -ForegroundColor Green
             } catch {
