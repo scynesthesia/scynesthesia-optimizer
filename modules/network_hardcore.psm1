@@ -31,7 +31,7 @@ function Set-NetAdapterAdvancedPropertySafe {
     )
     try {
         Set-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -DisplayValue $DisplayValue -ErrorAction Stop | Out-Null
-        Write-Host "  [+] $DisplayName set to $DisplayValue on $AdapterName" -ForegroundColor Green
+        Write-Host "  [+] $DisplayName set to $DisplayValue on $AdapterName / $DisplayName configurado a $DisplayValue en $AdapterName" -ForegroundColor Green
     } catch {
         Handle-Error -Context "Setting $DisplayName on $AdapterName" -ErrorRecord $_
     }
@@ -72,7 +72,7 @@ function Find-OptimalMtu {
         }
 
         $mtu = $best + 28
-        Write-Host "  [+] Optimal MTU discovered: $mtu bytes" -ForegroundColor Green
+        Write-Host "  [+] Optimal MTU discovered: $mtu bytes / MTU óptimo encontrado: $mtu bytes" -ForegroundColor Green
         return $mtu
     } catch {
         Handle-Error -Context 'Discovering optimal MTU' -ErrorRecord $_
@@ -88,7 +88,7 @@ function Apply-MtuToAdapters {
     foreach ($adapter in $Adapters) {
         try {
             Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu $Mtu -AddressFamily IPv4 -ErrorAction Stop | Out-Null
-            Write-Host "  [+] MTU $Mtu applied to $($adapter.Name) (IPv4)." -ForegroundColor Green
+            Write-Host "  [+] MTU $Mtu applied to $($adapter.Name) (IPv4) / MTU $Mtu aplicado a $($adapter.Name) (IPv4)." -ForegroundColor Green
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
                 Write-Log "[NetworkHardcore] MTU set to $Mtu on $($adapter.Name) (IPv4)."
             }
@@ -117,7 +117,7 @@ function Suggest-NetworkIrqCores {
         $logical = [Environment]::ProcessorCount
         $half = [int][Math]::Ceiling($logical / 2)
         $range = "0-$(if ($half -gt 0) { $half - 1 } else { 0 })"
-        Write-Host "  [i] Suggestion: Pin network IRQs to early cores (e.g., $range) for lowest latency." -ForegroundColor Cyan
+        Write-Host "  [i] Suggestion: Pin network IRQs to early cores (e.g., $range) for lowest latency. / Sugerencia: Fijar las IRQ de red a los primeros núcleos (ej. $range) para menor latencia." -ForegroundColor Cyan
     } catch {
         Handle-Error -Context 'Suggesting IRQ core distribution' -ErrorRecord $_
     }
@@ -127,7 +127,7 @@ function Set-TcpCongestionProvider {
     try {
         $osVersion = [System.Environment]::OSVersion.Version
         if ($osVersion.Major -lt 10) {
-            Write-Host "  [!] Modern congestion control not supported on this OS." -ForegroundColor Yellow
+            Write-Host "  [!] Modern congestion control not supported on this OS. / Control de congestión moderno no soportado en este sistema." -ForegroundColor Yellow
             return
         }
 
@@ -143,10 +143,10 @@ function Set-TcpCongestionProvider {
             $bbrAvailable = $supplemental -match '(?i)bbr'
         }
 
-        if ($bbrAvailable -and Ask-YesNo "Enable experimental BBR congestion control?" 'n') {
+        if ($bbrAvailable -and Ask-YesNo "Enable experimental BBR congestion control? / ¿Habilitar control de congestión BBR experimental?" 'n') {
             try {
                 netsh int tcp set global congestionprovider=bbr | Out-Null
-                Write-Host "  [+] TCP congestion provider set to BBR." -ForegroundColor Green
+                Write-Host "  [+] TCP congestion provider set to BBR. / Proveedor de congestión TCP configurado a BBR." -ForegroundColor Green
                 if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] TCP congestion provider set to BBR." }
                 return
             } catch {
@@ -156,7 +156,7 @@ function Set-TcpCongestionProvider {
 
         try {
             netsh int tcp set global congestionprovider=cubic | Out-Null
-            Write-Host "  [+] TCP congestion provider set to CUBIC." -ForegroundColor Green
+            Write-Host "  [+] TCP congestion provider set to CUBIC. / Proveedor de congestión TCP configurado a CUBIC." -ForegroundColor Green
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] TCP congestion provider set to CUBIC." }
         } catch {
             Handle-Error -Context 'Setting TCP congestion provider to CUBIC' -ErrorRecord $_
@@ -167,28 +167,29 @@ function Set-TcpCongestionProvider {
 }
 
 function Invoke-NetworkTweaksHardcore {
-    Write-Section "Network Tweaks: Hardcore (Competitive Gaming)"
+    Write-Section "Network Tweaks: Hardcore (Competitive Gaming) / Tweaks de Red: Hardcore (Gaming Competitivo)"
+    Write-Host "  [!] Warning: MTU discovery and adapter resets may cause brief network drops. / Advertencia: El descubrimiento MTU y los reinicios de adaptador pueden causar caídas temporales." -ForegroundColor Yellow
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
     $adapters = Get-EligibleNetAdapters
     if ($adapters.Count -eq 0) {
-        Write-Host "  [!] No active physical adapters detected." -ForegroundColor Yellow
+        Write-Host "  [!] No active physical adapters detected. / No se detectaron adaptadores físicos activos." -ForegroundColor Yellow
         return
     }
 
     $primary = Get-PrimaryNetAdapter
     if (-not $primary) {
-        Write-Host "  [!] Unable to determine primary adapter; using all adapters for tweaks." -ForegroundColor Yellow
+        Write-Host "  [!] Unable to determine primary adapter; using all adapters for tweaks. / No se pudo determinar el adaptador primario; se usarán todos los adaptadores para los tweaks." -ForegroundColor Yellow
         $primaryAdapters = $adapters
     } else {
         $primaryAdapters = @($primary)
-        Write-Host "  [i] Primary adapter detected: $($primary.Name) ($([math]::Round($primary.LinkSpeed/1MB,2)) Mbps)." -ForegroundColor Cyan
+        Write-Host "  [i] Primary adapter detected: $($primary.Name) ($([math]::Round($primary.LinkSpeed/1MB,2)) Mbps). / Adaptador primario detectado: $($primary.Name) ($([math]::Round($primary.LinkSpeed/1MB,2)) Mbps)." -ForegroundColor Cyan
     }
 
     foreach ($adapter in $adapters) {
         try {
             Disable-NetAdapterRsc -Name $adapter.Name -ErrorAction Stop | Out-Null
-            Write-Host "  [+] RSC disabled on $($adapter.Name)." -ForegroundColor Green
+            Write-Host "  [+] RSC disabled on $($adapter.Name). / RSC deshabilitado en $($adapter.Name)." -ForegroundColor Green
             if ($logger) { Write-Log "[NetworkHardcore] Disabled RSC on $($adapter.Name)." }
         } catch {
             Handle-Error -Context "Disabling RSC on $($adapter.Name)" -ErrorRecord $_
@@ -212,7 +213,7 @@ function Invoke-NetworkTweaksHardcore {
         foreach ($adapter in $primaryAdapters) {
             try {
                 Set-NetAdapterRss -Name $adapter.Name -Profile ClosestProcessor -ErrorAction Stop | Out-Null
-                Write-Host "  [+] RSS profile set to ClosestProcessor on $($adapter.Name)." -ForegroundColor Green
+                Write-Host "  [+] RSS profile set to ClosestProcessor on $($adapter.Name). / Perfil RSS configurado en ClosestProcessor para $($adapter.Name)." -ForegroundColor Green
                 if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to ClosestProcessor on $($adapter.Name)." }
             } catch {
                 Handle-Error -Context "Configuring RSS on $($adapter.Name)" -ErrorRecord $_
@@ -224,7 +225,7 @@ function Invoke-NetworkTweaksHardcore {
 
     try {
         netsh int tcp set global ecncapability=disabled | Out-Null
-        Write-Host "  [+] ECN capability disabled." -ForegroundColor Green
+        Write-Host "  [+] ECN capability disabled. / Capacidad ECN deshabilitada." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] ECN capability disabled." }
     } catch {
         Handle-Error -Context 'Disabling ECN capability' -ErrorRecord $_
@@ -232,7 +233,7 @@ function Invoke-NetworkTweaksHardcore {
 
     try {
         netsh int tcp set global timestamps=disabled | Out-Null
-        Write-Host "  [+] TCP timestamps disabled." -ForegroundColor Green
+        Write-Host "  [+] TCP timestamps disabled. / Timestamps TCP deshabilitados." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] TCP timestamps disabled." }
     } catch {
         Handle-Error -Context 'Disabling TCP timestamps' -ErrorRecord $_
@@ -240,7 +241,7 @@ function Invoke-NetworkTweaksHardcore {
 
     try {
         netsh int tcp set global initialrto=2000 | Out-Null
-        Write-Host "  [+] Initial RTO set to 2000ms." -ForegroundColor Green
+        Write-Host "  [+] Initial RTO set to 2000ms. / RTO inicial configurado a 2000ms." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] InitialRTO set to 2000ms." }
     } catch {
         Handle-Error -Context 'Setting InitialRTO' -ErrorRecord $_
@@ -250,7 +251,7 @@ function Invoke-NetworkTweaksHardcore {
     $autotuneLevel = if ($ageYears -and $ageYears -gt 6) { 'highlyrestricted' } else { 'disabled' }
     try {
         netsh int tcp set global autotuninglevel=$autotuneLevel | Out-Null
-        Write-Host "  [+] Network autotuning set to $autotuneLevel." -ForegroundColor Green
+        Write-Host "  [+] Network autotuning set to $autotuneLevel. / Autotuning de red configurado a $autotuneLevel." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] Autotuning level set to $autotuneLevel (hardware age: $ageYears years)." }
     } catch {
         Handle-Error -Context 'Setting TCP autotuning level' -ErrorRecord $_
@@ -263,7 +264,8 @@ function Invoke-NetworkTweaksHardcore {
 
     Set-TcpCongestionProvider
 
-    Write-Host "  [+] Hardcore network tweaks complete." -ForegroundColor Green
+    Write-Host "  [+] Hardcore network tweaks complete. / Tweaks de red hardcore completados." -ForegroundColor Green
+    $Global:NeedsReboot = $true
 }
 
 Export-ModuleMember -Function Invoke-NetworkTweaksHardcore
