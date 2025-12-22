@@ -562,12 +562,12 @@ function Find-OptimalMtu {
         if (-not $success) {
             $fallbackMtu = 1500
             Write-Host "  [!] No successful MTU probe responses. Using safe default $fallbackMtu / [!] Sin respuestas exitosas a las pruebas MTU. Se usa el valor seguro $fallbackMtu" -ForegroundColor Yellow
-            return $fallbackMtu
+            return [pscustomobject]@{ Mtu = $fallbackMtu; WasFallback = $true }
         }
 
         $mtu = $best + 28
         Write-Host "  [+] Optimal MTU discovered: $mtu bytes / MTU óptimo encontrado: $mtu bytes" -ForegroundColor Green
-        return $mtu
+        return [pscustomobject]@{ Mtu = $mtu; WasFallback = $false }
     } catch {
         Handle-Error -Context 'Discovering optimal MTU' -ErrorRecord $_
         return $null
@@ -819,9 +819,12 @@ function Invoke-NetworkTweaksHardcore {
         Handle-Error -Context 'Setting TCP autotuning level' -ErrorRecord $_
     }
 
-    $mtu = Find-OptimalMtu
-    if ($mtu) {
-        Apply-MtuToAdapters -Mtu $mtu -Adapters @($adapters)
+    $mtuResult = Find-OptimalMtu
+    if ($mtuResult -and $mtuResult.Mtu) {
+        if ($mtuResult.WasFallback) {
+            Write-Host "  [ ] Applying safe MTU fallback of $($mtuResult.Mtu) to avoid fragmentation issues. / [ ] Aplicando MTU de respaldo seguro de $($mtuResult.Mtu) para evitar problemas de fragmentación." -ForegroundColor Gray
+        }
+        Apply-MtuToAdapters -Mtu $mtuResult.Mtu -Adapters @($adapters)
     }
 
     Set-TcpCongestionProvider

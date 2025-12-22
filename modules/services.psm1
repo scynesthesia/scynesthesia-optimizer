@@ -84,14 +84,17 @@ function Optimize-DriverTelemetry {
     [CmdletBinding()]
     param()
 
-    Write-Section "Driver telemetry cleanup / Limpieza de telemetria de drivers"
+    Write-Section "Driver telemetry cleanup / Limpieza de telemetría de drivers"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
     $nvidiaServices = @('NvTelemetryContainer')
     foreach ($svc in $nvidiaServices) {
         if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
             Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
         } else {
-            Write-Host "  [ ] NVIDIA telemetry service not found: $svc / Servicio de telemetria NVIDIA no encontrado: $svc" -ForegroundColor DarkGray
+            $message = "[Services] NVIDIA telemetry service not found: $svc / Servicio de telemetría NVIDIA no encontrado: $svc"
+            Write-Host "  [ ] $message" -ForegroundColor DarkGray
+            if ($logger) { Write-Log -Message $message -Level 'Warning' }
         }
     }
 
@@ -100,7 +103,9 @@ function Optimize-DriverTelemetry {
         if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
             Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
         } else {
-            Write-Host "  [ ] AMD telemetry service not found: $svc / Servicio de telemetria AMD no encontrado: $svc" -ForegroundColor DarkGray
+            $message = "[Services] AMD telemetry service not found: $svc / Servicio de telemetría AMD no encontrado: $svc"
+            Write-Host "  [ ] $message" -ForegroundColor DarkGray
+            if ($logger) { Write-Log -Message $message -Level 'Warning' }
         }
     }
 }
