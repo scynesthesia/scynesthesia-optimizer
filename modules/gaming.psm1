@@ -6,7 +6,7 @@ function Optimize-GamingScheduler {
     Write-Section "Process Priority (Gaming)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
-    if (Ask-YesNo "Prioritize GPU/CPU for foreground games?" 'y') {
+    if (Get-Confirmation "Prioritize GPU/CPU for foreground games?" 'y') {
         $gamesPath = "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
 
         Set-RegistryValueSafe $gamesPath "GPU Priority" 8
@@ -95,7 +95,7 @@ function Apply-CustomGamingPowerSettings {
 
     Write-Host "Applying adjustments to the 'Scynesthesia Gaming Mode' plan." -ForegroundColor DarkGray
 
-    if (Ask-YesNo "Apply hardcore power tweaks to prioritize FPS?" 'n') {
+    if (Get-Confirmation "Apply hardcore power tweaks to prioritize FPS?" 'n') {
         try {
             $gamingPlan = Get-OrCreate-GamingPlan
             $gamingGuid = ($gamingPlan.InstanceID -split '[{}]')[1]
@@ -132,7 +132,7 @@ function Apply-CustomGamingPowerSettings {
 
             $Global:NeedsReboot = $true
         } catch {
-            Handle-Error -Context "Applying gaming power settings" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Applying gaming power settings" -ErrorRecord $_
         }
     } else {
         Write-Host "  [ ] Hardcore power tweaks skipped." -ForegroundColor DarkGray
@@ -173,7 +173,7 @@ function Set-UsbPowerManagementHardcore {
                 }
             } | Where-Object { $_ }
     } catch {
-        Handle-Error -Context "Enumerating USB hubs" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Enumerating USB hubs" -ErrorRecord $_
         return
     }
 
@@ -192,7 +192,7 @@ function Set-UsbPowerManagementHardcore {
 
             $Global:NeedsReboot = $true
         } catch {
-            Handle-Error -Context "Setting USB power flags on $($hub.Name)" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Setting USB power flags on $($hub.Name)" -ErrorRecord $_
         }
     }
 
@@ -217,7 +217,7 @@ function Optimize-HidLatency {
             Write-Host "  [+] $($entry.Name) set to 100 / $($entry.Name) configurado a 100" -ForegroundColor Green
             if ($logger) { Write-Log "[Gaming] $($entry.Name) set to 100 for HID latency optimization." }
         } catch {
-            Handle-Error -Context "Setting $($entry.Name) for HID latency" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Setting $($entry.Name) for HID latency" -ErrorRecord $_
         }
     }
 
@@ -233,7 +233,7 @@ function Optimize-ProcessorScheduling {
     
     # 0x28 (40 decimal): Short intervals + Fixed Quantum.
     # Better for consistent frametimes in games; not the classic dynamic foreground "boost."
-    if (Ask-YesNo "Apply Fixed Priority Separation (28 Hex) for lower input latency?" 'n') {
+    if (Get-Confirmation "Apply Fixed Priority Separation (28 Hex) for lower input latency?" 'n') {
         Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" "Win32PrioritySeparation" 40
         Write-Host "  [+] Processor scheduling set to 28 Hex (Fixed/Short)." -ForegroundColor Green
         if ($logger) {
@@ -265,7 +265,7 @@ function Set-FsoGlobalOverride {
         $Global:NeedsReboot = $true
         Write-Host "  [!] Reboot required to finalize FSO override / [!] Se requiere reinicio para finalizar la anulación de FSO." -ForegroundColor Yellow
     } catch {
-        Handle-Error -Context "Applying Fullscreen Optimizations global override" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Applying Fullscreen Optimizations global override" -ErrorRecord $_
     }
 }
 

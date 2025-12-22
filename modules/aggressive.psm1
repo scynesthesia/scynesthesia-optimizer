@@ -52,12 +52,12 @@ function Apply-AggressiveTweaks {
 
     if ($HardwareProfile.IsLaptop) {
         Write-Host "  [ ] Laptop detected: hibernation kept to avoid breaking sleep." -ForegroundColor Yellow
-    } elseif (Ask-YesNo "Disable hibernation to free disk space and speed up boot?" 'y') {
+    } elseif (Get-Confirmation "Disable hibernation to free disk space and speed up boot?" 'y') {
         Write-Host "  [+] Disabling hibernation"
         try {
             powercfg -h off
         } catch {
-            Handle-Error -Context "Disabling hibernation" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Disabling hibernation" -ErrorRecord $_
         }
     } else {
         Write-Host "  [ ] Hibernation left unchanged."
@@ -88,7 +88,7 @@ function Apply-AggressiveTweaks {
     }
 
     if (-not $OemServices -or $OemServices.Count -eq 0) {
-        if (Ask-YesNo "Disable Print Spooler if you do not use printers?" 'n') {
+        if (Get-Confirmation "Disable Print Spooler if you do not use printers?" 'n') {
             try {
                 try {
                     Stop-Service -Name "Spooler" -Force -ErrorAction SilentlyContinue
@@ -98,25 +98,25 @@ function Apply-AggressiveTweaks {
                 Set-Service -Name "Spooler" -StartupType Disabled
                 Write-Host "  [+] Print Spooler disabled"
             } catch {
-                Handle-Error -Context "Disabling Print Spooler service" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Disabling Print Spooler service" -ErrorRecord $_
             }
         }
     } else {
         Write-Host "  [ ] Spooler left untouched because OEM services are present."
     }
 
-    if (Ask-YesNo "Block OneDrive from starting automatically?" 'y') {
+    if (Get-Confirmation "Block OneDrive from starting automatically?" 'y') {
         try {
             taskkill /F /IM OneDrive.exe -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "OneDrive" -ErrorAction SilentlyContinue
             Disable-ScheduledTask -TaskPath "\\Microsoft\\OneDrive\\" -TaskName "OneDrive Standalone Update Task-S-1-5-21" -ErrorAction SilentlyContinue | Out-Null
             Write-Host "  [+] OneDrive will not auto-start"
         } catch {
-            Handle-Error -Context "Blocking OneDrive auto-start" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Blocking OneDrive auto-start" -ErrorRecord $_
         }
     }
 
-    if (Ask-YesNo "Disable Consumer Experience tasks (suggested content)?" 'y') {
+    if (Get-Confirmation "Disable Consumer Experience tasks (suggested content)?" 'y') {
         $tasks = @(
             "\\Microsoft\\Windows\\Customer Experience Improvement Program\\Consolidator",
             "\\Microsoft\\Windows\\Customer Experience Improvement Program\\KernelCeipTask",
@@ -128,12 +128,12 @@ function Apply-AggressiveTweaks {
                 schtasks /Change /TN $t /Disable | Out-Null
                 Write-Host "  [+] Task $t disabled"
             } catch {
-                Handle-Error -Context "Disabling scheduled task $t" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Disabling scheduled task $t" -ErrorRecord $_
             }
         }
     }
 
-    if (Ask-YesNo "Do you use Copilot? If not, uninstall it?" 'n') {
+    if (Get-Confirmation "Do you use Copilot? If not, uninstall it?" 'n') {
         $copilotPkgs = @()
         $copilotPkgs += Get-AppxPackage -AllUsers -Name "Microsoft.Copilot" -ErrorAction SilentlyContinue
         $copilotPkgs += Get-AppxPackage -AllUsers -Name "*Copilot*" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*Copilot*' }
@@ -156,7 +156,7 @@ function Apply-AggressiveTweaks {
         Write-Host "  [ ] Copilot stays installed."
     }
 
-    if (Ask-YesNo "Disable auto-start for Microsoft Teams (personal)?" 'y') {
+    if (Get-Confirmation "Disable auto-start for Microsoft Teams (personal)?" 'y') {
         try {
             taskkill /F /IM Teams.exe -ErrorAction SilentlyContinue
         } catch { }
@@ -165,14 +165,14 @@ function Apply-AggressiveTweaks {
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "com.squirrel.Teams.Teams" -ErrorAction SilentlyContinue
             Write-Host "  [+] Auto-start for Teams (personal) disabled"
         } catch {
-            Handle-Error -Context "Disabling Teams auto-start" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Disabling Teams auto-start" -ErrorRecord $_
         }
     }
 
     Clear-DeepTempAndThumbs
 
     Write-Host ""
-    if (Ask-YesNo "Remove OneDrive from this system?" 'n') {
+    if (Get-Confirmation "Remove OneDrive from this system?" 'n') {
         Write-Host "  [+] Attempting to uninstall OneDrive"
         try {
             taskkill /F /IM OneDrive.exe -ErrorAction SilentlyContinue
@@ -184,7 +184,7 @@ function Apply-AggressiveTweaks {
                 & $pathSys /uninstall
             }
         } catch {
-            Handle-Error -Context "Uninstalling OneDrive" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Uninstalling OneDrive" -ErrorRecord $_
         }
     } else {
         Write-Host "  [ ] OneDrive stays installed."

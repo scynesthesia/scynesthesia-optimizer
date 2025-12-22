@@ -11,7 +11,7 @@ function Get-EligibleNetAdapters {
             }
         return $adapters
     } catch {
-        Handle-Error -Context 'Retrieving physical network adapters' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Retrieving physical network adapters' -ErrorRecord $_
         return @()
     }
 }
@@ -44,7 +44,7 @@ function Convert-LinkSpeedToBytes {
             return [int64][double]$LinkSpeed
         }
     } catch {
-        Handle-Error -Context 'Parsing adapter link speed' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Parsing adapter link speed' -ErrorRecord $_
     }
 
     return $null
@@ -70,13 +70,13 @@ function Set-TcpIpAdvancedParameters {
                 Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
                 Write-Host "  [+] $($entry.Key) set to $($entry.Value) in TCP parameters / $($entry.Key) configurado a $($entry.Value) en parámetros TCP." -ForegroundColor Green
             } catch {
-                Handle-Error -Context "Setting $($entry.Key) in TCP parameters" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Setting $($entry.Key) in TCP parameters" -ErrorRecord $_
             }
         }
 
         $Global:NeedsReboot = $true
     } catch {
-        Handle-Error -Context 'Configuring advanced TCP/IP parameters' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Configuring advanced TCP/IP parameters' -ErrorRecord $_
     }
 }
 
@@ -91,10 +91,10 @@ function Set-NetworkThrottlingHardcore {
             Write-Host "  [+] NetworkThrottlingIndex set to maximum performance / NetworkThrottlingIndex configurado para máximo rendimiento." -ForegroundColor Green
             $Global:NeedsReboot = $true
         } catch {
-            Handle-Error -Context 'Setting NetworkThrottlingIndex' -ErrorRecord $_
+            Invoke-ErrorHandler -Context 'Setting NetworkThrottlingIndex' -ErrorRecord $_
         }
     } catch {
-        Handle-Error -Context 'Configuring network throttling' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Configuring network throttling' -ErrorRecord $_
     }
 }
 
@@ -116,13 +116,13 @@ function Set-ServicePriorities {
                 Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
                 Write-Host "  [+] $($entry.Key) set to $($entry.Value) in ServiceProvider / $($entry.Key) configurado a $($entry.Value) en ServiceProvider." -ForegroundColor Green
             } catch {
-                Handle-Error -Context "Setting $($entry.Key) service priority" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Setting $($entry.Key) service priority" -ErrorRecord $_
             }
         }
 
         $Global:NeedsReboot = $true
     } catch {
-        Handle-Error -Context 'Configuring ServiceProvider priorities' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Configuring ServiceProvider priorities' -ErrorRecord $_
     }
 }
 
@@ -142,13 +142,13 @@ function Set-WinsockOptimizations {
                 Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
                 Write-Host "  [+] $($entry.Key) set to $($entry.Value) for Winsock / $($entry.Key) configurado a $($entry.Value) para Winsock." -ForegroundColor Green
             } catch {
-                Handle-Error -Context "Setting Winsock $($entry.Key)" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Setting Winsock $($entry.Key)" -ErrorRecord $_
             }
         }
 
         $Global:NeedsReboot = $true
     } catch {
-        Handle-Error -Context 'Applying Winsock optimizations' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Applying Winsock optimizations' -ErrorRecord $_
     }
 }
 
@@ -170,13 +170,13 @@ function Optimize-LanmanServer {
                 Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
                 Write-Host "  [+] $($entry.Key) set to $($entry.Value) for LanmanServer / $($entry.Key) configurado a $($entry.Value) para LanmanServer." -ForegroundColor Green
             } catch {
-                Handle-Error -Context "Setting LanmanServer $($entry.Key)" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Setting LanmanServer $($entry.Key)" -ErrorRecord $_
             }
         }
 
         $Global:NeedsReboot = $true
     } catch {
-        Handle-Error -Context 'Optimizing LanmanServer parameters' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Optimizing LanmanServer parameters' -ErrorRecord $_
     }
 }
 
@@ -203,7 +203,7 @@ function Set-NetshHardcoreGlobals {
                     & cmd.exe /c $command.Cmd 2>&1 | Out-Null
                     Write-Host "  [+] $($command.Description)." -ForegroundColor Green
                 } catch {
-                    Handle-Error -Context "Running $($command.Cmd)" -ErrorRecord $_
+                    Invoke-ErrorHandler -Context "Running $($command.Cmd)" -ErrorRecord $_
                 }
             }
         } finally {
@@ -212,7 +212,7 @@ function Set-NetshHardcoreGlobals {
 
         $Global:NeedsReboot = $true
     } catch {
-        Handle-Error -Context 'Applying hardcore netsh globals' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Applying hardcore netsh globals' -ErrorRecord $_
     }
 }
 
@@ -227,13 +227,13 @@ function Get-NicRegistryPaths {
 
         foreach ($adapter in $adapters) {
             try {
-                $guidString = Normalize-GuidString -Value $adapter.InterfaceGuid
+                $guidString = Get-NormalizedGuid -Value $adapter.InterfaceGuid
                 if (-not $guidString) { continue }
                 $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
                 foreach ($entry in $entries) {
                     try {
                         $netCfg = (Get-ItemProperty -Path $entry.PSPath -Name 'NetCfgInstanceId' -ErrorAction SilentlyContinue).NetCfgInstanceId
-                        $netCfgString = Normalize-GuidString -Value $netCfg
+                        $netCfgString = Get-NormalizedGuid -Value $netCfg
                         if ($netCfgString -and ($netCfgString -eq $guidString)) {
                             $results += [pscustomobject]@{ Adapter = $adapter; Path = $entry.PSPath; Guid = $guidString }
                             break
@@ -241,13 +241,13 @@ function Get-NicRegistryPaths {
                     } catch { }
                 }
             } catch {
-                Handle-Error -Context "Finding registry path for $($adapter.Name)" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Finding registry path for $($adapter.Name)" -ErrorRecord $_
             }
         }
 
         return $results
     } catch {
-        Handle-Error -Context 'Enumerating NIC registry paths' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Enumerating NIC registry paths' -ErrorRecord $_
         return @()
     }
 }
@@ -297,7 +297,7 @@ function Set-NicRegistryHardcore {
                 Set-RegistryValueSafe -Path $item.Path -Name 'PnPCapabilities' -Value 24 -Type DWord
                 Write-Host "    [+] PnPCapabilities set to 24 (power management disabled) / PnPCapabilities configurado a 24 (gestión de energía deshabilitada)" -ForegroundColor Green
             } catch {
-                Handle-Error -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
             }
 
             foreach ($entry in $powerOffload.GetEnumerator()) {
@@ -305,7 +305,7 @@ function Set-NicRegistryHardcore {
                     Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type String
                     Write-Host "    [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
                 } catch {
-                    Handle-Error -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
+                    Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
                 }
             }
 
@@ -314,7 +314,7 @@ function Set-NicRegistryHardcore {
                     Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type String
                     Write-Host "    [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
                 } catch {
-                    Handle-Error -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
+                    Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
                 }
             }
 
@@ -332,7 +332,7 @@ function Set-NicRegistryHardcore {
                 Set-RegistryValueSafe -Path $interfacePath -Name 'TcpDelAckTicks' -Value 0 -Type DWord
                 Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0) / Parámetros Nagle configurados (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
             } catch {
-                Handle-Error -Context "Setting Nagle parameters for $adapterName" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Setting Nagle parameters for $adapterName" -ErrorRecord $_
             }
 
             try {
@@ -340,7 +340,7 @@ function Set-NicRegistryHardcore {
                 & cmd.exe /c 'netsh winsock reset' 2>&1 | Out-Null
                 Write-Host "    [+] Network stack cache cleared (IP/Winsock reset) / Caché de pila de red borrada (reinicio IP/Winsock)" -ForegroundColor Green
             } catch {
-                Handle-Error -Context "Resetting network stack for $adapterName" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Resetting network stack for $adapterName" -ErrorRecord $_
             }
 
             try {
@@ -349,14 +349,14 @@ function Set-NicRegistryHardcore {
                 Enable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
                 Write-Host "    [+] Adapter reset to reload driver settings / Adaptador reiniciado para recargar configuraciones del controlador" -ForegroundColor Green
             } catch {
-                Handle-Error -Context "Resetting adapter $adapterName" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Resetting adapter $adapterName" -ErrorRecord $_
             }
         }
 
         $Global:NeedsReboot = $true
         Write-Host "  [i] Some Device Manager changes may require a full reboot to reflect visually. / [i] Algunos cambios en el Administrador de dispositivos pueden requerir un reinicio completo para reflejarse visualmente." -ForegroundColor Gray
     } catch {
-        Handle-Error -Context 'Applying NIC-specific registry tweaks' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Applying NIC-specific registry tweaks' -ErrorRecord $_
     }
 }
 
@@ -376,7 +376,7 @@ function Get-PrimaryNetAdapter {
             } -Descending
         return $sortedAdapters | Select-Object -First 1
     } catch {
-        Handle-Error -Context 'Selecting primary network adapter' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Selecting primary network adapter' -ErrorRecord $_
         return $null
     }
 }
@@ -415,7 +415,7 @@ function Set-NetAdapterAdvancedPropertySafe {
 
         Write-Host "  [!] Unable to set $DisplayName on $AdapterName after fallbacks. / No se pudo configurar $DisplayName en $AdapterName tras alternativas." -ForegroundColor Yellow
     } catch {
-        Handle-Error -Context "Setting $DisplayName on $AdapterName" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Setting $DisplayName on $AdapterName" -ErrorRecord $_
     }
 }
 
@@ -464,7 +464,7 @@ function Set-WakeOnLanHardcore {
                         Set-RegistryValueSafe -Path $pathEntry.Path -Name $entry.Key -Value $entry.Value -Type String
                         Write-Host "      [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
                     } catch {
-                        Handle-Error -Context "Setting $($entry.Key) on $adapterName (WOL)" -ErrorRecord $_
+                        Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName (WOL)" -ErrorRecord $_
                     }
                 }
             } else {
@@ -500,11 +500,11 @@ function Set-WakeOnLanHardcore {
                         Write-Host "      [!] $($target.Name) expected $($target.Value) but found $effective on $adapterName. / [!] $($target.Name) esperaba $($target.Value) pero se encontró $effective en $adapterName." -ForegroundColor Yellow
                     }
                 } catch {
-                    Handle-Error -Context "Verifying $($target.Name) on $adapterName" -ErrorRecord $_
+                    Invoke-ErrorHandler -Context "Verifying $($target.Name) on $adapterName" -ErrorRecord $_
                 }
             }
         } catch {
-            Handle-Error -Context "Applying Wake-on-LAN hardening on $adapterName" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Applying Wake-on-LAN hardening on $adapterName" -ErrorRecord $_
         }
     }
 }
@@ -524,7 +524,7 @@ function Test-MtuSize {
         $successTtl = $pingResult -match '(?i)ttl='
         return ($successExit -and $successTtl)
     } catch {
-        Handle-Error -Context "Testing MTU payload size $PayloadSize" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Testing MTU payload size $PayloadSize" -ErrorRecord $_
         return $false
     }
 }
@@ -569,7 +569,7 @@ function Find-OptimalMtu {
         Write-Host "  [+] Optimal MTU discovered: $mtu bytes / MTU óptimo encontrado: $mtu bytes" -ForegroundColor Green
         return [pscustomobject]@{ Mtu = $mtu; WasFallback = $false }
     } catch {
-        Handle-Error -Context 'Discovering optimal MTU' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Discovering optimal MTU' -ErrorRecord $_
         return $null
     }
 }
@@ -590,7 +590,7 @@ function Apply-MtuToAdapters {
                 Write-Log "[NetworkHardcore] MTU set to $Mtu on $($adapter.Name) (IPv4). / MTU configurado a $Mtu en $($adapter.Name) (IPv4)."
             }
         } catch {
-            Handle-Error -Context "Applying MTU to $($adapter.Name)" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Applying MTU to $($adapter.Name)" -ErrorRecord $_
         }
     }
 }
@@ -611,7 +611,7 @@ function Get-HardwareAgeYears {
         $years = ((Get-Date) - $parsedDate).TotalDays / 365
         return [int][Math]::Round($years, 0)
     } catch {
-        Handle-Error -Context 'Determining hardware age' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Determining hardware age' -ErrorRecord $_
         return $null
     }
 }
@@ -626,7 +626,7 @@ function Suggest-NetworkIrqCores {
         $range = "0-$(if ($half -gt 0) { $half - 1 } else { 0 })"
         Write-Host "  [i] Suggestion: Pin network IRQs to early cores (e.g., $range) for lowest latency. / Sugerencia: Fijar las IRQ de red a los primeros núcleos (ej. $range) para menor latencia." -ForegroundColor Cyan
     } catch {
-        Handle-Error -Context 'Suggesting IRQ core distribution' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Suggesting IRQ core distribution' -ErrorRecord $_
     }
 }
 
@@ -645,7 +645,7 @@ function Set-TcpCongestionProvider {
         try {
             $supplemental = netsh int tcp show supplemental 2>&1
         } catch {
-            Handle-Error -Context 'Checking supplemental congestion providers' -ErrorRecord $_
+            Invoke-ErrorHandler -Context 'Checking supplemental congestion providers' -ErrorRecord $_
         }
 
         $bbrAvailable = $false
@@ -653,14 +653,14 @@ function Set-TcpCongestionProvider {
             $bbrAvailable = $supplemental -match '(?i)bbr'
         }
 
-        if ($bbrAvailable -and (Ask-YesNo "Enable experimental BBR congestion control? / ¿Habilitar control de congestión BBR experimental?" 'n')) {
+        if ($bbrAvailable -and (Get-Confirmation "Enable experimental BBR congestion control? / ¿Habilitar control de congestión BBR experimental?" 'n')) {
             try {
                 netsh int tcp set global congestionprovider=bbr | Out-Null
                 Write-Host "  [+] TCP congestion provider set to BBR (experimental, favors throughput+latency). / Proveedor de congestión TCP configurado a BBR (experimental, prioriza rendimiento y latencia)." -ForegroundColor Green
                 if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] TCP congestion provider set to BBR. / Proveedor de congestión TCP configurado a BBR." }
                 return
             } catch {
-                Handle-Error -Context 'Setting TCP congestion provider to BBR' -ErrorRecord $_
+                Invoke-ErrorHandler -Context 'Setting TCP congestion provider to BBR' -ErrorRecord $_
             }
         }
 
@@ -670,10 +670,10 @@ function Set-TcpCongestionProvider {
             Write-Host "  [+] TCP congestion provider set to CUBIC. / Proveedor de congestión TCP configurado a CUBIC." -ForegroundColor Green
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] TCP congestion provider set to CUBIC. / Proveedor de congestión TCP configurado a CUBIC." }
         } catch {
-            Handle-Error -Context 'Setting TCP congestion provider to CUBIC' -ErrorRecord $_
+            Invoke-ErrorHandler -Context 'Setting TCP congestion provider to CUBIC' -ErrorRecord $_
         }
     } catch {
-        Handle-Error -Context 'Evaluating TCP congestion provider' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Evaluating TCP congestion provider' -ErrorRecord $_
     }
 }
 
@@ -693,7 +693,7 @@ function Invoke-NetworkTweaksHardcore {
                 Write-Host "  [i] Network backup already present at $backupFile; proceeding with tweaks. / [i] Respaldo de red ya existente en $backupFile; se continúa con los tweaks." -ForegroundColor Gray
             }
         } catch {
-            Handle-Error -Context 'Saving network backup before hardcore tweaks' -ErrorRecord $_
+            Invoke-ErrorHandler -Context 'Saving network backup before hardcore tweaks' -ErrorRecord $_
         }
     } else {
         Write-Host "  [!] Backup helper not available; proceeding without automatic network backup. / [!] Herramienta de respaldo no disponible; se continúa sin backup automático de red." -ForegroundColor Yellow
@@ -739,7 +739,7 @@ function Invoke-NetworkTweaksHardcore {
             Write-Host "  [+] RSC disabled on $($adapter.Name). / RSC deshabilitado en $($adapter.Name)." -ForegroundColor Green
             if ($logger) { Write-Log "[NetworkHardcore] Disabled RSC on $($adapter.Name). / RSC deshabilitado en $($adapter.Name)." }
         } catch {
-            Handle-Error -Context "Disabling RSC on $($adapter.Name)" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Disabling RSC on $($adapter.Name)" -ErrorRecord $_
         }
 
         Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'Large Send Offload V2 (IPv4)' -DisplayValue 'Disabled'
@@ -769,7 +769,7 @@ function Invoke-NetworkTweaksHardcore {
                 Write-Host "  [+] RSS profile set to Closest on $($adapter.Name). / Perfil RSS configurado en Closest para $($adapter.Name)." -ForegroundColor Green
                 if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to Closest on $($adapter.Name). / Perfil RSS configurado en Closest para $($adapter.Name)." }
             } catch {
-                Handle-Error -Context "Configuring RSS on $($adapter.Name)" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Configuring RSS on $($adapter.Name)" -ErrorRecord $_
             }
         }
     }
@@ -781,7 +781,7 @@ function Invoke-NetworkTweaksHardcore {
         Write-Host "  [+] ECN capability disabled. / Capacidad ECN deshabilitada." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] ECN capability disabled. / Capacidad ECN deshabilitada." }
     } catch {
-        Handle-Error -Context 'Disabling ECN capability' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Disabling ECN capability' -ErrorRecord $_
     }
 
     try {
@@ -789,7 +789,7 @@ function Invoke-NetworkTweaksHardcore {
         Write-Host "  [+] TCP timestamps disabled. / Timestamps TCP deshabilitados." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] TCP timestamps disabled. / Timestamps TCP deshabilitados." }
     } catch {
-        Handle-Error -Context 'Disabling TCP timestamps' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Disabling TCP timestamps' -ErrorRecord $_
     }
 
     try {
@@ -797,7 +797,7 @@ function Invoke-NetworkTweaksHardcore {
         Write-Host "  [+] Initial RTO set to 2000ms. / RTO inicial configurado a 2000ms." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] InitialRTO set to 2000ms. / InitialRTO configurado a 2000ms." }
     } catch {
-        Handle-Error -Context 'Setting InitialRTO' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Setting InitialRTO' -ErrorRecord $_
     }
 
     $ageYears = Get-HardwareAgeYears
@@ -816,7 +816,7 @@ function Invoke-NetworkTweaksHardcore {
         Write-Host "  [+] Network autotuning set to $autotuneLevel (hardware age: $ageLabel). / Autotuning de red configurado a $autotuneLevel (edad de hardware: $ageLabel)." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] Autotuning level set to $autotuneLevel (hardware age: $ageLabel). / Nivel de autotuning configurado a $autotuneLevel (edad de hardware: $ageLabel)." }
     } catch {
-        Handle-Error -Context 'Setting TCP autotuning level' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Setting TCP autotuning level' -ErrorRecord $_
     }
 
     $mtuResult = Find-OptimalMtu

@@ -14,7 +14,7 @@ function Set-ClassicContextMenus {
         Write-Host "[+] Classic context menu enabled / Menús contextuales clásicos habilitados" -ForegroundColor Green
         $Global:NeedsReboot = $true
     } catch {
-        Handle-Error -Context "Enabling classic context menus" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Enabling classic context menus" -ErrorRecord $_
     }
 }
 
@@ -23,8 +23,8 @@ function Set-ClassicContextMenus {
 # Returns: None. Sets global reboot flag.
 function Add-TakeOwnershipMenu {
     $entries = @(
-        @{ Path = "HKCR:\*\shell\TakeOwnership"; Command = "cmd.exe /c takeown /f \"%1\" && icacls \"%1\" /grant administrators:F" },
-        @{ Path = "HKCR:\Directory\shell\TakeOwnership"; Command = "cmd.exe /c takeown /f \"%1\" /r /d y && icacls \"%1\" /grant administrators:F /t" }
+        @{ Path = 'HKCR:\*\shell\TakeOwnership'; Command = 'cmd.exe /c takeown /f "%1" && icacls "%1" /grant administrators:F' },
+        @{ Path = 'HKCR:\Directory\shell\TakeOwnership'; Command = 'cmd.exe /c takeown /f "%1" /r /d y && icacls "%1" /grant administrators:F /t' }
     )
 
     foreach ($entry in $entries) {
@@ -39,7 +39,7 @@ function Add-TakeOwnershipMenu {
             }
             Set-RegistryValueSafe -Path $commandPath -Name '(default)' -Value $entry.Command -Type ([Microsoft.Win32.RegistryValueKind]::String)
         } catch {
-            Handle-Error -Context "Configuring Take Ownership context menu at $($entry.Path)" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Configuring Take Ownership context menu at $($entry.Path)" -ErrorRecord $_
         }
     }
 
@@ -58,7 +58,7 @@ function Set-ExplorerProSettings {
         Write-Host "[+] Explorer visibility tweaks applied / Ajustes de visibilidad en Explorer aplicados" -ForegroundColor Green
         $Global:NeedsReboot = $true
     } catch {
-        Handle-Error -Context "Configuring Explorer visibility preferences" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Configuring Explorer visibility preferences" -ErrorRecord $_
     }
 }
 

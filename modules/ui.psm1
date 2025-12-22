@@ -32,7 +32,7 @@ function Write-Log {
 # Description: Normalizes GUID input into uppercase brace-enclosed string form.
 # Parameters: Value - Input GUID or string representation.
 # Returns: Normalized GUID string or null when conversion fails.
-function Normalize-GuidString {
+function Get-NormalizedGuid {
     param($Value)
 
     try {
@@ -57,7 +57,7 @@ function Normalize-GuidString {
 # Description: Logs and displays a warning message for an encountered error.
 # Parameters: Context - Operation being performed; ErrorRecord - Error details from the exception.
 # Returns: None.
-function Handle-Error {
+function Invoke-ErrorHandler {
     param(
         [Parameter(Mandatory)]
         [string]$Context,
@@ -73,7 +73,7 @@ function Handle-Error {
 # Description: Prompts the user for a yes/no response with default handling.
 # Parameters: Question - Prompt text; Default - Default answer when input is empty.
 # Returns: Boolean indicating user choice.
-function Ask-YesNo {
+function Get-Confirmation {
     param(
         [string]$Question,
         [string]$Default = 'n'
@@ -142,7 +142,7 @@ function Set-RegistryValueSafe {
         New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force -ErrorAction Stop | Out-Null
     }
     catch {
-        Handle-Error -Context "Setting registry value $Path -> $Name" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Setting registry value $Path -> $Name" -ErrorRecord $_
     }
 }
 
@@ -180,4 +180,4 @@ function Write-OutcomeSummary {
     }
 }
 
-Export-ModuleMember -Function Write-Section, Write-Log, Normalize-GuidString, Handle-Error, Ask-YesNo, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary
+Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary
