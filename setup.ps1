@@ -1,3 +1,4 @@
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 # Scynesthesia Windows Optimizer - Remote Installer
 # This script downloads the full repository to handle modular dependencies.
 
@@ -24,6 +25,7 @@ try {
     Invoke-WebRequest -Uri $url -OutFile $zipFile -ErrorAction Stop
 } catch {
     Write-Error "Failed to download the repository. Please check your internet connection."
+    Read-Host "Press Enter to exit"
     exit 1
 }
 
