@@ -19,10 +19,14 @@ try {
     Import-Module $uiModule -Force -ErrorAction Stop
     Write-Host "[OK] Module loaded: ui.psm1" -ForegroundColor Green
 
+    $servicesModule = Join-Path $modulesRoot 'services.psm1'
+    Import-Module $servicesModule -Force -ErrorAction Stop
+    Write-Host "[OK] Module loaded: services.psm1" -ForegroundColor Green
+
     $moduleFiles = Get-ChildItem -Path $modulesRoot -Filter '*.psm1' -File -ErrorAction Stop
 
     foreach ($module in $moduleFiles) {
-        if ($module.Name -eq 'ui.psm1') { continue }
+        if ($module.Name -in @('ui.psm1','services.psm1')) { continue }
         try {
             Import-Module $module.FullName -Force -ErrorAction Stop
             Write-Host "[OK] Module loaded: $($module.Name)" -ForegroundColor Green
