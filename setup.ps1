@@ -22,10 +22,13 @@ if (!(Test-Path $tempDir)) {
 
 Write-Host "[*] Downloading Scynesthesia Windows Optimizer components..." -ForegroundColor Cyan
 try {
-    Invoke-WebRequest -Uri $url -OutFile $zipFile -ErrorAction Stop
+    # Añadimos -UseBasicParsing para evitar depender del motor de Internet Explorer
+    Invoke-WebRequest -Uri $url -OutFile $zipFile -ErrorAction Stop -UseBasicParsing
 } catch {
-    Write-Error "Failed to download the repository. Please check your internet connection."
-    Read-Host "Press Enter to exit"
+    # Cambiamos Write-Error por Write-Host para que no se cierre la sesión de IEX antes del pause
+    Write-Host "[!] Failed to download the repository. Please check your internet connection." -ForegroundColor Red
+    Write-Host "[!] Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+    Read-Host "Press Enter to exit / Presiona Enter para salir"
     exit 1
 }
 
