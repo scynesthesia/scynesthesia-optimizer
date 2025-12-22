@@ -1,4 +1,4 @@
-# File saved as UTF-8 with BOM to avoid encoding issues on Windows PowerShell 5.1
+﻿# File saved as UTF-8 with BOM to avoid encoding issues on Windows PowerShell 5.1
 # Scynesthesia Windows Optimizer v1.0
 # Run this script as Administrator.
 
