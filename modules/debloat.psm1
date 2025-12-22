@@ -9,11 +9,11 @@ function Get-AppRemovalList {
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
         [string] $Key,
-        [string] $Path = "$PSScriptRoot\..\config\apps.json"
+        [string] $Path
     )
 
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-    $configPath = $Path
+    $configPath = if ($Path) { $Path } else { Join-Path $Global:ScriptRoot "config\apps.json" }
 
     if (-not (Test-Path $configPath)) {
         $message = "[Debloat] No se encontro el archivo de configuracion de apps: $configPath. Saltando la fase de App Removal."
