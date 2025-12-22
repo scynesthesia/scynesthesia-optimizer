@@ -82,8 +82,12 @@ function Get-Confirmation {
     $defaultNormalized = if ([string]::IsNullOrWhiteSpace($Default)) { 'n' } else { [string]$Default }
     $defaultText = if ($defaultNormalized.ToLowerInvariant() -eq 'y' -or $defaultNormalized.ToLowerInvariant() -eq 'yes') { '[Y/n]' } else { '[y/N]' }
 
+    $questionText = $Question.Trim()
+    $appendPrompt = -not ($questionText -match '\[[yYnN]/?[yYnN]?\]$')
+    $prompt = if ($appendPrompt) { "$questionText $defaultText".Trim() } else { $questionText }
+
     while ($true) {
-        $resp = Read-Host "$Question $defaultText"
+        $resp = Read-Host $prompt
         if ([string]::IsNullOrWhiteSpace($resp)) { $resp = $defaultNormalized }
 
         $resp = [string]$resp
@@ -122,8 +126,8 @@ function Set-RegistryValueSafe {
         [Microsoft.Win32.RegistryValueKind]$Type = [Microsoft.Win32.RegistryValueKind]::DWord
     )
 
-    if (-not ($Name -eq "(default)") -and [string]::IsNullOrWhiteSpace($Name)) {
-        $warning = "[!] Attempted to set registry value with empty name at path $Path. Skipping."
+    if ([string]::IsNullOrWhiteSpace($Name) -and $Name -ne "(default)") {
+        $warning = "[!] Attempted to set a registry value with an empty name at path $Path. Skipping."
         Write-Host $warning -ForegroundColor Yellow
         Write-Log -Message $warning -Level 'Warning'
         return

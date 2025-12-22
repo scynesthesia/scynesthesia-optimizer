@@ -125,13 +125,13 @@ function Show-Banner {
 '@
     Write-Host $banner -ForegroundColor Magenta
     Write-Host " Scynesthesia Windows Optimizer v1.0" -ForegroundColor Green
-    Write-Host " Preset 1: Safe | Preset 2: Slow PC / Aggressive" -ForegroundColor Gray
+    Write-Host " Profiles: Safe | Slow PC / Aggressive" -ForegroundColor Gray
     Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
-    Write-Host " [ SYSTEM DASHBOARD ]" -ForegroundColor Cyan
-    Write-Host ("  CPU Logic Cores: {0}" -f $cpuCores) -ForegroundColor Gray
-    Write-Host ("  RAM: {0}" -f $memoryDisplay) -ForegroundColor Gray
-    Write-Host ("  Storage: {0}" -f $storageType) -ForegroundColor Gray
-    Write-Host ("  Power Plan: {0}" -f $activePlanName) -ForegroundColor Gray
+    Write-Host " [ System Dashboard ]" -ForegroundColor Cyan
+    Write-Host ("  CPU Logical Cores: {0}" -f $cpuCores) -ForegroundColor Gray
+    Write-Host ("  Memory: {0}" -f $memoryDisplay) -ForegroundColor Gray
+    Write-Host ("  Storage Type: {0}" -f $storageType) -ForegroundColor Gray
+    Write-Host ("  Active Power Plan: {0}" -f $activePlanName) -ForegroundColor Gray
     Write-Host "------------------------------------------------------------`n" -ForegroundColor DarkGray
 }
 
@@ -150,7 +150,7 @@ function Ensure-PowerPlan {
             }
         } catch { }
 
-        $targetScheme = if ($ultimateGuid) { $ultimateGuid } else { 'SCHEME_MAX' }
+        $targetScheme = if ($ultimateGuid) { $ultimateGuid } else { 'e9a42b02-d5df-448d-aa00-03f14749eb61' }
         powercfg /setactive $targetScheme
     } else {
         powercfg /setactive SCHEME_BALANCED
@@ -187,7 +187,7 @@ function Run-SafePreset {
     $Status = @{ PackagesFailed = @(); RebootRequired = $false }
     $HWProfile = Get-HardwareProfile
 
-    Write-Section "Starting Preset 1: Safe (Main)"
+    Write-Section "Starting Preset 1: Safe"
     New-RestorePointSafe
     Clear-TempFiles
 
@@ -205,7 +205,7 @@ function Run-SafePreset {
 
     $Status.RebootRequired = $Global:NeedsReboot
     Write-OutcomeSummary -Status $Status
-    Write-Host "[+] Safe preset applied. Restart when possible." -ForegroundColor Green
+    Write-Host "[+] Safe preset applied. Restart when convenient to finalize settings." -ForegroundColor Green
 }
 
 # Description: Executes the Slow PC/Aggressive preset for deeper cleanup and performance tuning.
@@ -403,16 +403,16 @@ function Show-ExplorerTweaksMenu {
 
 do {
     Show-Banner
-    Write-Host "[ AUTOMATED PRESETS ]" -ForegroundColor Cyan
-    Write-Host "1) Safe preset (SOC / Browsing)"
-    Write-Host "2) Aggressive preset (Deep Debloat / Privacy)"
+    Write-Host "[ Automated Presets ]" -ForegroundColor Cyan
+    Write-Host "1) Safe preset (Stability/Browsing)"
+    Write-Host "2) Aggressive preset (Deep Debloat & Privacy)"
     Write-Host "3) Gaming preset (Low latency)"
     Write-Host ""
-    Write-Host "[ GRANULAR TOOLS ]" -ForegroundColor Yellow
+    Write-Host "[ Granular Tools ]" -ForegroundColor Yellow
     Write-Host "4) Repair tools"
-    Write-Host "5) Network Tweaks"
+    Write-Host "5) Network tweaks"
     Write-Host "6) Software & Updates"
-    Write-Host "7) UI & Explorer Tweaks"
+    Write-Host "7) UI & Explorer tweaks"
     Write-Host ""
     $rebootStatus = if ($Global:NeedsReboot) { 'System Status: Reboot pending' } else { 'System Status: No reboot pending' }
     Write-Host $rebootStatus -ForegroundColor DarkCyan
@@ -424,7 +424,7 @@ do {
         '1' { Run-SafePreset }
         '2' { Run-PCSlowPreset }
         '3' {
-            Write-Section "GAMING MODE / FPS BOOST"
+            Write-Section "Gaming Mode / FPS Boost"
             $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
             Invoke-GamingOptimizations
             if (Get-Confirmation "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.)" 'y') {
