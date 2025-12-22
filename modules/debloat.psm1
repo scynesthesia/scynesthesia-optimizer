@@ -51,7 +51,7 @@ function Create-RestorePointSafe {
         Checkpoint-Computer -Description "Scynesthesia Windows Optimizer v1.0" -RestorePointType "MODIFY_SETTINGS"
         Write-Host "  [+] Restore point created."
     } catch {
-        Handle-Error -Context "Creating restore point" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Creating restore point" -ErrorRecord $_
     }
 }
 
@@ -71,7 +71,7 @@ function Clear-TempFiles {
             try {
                 Get-ChildItem $p -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
             } catch {
-                Handle-Error -Context "Cleaning path $p" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Cleaning path $p" -ErrorRecord $_
             }
         }
     }
@@ -82,7 +82,7 @@ function Clear-TempFiles {
         try {
             Get-ChildItem $wu -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
         } catch {
-            Handle-Error -Context "Cleaning Windows Update cache" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Cleaning Windows Update cache" -ErrorRecord $_
         }
     }
 }
@@ -100,7 +100,7 @@ function Clear-DeepTempAndThumbs {
         try {
             Get-ChildItem $thumbDir -Filter "thumbcache_*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
         } catch {
-            Handle-Error -Context "Clearing thumbnail cache" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Clearing thumbnail cache" -ErrorRecord $_
         }
     }
 }
@@ -172,7 +172,7 @@ function Apply-DebloatAggressive {
         }
     }
 
-    if (Ask-YesNo -Question "Also remove provisioned packages for future users? (More aggressive) [y/N]" -Default 'n') {
+    if (Get-Confirmation -Question "Also remove provisioned packages for future users? (More aggressive) [y/N]" -Default 'n') {
         try {
             $prov = Get-AppxProvisionedPackage -Online | Where-Object { $AppList -contains $_.PackageName }
         } catch {

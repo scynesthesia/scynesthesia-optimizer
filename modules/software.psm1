@@ -52,7 +52,7 @@ function Invoke-SoftwareInstaller {
         }
 
         $question = "Install $($app.Name)? / ¿Instalar $($app.Name)?"
-        if (Ask-YesNo -Question $question -Default $app.Default) {
+        if (Get-Confirmation -Question $question -Default $app.Default) {
             Write-Host "  [>] Installing $($app.Name)... / Instalando $($app.Name)..." -ForegroundColor Gray
             try {
                 $wingetArgs = @(
@@ -76,7 +76,7 @@ function Invoke-SoftwareInstaller {
                     }
                 }
             } catch {
-                Handle-Error -Context "Installing $($app.Name) via winget" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Installing $($app.Name) via winget" -ErrorRecord $_
             }
         } else {
             Write-Host "  [ ] Skipped $($app.Name). / Omitido $($app.Name)." -ForegroundColor DarkGray
@@ -109,7 +109,7 @@ function Invoke-WindowsUpdateScan {
         Start-Process -FilePath "usoclient" -ArgumentList "StartInteractiveScan" -WindowStyle Hidden -ErrorAction Stop | Out-Null
         Write-Host "[+] Scan started in the background. / Escaneo iniciado en segundo plano." -ForegroundColor Green
     } catch {
-        Handle-Error -Context "Starting Windows Update interactive scan" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Starting Windows Update interactive scan" -ErrorRecord $_
     }
 }
 

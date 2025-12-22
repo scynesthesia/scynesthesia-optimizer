@@ -20,7 +20,7 @@ function Apply-PrivacyTelemetrySafe {
     Set-RegistryValueSafe "HKCU\System\GameConfigStore" "GameDVR_Enabled" 0
     Set-RegistryValueSafe "HKCU\System\GameConfigStore" "GameDVR_FSEBehaviorMode" 2
 
-    if (Ask-YesNo "Disable Cortana and online searches in Start?" 'y') {
+    if (Get-Confirmation "Disable Cortana and online searches in Start?" 'y') {
         Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Search" "BingSearchEnabled" 0
         Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Search" "CortanaConsent" 0
         Write-Host "  [+] Cortana and Bing in Start disabled"
@@ -28,7 +28,7 @@ function Apply-PrivacyTelemetrySafe {
         Write-Host "  [ ] Cortana/Bing remain unchanged."
     }
 
-    if (Ask-YesNo "Enable Storage Sense for basic automatic cleanup?" 'n') {
+    if (Get-Confirmation "Enable Storage Sense for basic automatic cleanup?" 'n') {
         $storageSense = "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\StorageSense"
         Set-RegistryValueSafe $storageSense "AllowStorageSenseGlobal" 1
         Set-RegistryValueSafe "$storageSense\Parameters\StoragePolicy" "01" 1
@@ -38,7 +38,7 @@ function Apply-PrivacyTelemetrySafe {
         Write-Host "  [ ] Storage Sense left as-is."
     }
 
-    if (Ask-YesNo "Hide recommendations and suggested content?" 'y') {
+    if (Get-Confirmation "Hide recommendations and suggested content?" 'y') {
         Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" "SystemPaneSuggestionsEnabled" 0
         Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" "SubscribedContent-338387Enabled" 0
         Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" "SubscribedContent-338388Enabled" 0

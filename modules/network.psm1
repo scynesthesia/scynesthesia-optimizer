@@ -11,7 +11,7 @@ function Get-PhysicalNetAdapters {
             }
         return $adapters
     } catch {
-        Handle-Error -Context 'Retrieving network adapters' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Retrieving network adapters' -ErrorRecord $_
         return @()
     }
 }
@@ -29,17 +29,17 @@ function Get-NicRegistryPaths {
         try {
             $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
         } catch {
-            Handle-Error -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
+            Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
         }
 
         foreach ($adapter in $adapters) {
             try {
-                $guidString = Normalize-GuidString -Value $adapter.InterfaceGuid
+                $guidString = Get-NormalizedGuid -Value $adapter.InterfaceGuid
                 if (-not $guidString) { continue }
                 foreach ($entry in $entries) {
                     try {
                         $netCfg = (Get-ItemProperty -Path $entry.PSPath -Name 'NetCfgInstanceId' -ErrorAction SilentlyContinue).NetCfgInstanceId
-                        $netCfgString = Normalize-GuidString -Value $netCfg
+                        $netCfgString = Get-NormalizedGuid -Value $netCfg
                         if ($netCfgString -and ($netCfgString -eq $guidString)) {
                             $results += [pscustomobject]@{ Adapter = $adapter; Path = $entry.PSPath; Guid = $guidString }
                             break
@@ -47,13 +47,13 @@ function Get-NicRegistryPaths {
                     } catch { }
                 }
             } catch {
-                Handle-Error -Context "Finding registry path for $($adapter.Name)" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Finding registry path for $($adapter.Name)" -ErrorRecord $_
             }
         }
 
         return $results
     } catch {
-        Handle-Error -Context 'Enumerating NIC registry paths' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Enumerating NIC registry paths' -ErrorRecord $_
         return @()
     }
 }
@@ -66,7 +66,7 @@ function Invoke-NetworkFlush {
     try {
         ipconfig /flushdns | Out-Null
     } catch {
-        Handle-Error -Context 'Flushing DNS cache' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Flushing DNS cache' -ErrorRecord $_
     }
 }
 
@@ -84,7 +84,7 @@ function Invoke-NetworkFullReset {
             Write-Log "[Network] Executed 'netsh winsock reset'."
         }
     } catch {
-        Handle-Error -Context 'Resetting Winsock' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Resetting Winsock' -ErrorRecord $_
     }
 }
 
@@ -104,7 +104,7 @@ function Set-NetworkDnsSafe {
             $dnsInfo = Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction Stop
             $isManual = $dnsInfo.AddressOrigin -eq 'Static'
             if ($isManual) {
-                if (-not (Ask-YesNo "Adapter '$($adapter.Name)' already has manual DNS. Overwrite with Cloudflare?" 'n')) {
+                if (-not (Get-Confirmation "Adapter '$($adapter.Name)' already has manual DNS. Overwrite with Cloudflare?" 'n')) {
                     Write-Host "  [ ] DNS left unchanged for $($adapter.Name)." -ForegroundColor Gray
                     continue
                 }
@@ -116,7 +116,7 @@ function Set-NetworkDnsSafe {
                 Write-Log "[Network] DNS set to Cloudflare on '$($adapter.Name)' (1.1.1.1/1.0.0.1)."
             }
         } catch {
-            Handle-Error -Context "Setting DNS on $($adapter.Name)" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Setting DNS on $($adapter.Name)" -ErrorRecord $_
         }
     }
 }
@@ -133,7 +133,7 @@ function Set-TcpAutotuningNormal {
             Write-Log "[Network] TCP autotuning set to normal." 
         }
     } catch {
-        Handle-Error -Context 'Configuring TCP autotuning' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Configuring TCP autotuning' -ErrorRecord $_
     }
 }
 
@@ -150,7 +150,7 @@ function Set-IPvPreferenceIPv4First {
             Write-Log "[Network] IPv4 preference set (DisabledComponents=0x20)."
         }
     } catch {
-        Handle-Error -Context 'Setting IPv4 preference' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Setting IPv4 preference' -ErrorRecord $_
     }
 }
 
@@ -191,7 +191,7 @@ function Disable-NetBIOS {
                 Write-Host "  [!] NetBIOS change on $($adapter.Name) returned code $($result.ReturnValue)." -ForegroundColor Yellow
             }
         } catch {
-            Handle-Error -Context "Disabling NetBIOS on $($adapter.Name)" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Disabling NetBIOS on $($adapter.Name)" -ErrorRecord $_
         }
     }
 }
@@ -220,7 +220,7 @@ function Disable-NetworkTelemetry {
             } catch { }
         }
     } catch {
-        Handle-Error -Context 'Disabling telemetry' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Disabling telemetry' -ErrorRecord $_
     }
 }
 
@@ -247,7 +247,7 @@ function Disable-DeliveryOptimization {
             }
         } catch { }
     } catch {
-        Handle-Error -Context 'Disabling Delivery Optimization' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Disabling Delivery Optimization' -ErrorRecord $_
     }
 }
 
@@ -274,7 +274,7 @@ function Disable-RemoteAssistance {
             Write-Log "[Network] Remote Assistance disabled (fAllowToGetHelp=0)."
         }
     } catch {
-        Handle-Error -Context 'Disabling Remote Assistance' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Disabling Remote Assistance' -ErrorRecord $_
     }
 }
 
@@ -290,7 +290,7 @@ function Disable-NetworkDiscovery {
             Write-Log "[Network] Network Discovery firewall group disabled via netsh."
         }
     } catch {
-        Handle-Error -Context 'Disabling Network Discovery' -ErrorRecord $_
+        Invoke-ErrorHandler -Context 'Disabling Network Discovery' -ErrorRecord $_
     }
 }
 
@@ -350,7 +350,7 @@ function Set-NagleState {
             }
             Write-Host "  [+] Nagle-related parameters optimized for $($adapter.Name)." -ForegroundColor Green
         } catch {
-            Handle-Error -Context "Setting Nagle parameters on $($adapter.Name)" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Setting Nagle parameters on $($adapter.Name)" -ErrorRecord $_
         }
     }
 
@@ -373,7 +373,7 @@ function Set-AdapterAdvancedPropertyIfPresent {
     try {
         $properties = Get-NetAdapterAdvancedProperty -InterfaceDescription $Adapter.InterfaceDescription -ErrorAction Stop
     } catch {
-        Handle-Error -Context "Reading advanced properties on $($Adapter.Name)" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Reading advanced properties on $($Adapter.Name)" -ErrorRecord $_
         return
     }
 
@@ -387,7 +387,7 @@ function Set-AdapterAdvancedPropertyIfPresent {
                     Write-Log "[Network] $($Adapter.Name): $($match.RegistryKeyword) set to $Value."
                 }
             } catch {
-                Handle-Error -Context "Setting advanced property $($match.RegistryKeyword) on $($Adapter.Name)" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Setting advanced property $($match.RegistryKeyword) on $($Adapter.Name)" -ErrorRecord $_
             }
         }
     }
@@ -440,7 +440,7 @@ function Set-NicPowerManagementGaming {
             Write-Host "    [+] PnPCapabilities set to 24 (power management disabled) / PnPCapabilities configurado a 24 (gestión de energía deshabilitada)" -ForegroundColor Green
             if ($logger) { Write-Log "[Network] $adapterName PnPCapabilities set to 24 for gaming profile." }
         } catch {
-            Handle-Error -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
         }
 
         foreach ($entry in $powerFlags.GetEnumerator()) {
@@ -449,7 +449,7 @@ function Set-NicPowerManagementGaming {
                 Write-Host "    [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
                 if ($logger) { Write-Log "[Network] $adapterName $($entry.Key) set to $($entry.Value) for gaming power." }
             } catch {
-                Handle-Error -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
+                Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
             }
         }
 
@@ -462,7 +462,7 @@ function Set-NicPowerManagementGaming {
                 } catch { }
             }
         } catch {
-            Handle-Error -Context "Cleaning interface overrides for $adapterName" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Cleaning interface overrides for $adapterName" -ErrorRecord $_
         }
     }
 }
@@ -482,7 +482,7 @@ function Enable-RSS {
         try {
             $rssData = Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetAdapterRssSettingData' -Filter "Name='$($adapter.Name)'" -ErrorAction SilentlyContinue
         } catch {
-            Handle-Error -Context "Checking RSS support on $($adapter.Name)" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Checking RSS support on $($adapter.Name)" -ErrorRecord $_
             continue
         }
 
@@ -501,7 +501,7 @@ function Enable-RSS {
                 Write-Log "[Network] RSS enabled on $($adapter.Name)."
             }
         } catch {
-            Handle-Error -Context "Enabling RSS on $($adapter.Name)" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Enabling RSS on $($adapter.Name)" -ErrorRecord $_
         }
     }
 }
@@ -528,13 +528,13 @@ function Invoke-NetworkTweaksSafe {
     Write-Section "Network tweaks (Safe profile)"
     Invoke-NetworkFlush
 
-    if (Ask-YesNo "Reset Winsock (requires reboot)?" 'n') {
+    if (Get-Confirmation "Reset Winsock (requires reboot)?" 'n') {
         Invoke-NetworkFullReset
     } else {
         Write-Host "  [ ] Winsock left unchanged." -ForegroundColor Gray
     }
 
-    if (Ask-YesNo "Use Cloudflare DNS (1.1.1.1 / 1.0.0.1) on all adapters?" 'y') {
+    if (Get-Confirmation "Use Cloudflare DNS (1.1.1.1 / 1.0.0.1) on all adapters?" 'y') {
         Set-NetworkDnsSafe
     } else {
         Write-Host "  [ ] DNS settings left unchanged." -ForegroundColor Gray
@@ -552,7 +552,7 @@ function Invoke-NetworkTweaksAggressive {
     Disable-LLMNR
     Disable-DeliveryOptimization
 
-    if (Ask-YesNo "Disable NetBIOS over TCP/IP? This may break legacy LAN shares and printers." 'n') {
+    if (Get-Confirmation "Disable NetBIOS over TCP/IP? This may break legacy LAN shares and printers." 'n') {
         Disable-NetBIOS
     } else {
         Write-Host "  [ ] NetBIOS left enabled." -ForegroundColor Gray
@@ -561,13 +561,13 @@ function Invoke-NetworkTweaksAggressive {
     Disable-NetworkTelemetry
     Set-ReservableBandwidth
 
-    if (Ask-YesNo "Disable Remote Assistance?" 'y') {
+    if (Get-Confirmation "Disable Remote Assistance?" 'y') {
         Disable-RemoteAssistance
     } else {
         Write-Host "  [ ] Remote Assistance left enabled." -ForegroundColor Gray
     }
 
-    if (Ask-YesNo "Queres desactivar completamente el Network Discovery? Vas a dejar de ver PCs y carpetas compartidas automaticamente en la red." 'n') {
+    if (Get-Confirmation "Queres desactivar completamente el Network Discovery? Vas a dejar de ver PCs y carpetas compartidas automaticamente en la red." 'n') {
         Disable-NetworkDiscovery
     } else {
         Write-Host "  [ ] Network Discovery left enabled." -ForegroundColor Gray
@@ -587,13 +587,13 @@ function Invoke-NetworkTweaksGaming {
     Set-EnergyEfficientEthernet
     Enable-RSS
 
-    if (Ask-YesNo "Disable interrupt moderation for lowest latency? (Higher CPU usage)" 'n') {
+    if (Get-Confirmation "Disable interrupt moderation for lowest latency? (Higher CPU usage)" 'n') {
         Set-InterruptModeration
     } else {
         Write-Host "  [ ] Interrupt moderation left unchanged." -ForegroundColor Gray
     }
 
-    if (Ask-YesNo "Queres habilitar MSI Mode para tu placa de red (NIC)? Recomendado en hardware moderno. Nota: si ya aplicaste MSI Mode para la NIC desde otra opcion, no hace falta repetirlo." 'n') {
+    if (Get-Confirmation "Queres habilitar MSI Mode para tu placa de red (NIC)? Recomendado en hardware moderno. Nota: si ya aplicaste MSI Mode para la NIC desde otra opcion, no hace falta repetirlo." 'n') {
         $msiResult = Enable-MsiModeSafe -Target 'NIC'
         if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {
             Write-Log "[Network] MSI Mode enabled for NIC via gaming profile."
@@ -604,7 +604,7 @@ function Invoke-NetworkTweaksGaming {
         Write-Host "  [ ] MSI Mode for NIC skipped." -ForegroundColor Gray
     }
 
-    if (Ask-YesNo "Queres aplicar tambien tweaks TCP avanzados (Chimney Offload / DCA)? Son experimentales y pueden causar inestabilidad en hardware viejo o drivers raros." 'n') {
+    if (Get-Confirmation "Queres aplicar tambien tweaks TCP avanzados (Chimney Offload / DCA)? Son experimentales y pueden causar inestabilidad en hardware viejo o drivers raros." 'n') {
         try {
             $safePath = $env:SystemRoot
             if (-not $safePath) { $safePath = $env:WINDIR }

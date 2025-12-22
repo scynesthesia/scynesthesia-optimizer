@@ -96,21 +96,21 @@ function Handle-SysMainPrompt {
     Write-Host $hint -ForegroundColor Gray
 
     $defaultChoice = if ($HardwareProfile.HasSSD -and -not $HardwareProfile.HasHDD) { 'y' } else { 'n' }
-    if (Ask-YesNo "Disable SysMain to prioritize resources?" $defaultChoice) {
+    if (Get-Confirmation "Disable SysMain to prioritize resources?" $defaultChoice) {
         try {
             Stop-Service -Name "SysMain" -ErrorAction SilentlyContinue
             Set-Service -Name "SysMain" -StartupType Disabled
             Write-Host "  [+] SysMain disabled"
         } catch {
-            Handle-Error -Context "Disabling SysMain service" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Disabling SysMain service" -ErrorRecord $_
         }
-    } elseif (Ask-YesNo "Ensure SysMain is enabled and Automatic?" 'y') {
+    } elseif (Get-Confirmation "Ensure SysMain is enabled and Automatic?" 'y') {
         try {
             Set-Service -Name "SysMain" -StartupType Automatic
             Start-Service -Name "SysMain" -ErrorAction SilentlyContinue
             Write-Host "  [+] SysMain enabled"
         } catch {
-            Handle-Error -Context "Enabling SysMain service" -ErrorRecord $_
+            Invoke-ErrorHandler -Context "Enabling SysMain service" -ErrorRecord $_
         }
     } else {
         Write-Host "  [ ] SysMain left unchanged."
@@ -204,7 +204,7 @@ function Enable-UltimatePerformancePlan {
         powercfg -setactive $guid
         Write-Host "  [+] Ultimate Performance active."
     } catch {
-        Handle-Error -Context "Activating Ultimate Performance power plan" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Activating Ultimate Performance power plan" -ErrorRecord $_
     }
 }
 
@@ -231,7 +231,7 @@ function Set-RegistryPerformanceValue {
         Write-Log -Message $SuccessMessage -Level 'Info'
         $Global:NeedsReboot = $true
     } catch {
-        Handle-Error -Context $Context -ErrorRecord $_
+        Invoke-ErrorHandler -Context $Context -ErrorRecord $_
     }
 }
 

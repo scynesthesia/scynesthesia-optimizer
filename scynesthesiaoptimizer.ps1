@@ -46,8 +46,8 @@ try {
 
     Write-Host "Modules loaded successfully." -ForegroundColor Green
 } catch {
-    if (Get-Command Handle-Error -ErrorAction SilentlyContinue) {
-        Handle-Error -Context "Loading modules" -ErrorRecord $_
+    if (Get-Command Invoke-ErrorHandler -ErrorAction SilentlyContinue) {
+        Invoke-ErrorHandler -Context "Loading modules" -ErrorRecord $_
     } else {
         Write-Error "Error loading modules: $($_.Exception.Message)"
     }
@@ -58,8 +58,8 @@ try {
 
 # ---------- 3. LOGGING (Transcript and logging initialization.) ----------
 $TranscriptStarted = $false
-# Ask-YesNo is now available from ui.psm1.
-if (Ask-YesNo "Enable session logging to a file? / Habilitar registro de sesion en un archivo? (Recommended for Service Records) [y/N]" 'n') {
+# Get-Confirmation is now available from ui.psm1.
+if (Get-Confirmation "Enable session logging to a file? / Habilitar registro de sesion en un archivo? (Recommended for Service Records) [y/N]" 'n') {
     $logDir = Join-Path $env:TEMP "ScynesthesiaOptimizer"
     if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
     
@@ -158,7 +158,7 @@ function Invoke-SafeOptionalPrompts {
     )
     foreach ($opt in $options) {
         $label = "$($opt.Key) $($opt.Description)"
-        if (Ask-YesNo $label -Default 'n') {
+        if (Get-Confirmation $label -Default 'n') {
             & $opt.Action
             Write-Host "[OK] $($opt.Description) applied." -ForegroundColor Green
         } else {
@@ -248,7 +248,7 @@ function Show-NetworkTweaksMenu {
 
         $ensureBackup = {
             if (-not (Test-Path $backupFile)) {
-                if (Ask-YesNo "Save a backup of your current network configuration before applying tweaks (recommended)? / Queres guardar un backup de tu configuracion de red actual antes de aplicar tweaks (recomendado)?" 'y') {
+                if (Get-Confirmation "Save a backup of your current network configuration before applying tweaks (recommended)? / Queres guardar un backup de tu configuracion de red actual antes de aplicar tweaks (recomendado)?" 'y') {
                     Save-NetworkBackupState
                 }
             }
@@ -257,7 +257,7 @@ function Show-NetworkTweaksMenu {
         switch ($netChoice) {
             '1' {
                 & $ensureBackup
-                if (Ask-YesNo "Apply Safe Network Tweaks? / Aplicar Tweaks de Red Seguros?" 'n') {
+                if (Get-Confirmation "Apply Safe Network Tweaks? / Aplicar Tweaks de Red Seguros?" 'n') {
                     Invoke-NetworkTweaksSafe
                 } else {
                     Write-Host "[ ] Safe Network Tweaks skipped." -ForegroundColor Gray
@@ -267,7 +267,7 @@ function Show-NetworkTweaksMenu {
             }
             '2' {
                 & $ensureBackup
-                if (Ask-YesNo "Apply Aggressive Network Tweaks? / Aplicar Tweaks de Red Agresivos?" 'n') {
+                if (Get-Confirmation "Apply Aggressive Network Tweaks? / Aplicar Tweaks de Red Agresivos?" 'n') {
                     Invoke-NetworkTweaksAggressive
                 } else {
                     Write-Host "[ ] Aggressive Network Tweaks skipped." -ForegroundColor Gray
@@ -277,7 +277,7 @@ function Show-NetworkTweaksMenu {
             }
             '3' {
                 & $ensureBackup
-                if (Ask-YesNo "Apply Gaming Network Tweaks? / Aplicar Tweaks de Red para Gaming?" 'n') {
+                if (Get-Confirmation "Apply Gaming Network Tweaks? / Aplicar Tweaks de Red para Gaming?" 'n') {
                     Invoke-NetworkTweaksGaming
                 } else {
                     Write-Host "[ ] Gaming Network Tweaks skipped." -ForegroundColor Gray
@@ -294,12 +294,12 @@ function Show-NetworkTweaksMenu {
                 Read-Host "Presiona Enter para volver al menu de Network Tweaks"
             }
             '5' {
-                if (Ask-YesNo "Apply Hardcore Network Tweaks (Bufferbloat/MTU)? / ¿Aplicar Tweaks de Red Hardcore (Bufferbloat/MTU)?" 'n') {
+                if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)? / ¿Aplicar Tweaks de Red Hardcore (Bufferbloat/MTU)?" 'n') {
                     if (-not (Test-Path $backupFile)) {
                         try {
                             Save-NetworkBackupState
                         } catch {
-                            Handle-Error -Context "Creating network backup before Hardcore tweaks (Network Tweaks menu)" -ErrorRecord $_
+                            Invoke-ErrorHandler -Context "Creating network backup before Hardcore tweaks (Network Tweaks menu)" -ErrorRecord $_
                         }
                     }
 
@@ -308,7 +308,7 @@ function Show-NetworkTweaksMenu {
                         Invoke-NetworkTweaksHardcore
                         $Global:NeedsReboot = $true
                     } catch {
-                        Handle-Error -Context "Applying Hardcore Network Tweaks from Network Tweaks menu" -ErrorRecord $_
+                        Invoke-ErrorHandler -Context "Applying Hardcore Network Tweaks from Network Tweaks menu" -ErrorRecord $_
                     }
                 } else {
                     Write-Host "[ ] Hardcore Network Tweaks skipped. / [ ] Tweaks de Red Hardcore omitidos." -ForegroundColor Gray
@@ -416,7 +416,7 @@ do {
             Write-Section "GAMING MODE / FPS BOOST"
             $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
             Invoke-GamingOptimizations
-            if (Ask-YesNo "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.) / Habilitar MSI Mode para GPU y controladores de almacenamiento? (Recomendado para Gaming Mode. La placa de red (NIC) se puede ajustar aparte desde el menu de Network Tweaks.)" 'y') {
+            if (Get-Confirmation "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.) / Habilitar MSI Mode para GPU y controladores de almacenamiento? (Recomendado para Gaming Mode. La placa de red (NIC) se puede ajustar aparte desde el menu de Network Tweaks.)" 'y') {
                 $msiResult = Enable-MsiModeSafe -Target @('GPU','STORAGE')
                 if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {
                     Write-Log "[Gaming] MSI Mode enabled for GPU and storage controllers from main Gaming Mode."
@@ -429,12 +429,12 @@ do {
             Write-Host "[+] Gaming tweaks applied." -ForegroundColor Magenta
 
             $backupFile = "C:\ProgramData\Scynesthesia\network_backup.json"
-            if (Ask-YesNo "Apply Hardcore Network Tweaks (Bufferbloat/MTU)? / ¿Aplicar Tweaks de Red Hardcore (Bufferbloat/MTU)?" 'n') {
+            if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)? / ¿Aplicar Tweaks de Red Hardcore (Bufferbloat/MTU)?" 'n') {
                 if (-not (Test-Path $backupFile)) {
                     try {
                         Save-NetworkBackupState
                     } catch {
-                        Handle-Error -Context "Creating network backup before Hardcore tweaks" -ErrorRecord $_
+                        Invoke-ErrorHandler -Context "Creating network backup before Hardcore tweaks" -ErrorRecord $_
                     }
                 }
 
@@ -443,7 +443,7 @@ do {
                     Invoke-NetworkTweaksHardcore
                     $Global:NeedsReboot = $true
                 } catch {
-                    Handle-Error -Context "Applying Hardcore Network Tweaks from Gaming preset" -ErrorRecord $_
+                    Invoke-ErrorHandler -Context "Applying Hardcore Network Tweaks from Gaming preset" -ErrorRecord $_
                 }
             } else {
                 Write-Host "  [ ] Hardcore Network Tweaks skipped. / [ ] Tweaks de Red Hardcore omitidos." -ForegroundColor DarkGray
@@ -472,7 +472,7 @@ do {
 
 $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 if ($Global:NeedsReboot) {
-    if (Ask-YesNo -Question "Some changes (like Nagle/MSI Mode) require a reboot to fully apply. Do you want to restart now? / Algunos cambios (como Nagle/MSI Mode) requieren reiniciar para aplicarse por completo. Queres reiniciar ahora?" -Default 'n') {
+    if (Get-Confirmation -Question "Some changes (like Nagle/MSI Mode) require a reboot to fully apply. Do you want to restart now? / Algunos cambios (como Nagle/MSI Mode) requieren reiniciar para aplicarse por completo. Queres reiniciar ahora?" -Default 'n') {
         if ($logger) { Write-Log "[System] User chose to reboot from main menu." }
         try {
             shutdown /r /t 0

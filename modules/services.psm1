@@ -31,7 +31,7 @@ function Set-ServiceState {
         Write-Host "  [+] $message" -ForegroundColor Gray
         Write-Log -Message $message -Level 'Info'
     } catch {
-        Handle-Error -Context "Configuring service $Name" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Configuring service $Name" -ErrorRecord $_
     }
 }
 
@@ -64,13 +64,13 @@ function Optimize-ServicesAggressive {
         Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
     }
 
-    if (Ask-YesNo "Disable Print Spooler service? / ¿Deshabilitar el servicio de impresion?" 'n') {
+    if (Get-Confirmation "Disable Print Spooler service? / ¿Deshabilitar el servicio de impresion?" 'n') {
         Set-ServiceState -Name 'Spooler' -StartupType 'Disabled' -Status 'Stopped'
     } else {
         Write-Host "  [ ] Print Spooler kept enabled / Cola de impresion mantenida." -ForegroundColor DarkGray
     }
 
-    if (Ask-YesNo "Disable Bluetooth Support service? / ¿Deshabilitar el servicio de Bluetooth?" 'n') {
+    if (Get-Confirmation "Disable Bluetooth Support service? / ¿Deshabilitar el servicio de Bluetooth?" 'n') {
         Set-ServiceState -Name 'bthserv' -StartupType 'Disabled' -Status 'Stopped'
     } else {
         Write-Host "  [ ] Bluetooth Support kept enabled / Soporte de Bluetooth mantenido." -ForegroundColor DarkGray
