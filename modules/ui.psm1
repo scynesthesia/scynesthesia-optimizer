@@ -122,12 +122,15 @@ function Set-RegistryValueSafe {
         [Microsoft.Win32.RegistryValueKind]$Type = [Microsoft.Win32.RegistryValueKind]::DWord
     )
 
-    if ([string]::IsNullOrWhiteSpace($Name)) {
+    $isDefaultValue = $Name -eq "(default)"
+    if (-not $isDefaultValue -and [string]::IsNullOrWhiteSpace($Name)) {
         $warning = "[!] Attempted to set registry value with empty name at path $Path. Skipping."
         Write-Host $warning -ForegroundColor Yellow
         Write-Log -Message $warning -Level 'Warning'
         return
     }
+
+    $registryName = if ($isDefaultValue) { "" } else { $Name }
 
     try {
         # Auto-fix: HKLM\ / HKCU\ -> HKLM:\ / HKCU:\
@@ -139,7 +142,7 @@ function Set-RegistryValueSafe {
             New-Item -Path $Path -Force | Out-Null
         }
 
-        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force -ErrorAction Stop | Out-Null
+        New-ItemProperty -Path $Path -Name $registryName -Value $Value -PropertyType $Type -Force -ErrorAction Stop | Out-Null
     }
     catch {
         Invoke-ErrorHandler -Context "Setting registry value $Path -> $Name" -ErrorRecord $_

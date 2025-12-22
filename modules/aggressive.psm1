@@ -13,7 +13,7 @@ function Get-AppRemovalListFromConfig {
 
     if (-not $script:AppRemovalConfig) {
         $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-        $configPath = Join-Path (Split-Path $PSScriptRoot -Parent) "config/apps.json"
+        $configPath = Join-Path $Global:ScriptRoot "config/apps.json"
         if (-not (Test-Path $configPath)) {
             $message = "[Debloat] No se encontro el archivo de configuracion de apps: $configPath. Saltando la fase de App Removal."
             Write-Host $message -ForegroundColor Yellow
@@ -123,13 +123,18 @@ function Invoke-AggressiveTweaks {
             "\\Microsoft\\Windows\\Customer Experience Improvement Program\\UsbCeip",
             "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser"
         )
-        foreach ($t in $tasks) {
-            try {
-                schtasks /Change /TN $t /Disable | Out-Null
-                Write-Host "  [+] Task $t disabled"
-            } catch {
-                Invoke-ErrorHandler -Context "Disabling scheduled task $t" -ErrorRecord $_
+        Push-Location -Path $env:SystemRoot\System32
+        try {
+            foreach ($t in $tasks) {
+                try {
+                    schtasks /Change /TN $t /Disable | Out-Null
+                    Write-Host "  [+] Task $t disabled"
+                } catch {
+                    Invoke-ErrorHandler -Context "Disabling scheduled task $t" -ErrorRecord $_
+                }
             }
+        } finally {
+            Pop-Location
         }
     }
 
