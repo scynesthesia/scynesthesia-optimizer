@@ -306,6 +306,53 @@ function Enable-HagsPerformance {
     Write-Host "  [+] HAGS enabled for performance / HAGS habilitado para rendimiento." -ForegroundColor Gray
 }
 
+# Description: Disables global power throttling to maintain consistent CPU performance.
+# Parameters: None.
+# Returns: None. Writes registry value and flags reboot requirement.
+function Disable-PowerThrottlingGlobal {
+    [CmdletBinding()]
+    param()
+
+    $path = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"
+    $name = "PowerThrottlingOff"
+
+    Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+    $Global:NeedsReboot = $true
+    Write-Host "  [+] Global power throttling disabled / Limitación de energía global desactivada." -ForegroundColor Gray
+}
+
+# Description: Keeps the Windows kernel and drivers resident in physical memory.
+# Parameters: None.
+# Returns: None. Writes registry value and flags reboot requirement.
+function Set-PagingExecutivePerformance {
+    [CmdletBinding()]
+    param()
+
+    $path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+    $name = "DisablePagingExecutive"
+
+    Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+    $Global:NeedsReboot = $true
+    Write-Host "  [+] Kernel paging disabled (kept in RAM) / Paginación del kernel desactivada (se mantiene en RAM)." -ForegroundColor Gray
+}
+
+# Description: Disables Windows memory compression when sufficient RAM is available.
+# Parameters: None.
+# Returns: None. Evaluates hardware profile and adjusts compression accordingly.
+function Optimize-MemoryCompression {
+    [CmdletBinding()]
+    param()
+
+    $hardware = Get-HardwareProfile
+    if ($hardware.TotalMemoryGB -ge 8) {
+        Disable-MMAgent -MemoryCompression -ErrorAction SilentlyContinue
+        $Global:NeedsReboot = $true
+        Write-Host "  [+] Memory compression disabled (>=8GB RAM) / Compresión de memoria desactivada (>=8GB RAM)." -ForegroundColor Gray
+    } else {
+        Write-Host "  [ ] Memory compression kept (RAM <8GB) / Compresión de memoria mantenida (RAM <8GB)." -ForegroundColor Gray
+    }
+}
+
 # Description: Applies conservative performance tweaks suitable for most systems.
 # Parameters: None.
 # Returns: None. Calls supporting registry tweak functions.
@@ -329,10 +376,13 @@ function Apply-AggressivePerformanceTweaks {
     Write-Section "Applying Aggressive/Low-end performance tweaks..."
     Set-NtfsLastAccessUpdate
     Enable-HagsPerformance
+    Disable-PowerThrottlingGlobal
+    Set-PagingExecutivePerformance
+    Optimize-MemoryCompression
     Set-MenuShowDelay -DelayMs 0
     Set-WaitToKillServiceTimeout -Milliseconds 2000
     Disable-TransparencyEffects
     Set-VisualEffectsBestPerformance
 }
 
-Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Handle-SysMainPrompt, Apply-PerformanceBaseline, Enable-UltimatePerformancePlan, Set-NtfsLastAccessUpdate, Set-MenuShowDelay, Disable-TransparencyEffects, Set-VisualEffectsBestPerformance, Set-WaitToKillServiceTimeout, Disable-MpoVisualFix, Enable-HagsPerformance, Apply-SafePerformanceTweaks, Apply-AggressivePerformanceTweaks
+Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Handle-SysMainPrompt, Apply-PerformanceBaseline, Enable-UltimatePerformancePlan, Set-NtfsLastAccessUpdate, Set-MenuShowDelay, Disable-TransparencyEffects, Set-VisualEffectsBestPerformance, Set-WaitToKillServiceTimeout, Disable-MpoVisualFix, Enable-HagsPerformance, Disable-PowerThrottlingGlobal, Set-PagingExecutivePerformance, Optimize-MemoryCompression, Apply-SafePerformanceTweaks, Apply-AggressivePerformanceTweaks
