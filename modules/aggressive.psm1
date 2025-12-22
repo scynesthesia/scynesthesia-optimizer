@@ -39,7 +39,7 @@ function Get-AppRemovalListFromConfig {
 # Description: Applies aggressive performance and debloat tweaks for slow PCs.
 # Parameters: HardwareProfile - Detected system characteristics; FailedPackages - Reference to collection of failed removals; OemServices - OEM services to protect.
 # Returns: None. May update failed package list and global reboot flag.
-function Apply-AggressiveTweaks {
+function Invoke-AggressiveTweaks {
     param(
         [Parameter(Mandatory)]
         $HardwareProfile,
@@ -191,4 +191,4 @@ function Apply-AggressiveTweaks {
     }
 }
 
-Export-ModuleMember -Function Apply-AggressiveTweaks
+Export-ModuleMember -Function Invoke-AggressiveTweaks

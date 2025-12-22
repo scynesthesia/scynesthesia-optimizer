@@ -83,7 +83,7 @@ function Get-OrCreate-GamingPlan {
 # Description: Applies high-performance power settings tailored for gaming scenarios.
 # Parameters: None.
 # Returns: None. Activates or updates the gaming power plan.
-function Apply-CustomGamingPowerSettings {
+function Invoke-CustomGamingPowerSettings {
     Write-Section "Power Plan: 'Custom Gaming Tweaks'"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
@@ -274,7 +274,7 @@ function Set-FsoGlobalOverride {
 # Returns: None. Sequentially applies gaming optimizations and reports completion.
 function Invoke-GamingOptimizations {
     Optimize-GamingScheduler
-    Apply-CustomGamingPowerSettings
+    Invoke-CustomGamingPowerSettings
     Optimize-ProcessorScheduling
     Set-UsbPowerManagementHardcore
     Optimize-HidLatency
@@ -284,4 +284,4 @@ function Invoke-GamingOptimizations {
     Write-Host "[+] Global Gaming Optimizations complete / [+] Optimizaciones de Gaming globales completadas." -ForegroundColor Magenta
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Apply-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-FsoGlobalOverride, Invoke-GamingOptimizations
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-FsoGlobalOverride, Invoke-GamingOptimizations
