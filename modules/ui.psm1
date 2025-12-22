@@ -122,15 +122,14 @@ function Set-RegistryValueSafe {
         [Microsoft.Win32.RegistryValueKind]$Type = [Microsoft.Win32.RegistryValueKind]::DWord
     )
 
-    $isDefaultValue = $Name -eq "(default)"
-    if (-not $isDefaultValue -and [string]::IsNullOrWhiteSpace($Name)) {
+    if (-not ($Name -eq "(default)") -and [string]::IsNullOrWhiteSpace($Name)) {
         $warning = "[!] Attempted to set registry value with empty name at path $Path. Skipping."
         Write-Host $warning -ForegroundColor Yellow
         Write-Log -Message $warning -Level 'Warning'
         return
     }
 
-    $registryName = if ($isDefaultValue) { "" } else { $Name }
+    $registryName = if ($Name -eq "(default)") { "" } else { $Name }
 
     try {
         # Auto-fix: HKLM\ / HKCU\ -> HKLM:\ / HKCU:\
@@ -161,25 +160,25 @@ function Write-OutcomeSummary {
     )
 
     Write-Host ""
-    Write-Host "===== Summary / Resumen =====" -ForegroundColor Cyan
-    $privacyStatus = if ($PrivacyApplied) { 'Applied / Aplicado' } else { 'Skipped / Omitido' }
-    $debloatStatus = if ($DebloatApplied) { 'Applied / Aplicado' } else { 'Skipped / Omitido' }
-    $performanceStatus = if ($PerformanceApplied) { 'Applied / Aplicado' } else { 'Skipped / Omitido' }
+    Write-Host "===== Summary =====" -ForegroundColor Cyan
+    $privacyStatus = if ($PrivacyApplied) { 'Applied' } else { 'Skipped' }
+    $debloatStatus = if ($DebloatApplied) { 'Applied' } else { 'Skipped' }
+    $performanceStatus = if ($PerformanceApplied) { 'Applied' } else { 'Skipped' }
 
-    Write-Host "[+] Privacy hardened: $privacyStatus / Privacidad reforzada: $privacyStatus" -ForegroundColor Green
-    Write-Host "[+] Debloat: $debloatStatus / Eliminación de bloat: $debloatStatus" -ForegroundColor Green
-    Write-Host "[+] Performance tweaks: $performanceStatus / Ajustes de rendimiento: $performanceStatus" -ForegroundColor Green
+    Write-Host "[+] Privacy hardened: $privacyStatus" -ForegroundColor Green
+    Write-Host "[+] Debloat: $debloatStatus" -ForegroundColor Green
+    Write-Host "[+] Performance tweaks: $performanceStatus" -ForegroundColor Green
 
     if ($Status.PackagesFailed.Count -gt 0) {
-        Write-Host "[X] Some packages could not be removed ($($Status.PackagesFailed -join ', ')) / Algunos paquetes no pudieron eliminarse ($($Status.PackagesFailed -join ', '))" -ForegroundColor Yellow
+        Write-Host "[X] Some packages could not be removed ($($Status.PackagesFailed -join ', '))" -ForegroundColor Yellow
     } else {
-        Write-Host "[+] All targeted packages removed / Todos los paquetes seleccionados eliminados" -ForegroundColor Green
+        Write-Host "[+] All targeted packages removed" -ForegroundColor Green
     }
 
     if ($Status.RebootRequired) {
-        Write-Host "[!] Reboot required / Reinicio requerido" -ForegroundColor Yellow
+        Write-Host "[!] Reboot required" -ForegroundColor Yellow
     } else {
-        Write-Host "[ ] Reboot optional / Reinicio opcional" -ForegroundColor Gray
+        Write-Host "[ ] Reboot optional" -ForegroundColor Gray
     }
 }
 
