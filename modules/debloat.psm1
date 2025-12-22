@@ -108,7 +108,7 @@ function Clear-DeepTempAndThumbs {
 # Description: Removes common bloatware while preserving core Windows Store functionality.
 # Parameters: AppList - Optional list of packages to remove instead of default SafeRemove list.
 # Returns: PSCustomObject containing any failed package removals.
-function Apply-DebloatSafe {
+function Invoke-DebloatSafe {
     param(
         [string[]] $AppList
     )
@@ -144,7 +144,7 @@ function Apply-DebloatSafe {
 # Description: Removes a broader set of apps and optionally provisioned packages.
 # Parameters: AppList - Optional list of packages to remove instead of default AggressiveRemove list.
 # Returns: PSCustomObject containing any failed package removals.
-function Apply-DebloatAggressive {
+function Invoke-DebloatAggressive {
     param(
         [string[]] $AppList
     )
@@ -198,4 +198,4 @@ function Apply-DebloatAggressive {
     }
 }
 
-Export-ModuleMember -Function Create-RestorePointSafe, Clear-TempFiles, Clear-DeepTempAndThumbs, Apply-DebloatSafe, Apply-DebloatAggressive
+Export-ModuleMember -Function Create-RestorePointSafe, Clear-TempFiles, Clear-DeepTempAndThumbs, Invoke-DebloatSafe, Invoke-DebloatAggressive

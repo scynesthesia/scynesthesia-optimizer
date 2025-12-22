@@ -85,7 +85,7 @@ function Get-OEMServiceInfo {
 # Description: Guides the user to enable or disable SysMain based on detected hardware.
 # Parameters: HardwareProfile - Hardware characteristics influencing default choices.
 # Returns: None.
-function Handle-SysMainPrompt {
+function Invoke-SysMainOptimization {
     param(
         [Parameter(Mandatory)]
         $HardwareProfile
@@ -120,7 +120,7 @@ function Handle-SysMainPrompt {
 # Description: Applies baseline performance registry adjustments using hardware context.
 # Parameters: HardwareProfile - Used to select appropriate prefetch and visual effect settings.
 # Returns: None.
-function Apply-PerformanceBaseline {
+function Invoke-PerformanceBaseline {
     param(
         [Parameter(Mandatory)]
         $HardwareProfile
@@ -402,7 +402,7 @@ function Optimize-MemoryCompression {
 # Description: Applies conservative performance tweaks suitable for most systems.
 # Parameters: None.
 # Returns: None. Calls supporting registry tweak functions.
-function Apply-SafePerformanceTweaks {
+function Invoke-SafePerformanceTweaks {
     [CmdletBinding()]
     param()
 
@@ -416,7 +416,7 @@ function Apply-SafePerformanceTweaks {
 # Description: Applies more aggressive performance tweaks for low-end systems.
 # Parameters: None.
 # Returns: None. Invokes multiple registry adjustments for responsiveness.
-function Apply-AggressivePerformanceTweaks {
+function Invoke-AggressivePerformanceTweaks {
     [CmdletBinding()]
     param()
 
@@ -433,4 +433,4 @@ function Apply-AggressivePerformanceTweaks {
     Optimize-ServicesAggressive
 }
 
-Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Handle-SysMainPrompt, Apply-PerformanceBaseline, Enable-UltimatePerformancePlan, Set-NtfsLastAccessUpdate, Set-MenuShowDelay, Disable-TransparencyEffects, Set-VisualEffectsBestPerformance, Set-WaitToKillServiceTimeout, Disable-MpoVisualFix, Enable-HagsPerformance, Disable-PowerThrottlingGlobal, Set-PagingExecutivePerformance, Optimize-MemoryCompression, Apply-SafePerformanceTweaks, Apply-AggressivePerformanceTweaks
+Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Invoke-SysMainOptimization, Invoke-PerformanceBaseline, Enable-UltimatePerformancePlan, Set-NtfsLastAccessUpdate, Set-MenuShowDelay, Disable-TransparencyEffects, Set-VisualEffectsBestPerformance, Set-WaitToKillServiceTimeout, Disable-MpoVisualFix, Enable-HagsPerformance, Disable-PowerThrottlingGlobal, Set-PagingExecutivePerformance, Optimize-MemoryCompression, Invoke-SafePerformanceTweaks, Invoke-AggressivePerformanceTweaks

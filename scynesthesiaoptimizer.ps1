@@ -181,15 +181,15 @@ function Run-SafePreset {
     Clear-TempFiles
 
     # Safe Debloat (Standard list)
-    Apply-PrivacyTelemetrySafe
-    $debloatResult = Apply-DebloatSafe # Uses the default list defined in the module
+    Invoke-PrivacyTelemetrySafe
+    $debloatResult = Invoke-DebloatSafe # Uses the default list defined in the module
     $Status.PackagesFailed += $debloatResult.Failed
 
-    Apply-PreferencesSafe
+    Invoke-PreferencesSafe
     Invoke-SafeOptionalPrompts
-    Handle-SysMainPrompt -HardwareProfile $HWProfile
-    Apply-PerformanceBaseline -HardwareProfile $HWProfile
-    Apply-SafePerformanceTweaks
+    Invoke-SysMainOptimization -HardwareProfile $HWProfile
+    Invoke-PerformanceBaseline -HardwareProfile $HWProfile
+    Invoke-SafePerformanceTweaks
     Ensure-PowerPlan -Mode 'HighPerformance'
 
     $Status.RebootRequired = $Global:NeedsReboot
@@ -209,20 +209,20 @@ function Run-PCSlowPreset {
     Create-RestorePointSafe
     Clear-TempFiles
 
-    Apply-PrivacyTelemetrySafe
-    
+    Invoke-PrivacyTelemetrySafe
+
     # Deep cleaning using Aggressive Debloat profile.
     # Using updated function from debloat.psm1.
-    $debloatResult = Apply-DebloatAggressive 
+    $debloatResult = Invoke-DebloatAggressive
     $Status.PackagesFailed += $debloatResult.Failed
-    
-    Apply-PreferencesSafe
-    Apply-PerformanceBaseline -HardwareProfile $HWProfile
+
+    Invoke-PreferencesSafe
+    Invoke-PerformanceBaseline -HardwareProfile $HWProfile
     Ensure-PowerPlan -Mode 'HighPerformance'
 
     # Additional tweaks specific to slow PCs
-    Apply-AggressivePerformanceTweaks
-    Apply-AggressiveTweaks -HardwareProfile $HWProfile -FailedPackages ([ref]$Status.PackagesFailed) -OemServices $OemServices
+    Invoke-AggressivePerformanceTweaks
+    Invoke-AggressiveTweaks -HardwareProfile $HWProfile -FailedPackages ([ref]$Status.PackagesFailed) -OemServices $OemServices
 
     $Status.RebootRequired = $Global:NeedsReboot
     Write-OutcomeSummary -Status $Status

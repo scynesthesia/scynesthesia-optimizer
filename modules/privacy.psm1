@@ -2,7 +2,7 @@
 # Description: Applies privacy-focused registry changes suitable for the Safe preset.
 # Parameters: None.
 # Returns: None. Prompts for optional Cortana and Storage Sense adjustments.
-function Apply-PrivacyTelemetrySafe {
+function Invoke-PrivacyTelemetrySafe {
     Write-Section "Applying privacy/telemetry tweaks (Safe preset)"
 
     Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" "DisableConsumerFeatures" 1
@@ -55,7 +55,7 @@ function Apply-PrivacyTelemetrySafe {
 # Description: Configures user experience preferences for Explorer, mouse, and keyboard behavior.
 # Parameters: None.
 # Returns: None. Writes registry values for consistent UX defaults.
-function Apply-PreferencesSafe {
+function Invoke-PreferencesSafe {
     Write-Section "Adjusting UX preferences (Start, Explorer, etc.)"
 
     Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "Hidden" 1
@@ -76,4 +76,4 @@ function Apply-PreferencesSafe {
     Set-RegistryValueSafe "HKCU\Control Panel\Keyboard" "InitialKeyboardIndicators" 2147483650
 }
 
-Export-ModuleMember -Function Apply-PrivacyTelemetrySafe, Apply-PreferencesSafe
+Export-ModuleMember -Function Invoke-PrivacyTelemetrySafe, Invoke-PreferencesSafe
