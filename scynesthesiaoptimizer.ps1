@@ -314,6 +314,8 @@ do {
             Optimize-GamingScheduler
             Apply-CustomGamingPowerSettings
             Optimize-ProcessorScheduling
+            Set-UsbPowerManagementHardcore
+            Optimize-HidLatency
             if (Ask-YesNo "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.) / Habilitar MSI Mode para GPU y controladores de almacenamiento? (Recomendado para Gaming Mode. La placa de red (NIC) se puede ajustar aparte desde el menu de Network Tweaks.)" 'y') {
                 $msiResult = Enable-MsiModeSafe -Target @('GPU','STORAGE')
                 if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {

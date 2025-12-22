@@ -133,6 +133,87 @@ function Apply-CustomGamingPowerSettings {
         Write-Host "  [ ] Hardcore power tweaks skipped." -ForegroundColor DarkGray
     }
 }
+# Description: Disables USB hub power management flags to minimize input latency.
+# Parameters: None.
+# Returns: None. Logs actions when logger is available.
+function Set-UsbPowerManagementHardcore {
+    Write-Section "USB Power Management"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $usbRoot = "HKLM:\\SYSTEM\\CurrentControlSet\\Enum\\USB"
+    $targetNames = @('USB Root Hub','Generic USB Hub')
+
+    if (-not (Test-Path $usbRoot)) {
+        Write-Host "  [!] USB registry path not found. Skipping USB power tweaks. / [!] Ruta de registro USB no encontrada. Omitiendo ajustes de energía USB." -ForegroundColor Yellow
+        return
+    }
+
+    $hubs = @()
+    try {
+        $hubs = Get-ChildItem -Path $usbRoot -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSIsContainer } |
+            ForEach-Object {
+                try {
+                    $props = Get-ItemProperty -Path $_.PSPath -ErrorAction Stop
+                } catch {
+                    return
+                }
+
+                $friendly = $props.FriendlyName
+                $deviceDesc = $props.DeviceDesc
+                if ($targetNames -contains $friendly -or $targetNames -contains $deviceDesc) {
+                    return [pscustomobject]@{
+                        Path = $_.PSPath
+                        Name = if ($friendly) { $friendly } else { $deviceDesc }
+                    }
+                }
+            } | Where-Object { $_ }
+    } catch {
+        Handle-Error -Context "Enumerating USB hubs" -ErrorRecord $_
+        return
+    }
+
+    if ($hubs.Count -eq 0) {
+        Write-Host "  [!] No USB hubs found for power override. / [!] No se encontraron hubs USB para ajustar energía." -ForegroundColor Yellow
+        return
+    }
+
+    foreach ($hub in $hubs) {
+        try {
+            Set-RegistryValueSafe -Path $hub.Path -Name 'PnPCapabilities' -Value 24 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+            Write-Host "  [+] USB hub '$($hub.Name)' power disable applied. /  [+] Hub USB '$($hub.Name)' con energía deshabilitada." -ForegroundColor Green
+            if ($logger) {
+                Write-Log "[Gaming] USB hub '$($hub.Name)' PnPCapabilities set to 24."
+            }
+        } catch {
+            Handle-Error -Context "Setting USB power flags on $($hub.Name)" -ErrorRecord $_
+        }
+    }
+
+    Write-Host "[+] USB Power Management annihilated / [+] Gestión de energía USB aniquilada." -ForegroundColor Magenta
+}
+
+# Description: Tunes HID class queue sizes to reduce input buffering latency.
+# Parameters: None.
+# Returns: None. Records changes when logger is present.
+function Optimize-HidLatency {
+    Write-Section "HID Latency Optimizations"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $hidPaths = @(
+        @{ Path = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\mouclass\\Parameters"; Name = 'MouseDataQueueSize' },
+        @{ Path = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\kbdclass\\Parameters"; Name = 'KeyboardDataQueueSize' }
+    )
+
+    foreach ($entry in $hidPaths) {
+        try {
+            Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value 100 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+            Write-Host "  [+] $($entry.Name) set to 100 / $($entry.Name) configurado a 100" -ForegroundColor Green
+            if ($logger) { Write-Log "[Gaming] $($entry.Name) set to 100 for HID latency optimization." }
+        } catch {
+            Handle-Error -Context "Setting $($entry.Name) for HID latency" -ErrorRecord $_
+        }
+    }
+}
 # Description: Tunes processor scheduling registry settings for lower input latency.
 # Parameters: None.
 # Returns: None. Records changes when logger is present.
@@ -154,4 +235,4 @@ function Optimize-ProcessorScheduling {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Apply-CustomGamingPowerSettings, Optimize-ProcessorScheduling
+Export-ModuleMember -Function Optimize-GamingScheduler, Apply-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency
