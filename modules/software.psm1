@@ -2,8 +2,26 @@
 
 function Test-WingetAvailable {
     try {
-        $command = Get-Command winget -ErrorAction SilentlyContinue
-        return [bool]$command
+        $command = Get-Command -Name 'winget' -ErrorAction SilentlyContinue
+
+        if (-not $command) {
+            return $false
+        }
+
+        if ($command.CommandType -eq 'Application' -and (Test-Path -LiteralPath $command.Source)) {
+            return $true
+        }
+
+        if ($command.CommandType -eq 'Alias' -and -not [string]::IsNullOrWhiteSpace($command.Definition)) {
+            return (Test-Path -LiteralPath $command.Definition)
+        }
+
+        $appCommand = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
+        if ($appCommand -and (Test-Path -LiteralPath $appCommand.Source)) {
+            return $true
+        }
+
+        return $false
     } catch {
         return $false
     }
@@ -37,8 +55,26 @@ function Invoke-SoftwareInstaller {
         if (Ask-YesNo -Question $question -Default $app.Default) {
             Write-Host "  [>] Installing $($app.Name)... / Instalando $($app.Name)..." -ForegroundColor Gray
             try {
-                winget install --id $($app.Id) --silent --accept-package-agreements --accept-source-agreements | Out-Null
-                Write-Host "  [+] $($app.Name) installed. / $($app.Name) instalado." -ForegroundColor Green
+                $wingetArgs = @(
+                    'install', '--id', $app.Id,
+                    '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'
+                )
+
+                $process = Start-Process -FilePath 'winget' -ArgumentList $wingetArgs -Wait -NoNewWindow -PassThru -ErrorAction Stop
+
+                switch ($process.ExitCode) {
+                    0 {
+                        Write-Host "  [+] $($app.Name) installed. / $($app.Name) instalado." -ForegroundColor Green
+                    }
+                    0x8A150029 {
+                        Write-Host "  [ ] $($app.Name) already installed. / $($app.Name) ya estaba instalado." -ForegroundColor DarkGray
+                    }
+                    default {
+                        $message = "  [X] $($app.Name) could not be installed (exit code $($process.ExitCode)). / $($app.Name) no pudo instalarse (codigo de salida $($process.ExitCode))."
+                        Write-Host $message -ForegroundColor Yellow
+                        Write-Log -Message "Winget install for $($app.Id) exited with code $($process.ExitCode)." -Level 'Warning'
+                    }
+                }
             } catch {
                 Handle-Error -Context "Installing $($app.Name) via winget" -ErrorRecord $_
             }
@@ -62,6 +98,13 @@ function Set-WindowsUpdateNotifyOnly {
 
 function Invoke-WindowsUpdateScan {
     Write-Host "[i] Triggering Windows Update scan... / Iniciando escaneo de Windows Update..." -ForegroundColor Gray
+
+    $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        Write-Host "[X] Administrative privileges are required to start the scan. / Se requieren privilegios de administrador para iniciar el escaneo." -ForegroundColor Yellow
+        return
+    }
+
     try {
         Start-Process -FilePath "usoclient" -ArgumentList "StartInteractiveScan" -WindowStyle Hidden -ErrorAction Stop | Out-Null
         Write-Host "[+] Scan started in the background. / Escaneo iniciado en segundo plano." -ForegroundColor Green
