@@ -364,6 +364,7 @@ function Apply-SafePerformanceTweaks {
     Disable-MpoVisualFix
     Set-NtfsLastAccessUpdate
     Set-MenuShowDelay -DelayMs 20
+    Optimize-ServicesSafe
 }
 
 # Description: Applies more aggressive performance tweaks for low-end systems.
@@ -383,6 +384,7 @@ function Apply-AggressivePerformanceTweaks {
     Set-WaitToKillServiceTimeout -Milliseconds 2000
     Disable-TransparencyEffects
     Set-VisualEffectsBestPerformance
+    Optimize-ServicesAggressive
 }
 
 Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Handle-SysMainPrompt, Apply-PerformanceBaseline, Enable-UltimatePerformancePlan, Set-NtfsLastAccessUpdate, Set-MenuShowDelay, Disable-TransparencyEffects, Set-VisualEffectsBestPerformance, Set-WaitToKillServiceTimeout, Disable-MpoVisualFix, Enable-HagsPerformance, Disable-PowerThrottlingGlobal, Set-PagingExecutivePerformance, Optimize-MemoryCompression, Apply-SafePerformanceTweaks, Apply-AggressivePerformanceTweaks

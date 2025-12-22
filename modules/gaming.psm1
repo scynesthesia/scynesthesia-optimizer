@@ -277,6 +277,7 @@ function Invoke-GamingOptimizations {
     Optimize-ProcessorScheduling
     Set-UsbPowerManagementHardcore
     Optimize-HidLatency
+    Optimize-DriverTelemetry
     Set-FsoGlobalOverride
 
     Write-Host "[+] Global Gaming Optimizations complete / [+] Optimizaciones de Gaming globales completadas." -ForegroundColor Magenta
