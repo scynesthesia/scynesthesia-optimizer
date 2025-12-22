@@ -3,12 +3,38 @@
 # Parameters: None.
 # Returns: PSCustomObject summarizing laptop status, memory category, and storage mix.
 function Get-HardwareProfile {
-    $battery = Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue
-    $system = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
-    $memoryBytes = $system.TotalPhysicalMemory
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $battery = $null
+    try {
+        $battery = Get-CimInstance -ClassName Win32_Battery -ErrorAction Stop
+    } catch {
+        $warning = "[Performance] Battery information unavailable: $($_.Exception.Message). Assuming desktop."
+        Write-Warning $warning
+        if ($logger) { Write-Log -Message $warning -Level 'Warning' }
+    }
+
+    $system = $null
+    try {
+        $system = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+    } catch {
+        $warning = "[Performance] System information unavailable: $($_.Exception.Message). Memory size will be treated as 0 GB."
+        Write-Warning $warning
+        if ($logger) { Write-Log -Message $warning -Level 'Warning' }
+    }
+
+    $memoryBytes = if ($system) { $system.TotalPhysicalMemory } else { $null }
     $memoryGB = if ($memoryBytes) { [math]::Round($memoryBytes / 1GB, 1) } else { 0 }
 
-    $disks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+    $disks = @()
+    try {
+        $disks = Get-PhysicalDisk -ErrorAction Stop
+    } catch {
+        $warning = "[Performance] Storage information unavailable: $($_.Exception.Message). Disk type assumptions may be inaccurate."
+        Write-Warning $warning
+        if ($logger) { Write-Log -Message $warning -Level 'Warning' }
+        $disks = @()
+    }
     $hasDiskData = $disks -ne $null -and $disks.Count -gt 0
     $hasSSD = $false
     $hasHDD = $false
@@ -106,6 +132,7 @@ function Apply-PerformanceBaseline {
     $prefetchValue = if ($HardwareProfile.HasSSD -and -not $HardwareProfile.HasHDD) { 1 } else { 3 }
     Set-RegistryValueSafe $prefetchPath "EnablePrefetcher" $prefetchValue
     Set-RegistryValueSafe $prefetchPath "EnableSuperfetch" $prefetchValue
+    $Global:NeedsReboot = $true
 
     if ($HardwareProfile.MemoryCategory -eq 'Low') {
         Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" "VisualFXSetting" 2
@@ -202,6 +229,7 @@ function Set-RegistryPerformanceValue {
 
         New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
         Write-Log -Message $SuccessMessage -Level 'Info'
+        $Global:NeedsReboot = $true
     } catch {
         Handle-Error -Context $Context -ErrorRecord $_
     }
