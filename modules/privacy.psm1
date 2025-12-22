@@ -67,7 +67,7 @@ function Invoke-PreferencesSafe {
 
     Set-RegistryValueSafe "HKCU\Control Panel\Accessibility\StickyKeys" "Flags" 506
 
-    Set-RegistryValueSafe "HKCU\SOFTWARE\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32" "" "" ([Microsoft.Win32.RegistryValueKind]::String)
+    Set-RegistryValueSafe "HKCU\SOFTWARE\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32" "(default)" "" ([Microsoft.Win32.RegistryValueKind]::String)
 
     Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "LaunchTo" 1
 
