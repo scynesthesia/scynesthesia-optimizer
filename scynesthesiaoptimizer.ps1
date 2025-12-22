@@ -10,11 +10,13 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     exit 1
 }
 
+# Capture the script root globally so modules and sub-menus can resolve paths reliably.
+$Global:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
+
 # ---------- 2. MODULE IMPORTS (Moved up to ensure dependencies load early.) ----------
 $Global:NeedsReboot = $false
-$ScriptPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 try {
-    $modulesRoot = Join-Path $ScriptPath 'modules'
+    $modulesRoot = Join-Path $Global:ScriptRoot 'modules'
     $uiModule = Join-Path $modulesRoot 'ui.psm1'
     Import-Module $uiModule -Force -ErrorAction Stop
     Write-Host "[OK] Module loaded: ui.psm1" -ForegroundColor Green
@@ -140,7 +142,16 @@ function Ensure-PowerPlan {
     param([ValidateSet('Balanced','HighPerformance')][string]$Mode = 'HighPerformance')
     Write-Host "  [i] Setting base power plan to: $Mode" -ForegroundColor Gray
     if ($Mode -eq 'HighPerformance') {
-        powercfg /setactive SCHEME_MAX
+        $ultimateGuid = $null
+        try {
+            $dupOutput = powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>$null
+            if ($dupOutput -match '([0-9a-fA-F-]{36})') {
+                $ultimateGuid = $Matches[1]
+            }
+        } catch { }
+
+        $targetScheme = if ($ultimateGuid) { $ultimateGuid } else { 'SCHEME_MAX' }
+        powercfg /setactive $targetScheme
     } else {
         powercfg /setactive SCHEME_BALANCED
     }
