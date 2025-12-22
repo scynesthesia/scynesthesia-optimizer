@@ -1,3 +1,4 @@
+# Depends on: ui.psm1 (loaded by main script)
 ﻿# Description: Retrieves active physical adapters excluding virtual or VPN interfaces.
 # Parameters: None.
 # Returns: Collection of eligible adapters or empty array on failure.
@@ -540,6 +541,7 @@ function Find-OptimalMtu {
         $high = 1472 # 1500 - 28 bytes for ICMP/IPv4 headers
         $best = $low
         $step = 1
+        $success = $false
 
         while ($low -le $high) {
             $mid = [int](($low + $high) / 2)
@@ -547,13 +549,20 @@ function Find-OptimalMtu {
             Write-Host "  [>] MTU test step ${step}: payload $mid bytes (candidate MTU $mtuCandidate) / Prueba MTU paso ${step}: carga $mid bytes (MTU candidato $mtuCandidate)" -ForegroundColor Cyan
             if (Test-MtuSize -PayloadSize $mid -Target $Target) {
                 $best = $mid
+                $success = $true
                 $low = $mid + 1
-                Write-Host "      ✓ Success, raising floor to $low / ✓ Exito, se aumenta el minimo a $low" -ForegroundColor Green
+                Write-Host "      ✓ Success, raising floor to $low / ✓ Éxito, se aumenta el mínimo a $low" -ForegroundColor Green
             } else {
                 $high = $mid - 1
-                Write-Host "      x Fragmentation detected, lowering ceiling to $high / x Fragmentacion detectada, se reduce el maximo a $high" -ForegroundColor Yellow
+                Write-Host "      x Fragmentation detected, lowering ceiling to $high / x Fragmentación detectada, se reduce el máximo a $high" -ForegroundColor Yellow
             }
             $step++
+        }
+
+        if (-not $success) {
+            $fallbackMtu = 1500
+            Write-Host "  [!] No successful MTU probe responses. Using safe default $fallbackMtu / [!] Sin respuestas exitosas a las pruebas MTU. Se usa el valor seguro $fallbackMtu" -ForegroundColor Yellow
+            return $fallbackMtu
         }
 
         $mtu = $best + 28

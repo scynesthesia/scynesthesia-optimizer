@@ -1,3 +1,4 @@
+# Depends on: ui.psm1 (loaded by main script)
 # Description: Prints a formatted section header to the console.
 # Parameters: Text - Section title to display.
 # Returns: None.
@@ -150,14 +151,21 @@ function Set-RegistryValueSafe {
 # Returns: None.
 function Write-OutcomeSummary {
     param(
-        [hashtable]$Status
+        [hashtable]$Status,
+        [bool]$PrivacyApplied = $true,
+        [bool]$DebloatApplied = $true,
+        [bool]$PerformanceApplied = $true
     )
 
     Write-Host ""
     Write-Host "===== Summary / Resumen =====" -ForegroundColor Cyan
-    Write-Host "[+] Privacy hardened / Privacidad reforzada" -ForegroundColor Green
-    Write-Host "[+] Debloat applied / Eliminación de bloat aplicada" -ForegroundColor Green
-    Write-Host "[+] Performance tweaks applied / Ajustes de rendimiento aplicados" -ForegroundColor Green
+    $privacyStatus = if ($PrivacyApplied) { 'Applied / Aplicado' } else { 'Skipped / Omitido' }
+    $debloatStatus = if ($DebloatApplied) { 'Applied / Aplicado' } else { 'Skipped / Omitido' }
+    $performanceStatus = if ($PerformanceApplied) { 'Applied / Aplicado' } else { 'Skipped / Omitido' }
+
+    Write-Host "[+] Privacy hardened: $privacyStatus / Privacidad reforzada: $privacyStatus" -ForegroundColor Green
+    Write-Host "[+] Debloat: $debloatStatus / Eliminación de bloat: $debloatStatus" -ForegroundColor Green
+    Write-Host "[+] Performance tweaks: $performanceStatus / Ajustes de rendimiento: $performanceStatus" -ForegroundColor Green
 
     if ($Status.PackagesFailed.Count -gt 0) {
         Write-Host "[X] Some packages could not be removed ($($Status.PackagesFailed -join ', ')) / Algunos paquetes no pudieron eliminarse ($($Status.PackagesFailed -join ', '))" -ForegroundColor Yellow

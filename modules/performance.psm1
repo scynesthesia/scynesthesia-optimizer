@@ -1,3 +1,4 @@
+# Depends on: ui.psm1 (loaded by main script)
 # Description: Collects hardware traits such as battery presence, memory size, and disk types.
 # Parameters: None.
 # Returns: PSCustomObject summarizing laptop status, memory category, and storage mix.
@@ -12,6 +13,14 @@ function Get-HardwareProfile {
     $hasSSD = $false
     $hasHDD = $false
     foreach ($disk in ($disks | Where-Object { $_ })) {
+        $unknownMedia = $disk.MediaType -eq 'Unknown' -or $disk.MediaType -eq 'Unspecified' -or -not $disk.MediaType
+        $unknownBus = $disk.BusType -eq 'Unknown' -or -not $disk.BusType
+
+        if ($unknownMedia -or $unknownBus) {
+            $hasSSD = $true
+            continue
+        }
+
         switch ($disk.MediaType) {
             'SSD' { $hasSSD = $true }
             'HDD' { $hasHDD = $true }
@@ -26,7 +35,7 @@ function Get-HardwareProfile {
         TotalMemoryGB  = $memoryGB
         MemoryCategory = if ($memoryGB -lt 6) { 'Low' } else { 'Normal' }
         HasSSD         = $hasSSD
-        HasHDD         = if ($hasDiskData) { $hasHDD -or -not $hasSSD } else { $false }
+        HasHDD         = if ($hasDiskData) { $hasHDD } else { $false }
     }
 }
 
@@ -35,7 +44,7 @@ function Get-HardwareProfile {
 # Returns: Collection of services matching OEM identifiers.
 function Get-OEMServiceInfo {
     $patterns = 'Dell','Alienware','HP','Hewlett','Lenovo','Acer','ASUS','MSI','Samsung','Razer'
-    $services = Get-Service | Where-Object {
+    $services = Get-Service -ErrorAction SilentlyContinue | Where-Object {
         $displayName = $_.DisplayName
         $serviceName = $_.ServiceName
         foreach ($pattern in $patterns) {

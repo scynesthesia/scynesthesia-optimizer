@@ -1,3 +1,4 @@
+# Depends on: ui.psm1 (loaded by main script)
 # Description: Internal helper to configure service startup and runtime state with logging.
 # Parameters: Name - Service name; StartupType - Desired startup mode; Status - Desired runtime status (Running/Stopped).
 # Returns: None. Logs operations and errors using existing utilities.

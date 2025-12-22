@@ -1,3 +1,4 @@
+# Depends on: ui.psm1 (loaded by main script)
 $script:AppRemovalConfig = $null
 
 # Description: Retrieves an app removal list from the configuration JSON using the specified key.

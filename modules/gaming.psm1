@@ -1,3 +1,4 @@
+# Depends on: ui.psm1 (loaded by main script)
 # Description: Adjusts scheduler priorities to favor foreground gaming workloads.
 # Parameters: None.
 # Returns: None. Logs actions when logger available.

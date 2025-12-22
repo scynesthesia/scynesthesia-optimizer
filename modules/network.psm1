@@ -1,3 +1,4 @@
+# Depends on: ui.psm1 (loaded by main script)
 # Description: Retrieves active physical network adapters excluding virtual or VPN interfaces.
 # Parameters: None.
 # Returns: Collection of adapter objects; returns empty array on failure.
