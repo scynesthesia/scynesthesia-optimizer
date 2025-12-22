@@ -1,3 +1,4 @@
+# Depends on: ui.psm1 (loaded by main script)
 # Description: Applies privacy-focused registry changes suitable for the Safe preset.
 # Parameters: None.
 # Returns: None. Prompts for optional Cortana and Storage Sense adjustments.

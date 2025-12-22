@@ -1,3 +1,4 @@
+# Depends on: ui.psm1 (loaded by main script)
 # Description: Performs a basic network repair including DNS flush and IP renewal.
 # Parameters: None.
 # Returns: None. Can set global reboot flag if Winsock reset is run.
