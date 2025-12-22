@@ -344,7 +344,7 @@ function Set-NicRegistryHardcore {
 
             try {
                 $interfacePath = "${'HKLM'}:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$($item.Guid)"
-                $noiseKeys = @($powerOffload.Keys + $interruptDelays.Keys)
+                $noiseKeys = @($powerOffload.Keys) + @($interruptDelays.Keys)
                 foreach ($noiseKey in $noiseKeys | Select-Object -Unique) {
                     try {
                         Remove-ItemProperty -Path $interfacePath -Name $noiseKey -ErrorAction SilentlyContinue
