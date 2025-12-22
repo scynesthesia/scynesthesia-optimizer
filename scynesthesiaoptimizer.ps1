@@ -82,6 +82,7 @@ if (Ask-YesNo "Enable session logging to a file? / Habilitar registro de sesion 
 # Returns: None.
 function Show-Banner {
     Clear-Host
+    $hardwareProfile = Get-HardwareProfile
     $activePlanName = 'Unknown'
     try {
         $activePlanOutput = powercfg -getactivescheme 2>$null
@@ -89,6 +90,17 @@ function Show-Banner {
             $activePlanName = $Matches[1].Trim()
         }
     } catch { }
+    $cpuCores = $env:NUMBER_OF_PROCESSORS
+    $memoryDisplay = "{0} GB - {1}" -f ([math]::Round($hardwareProfile.TotalMemoryGB, 1)), $hardwareProfile.MemoryCategory
+    $storageType = if ($hardwareProfile.HasSSD -and $hardwareProfile.HasHDD) {
+        'Mixed / Mixto'
+    } elseif ($hardwareProfile.HasSSD) {
+        'SSD'
+    } elseif ($hardwareProfile.HasHDD) {
+        'HDD'
+    } else {
+        'Unknown / Desconocido'
+    }
     $banner = @'
 
  _____                                                                _____
@@ -112,7 +124,12 @@ function Show-Banner {
     Write-Host $banner -ForegroundColor Magenta
     Write-Host " Scynesthesia Windows Optimizer v1.0" -ForegroundColor Green
     Write-Host " Preset 1: Safe | Preset 2: Slow PC / Aggressive" -ForegroundColor Gray
-    Write-Host " Active power plan: $activePlanName" -ForegroundColor Yellow
+    Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
+    Write-Host " [ SYSTEM DASHBOARD / PANEL DEL SISTEMA ]" -ForegroundColor Cyan
+    Write-Host ("  CPU Logic Cores / Núcleos lógicos: {0}" -f $cpuCores) -ForegroundColor Gray
+    Write-Host ("  RAM: {0}" -f $memoryDisplay) -ForegroundColor Gray
+    Write-Host ("  Storage / Almacenamiento: {0}" -f $storageType) -ForegroundColor Gray
+    Write-Host ("  Power Plan / Plan de Energía: {0}" -f $activePlanName) -ForegroundColor Gray
     Write-Host "------------------------------------------------------------`n" -ForegroundColor DarkGray
 }
 
@@ -375,14 +392,20 @@ function Show-ExplorerTweaksMenu {
 
 do {
     Show-Banner
+    Write-Host "[ AUTOMATED PRESETS / PRESETS AUTOMÁTICOS ]" -ForegroundColor Cyan
     Write-Host "1) Safe preset / Preset Seguro (SOC / Navegacion)"
     Write-Host "2) Aggressive preset / Preset Agresivo (Deep Debloat / Privacidad)"
     Write-Host "3) Gaming preset / Modo Gaming (Baja latencia)"
+    Write-Host ""
+    Write-Host "[ GRANULAR TOOLS / HERRAMIENTAS MANUALES ]" -ForegroundColor Yellow
     Write-Host "4) Repair tools / Herramientas de reparacion"
     Write-Host "5) Network Tweaks / Tweaks de red"
     Write-Host "6) Software & Updates / Software y Actualizaciones"
     Write-Host "7) UI & Explorer Tweaks / Ajustes de UI y Explorador"
-    Write-Host "0) Exit / Salir"
+    Write-Host ""
+    $rebootStatus = if ($Global:NeedsReboot) { 'System Status / Estado del sistema: Reboot pending / Reinicio pendiente' } else { 'System Status / Estado del sistema: No reboot pending / Sin reinicio pendiente' }
+    Write-Host $rebootStatus -ForegroundColor DarkCyan
+    Write-Host "0) Exit / Salir" -ForegroundColor Gray
     Write-Host ""
     $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','6','7','0')
 
@@ -442,6 +465,8 @@ do {
         }
         '0' { break }
     }
+
+    Write-Host "Tip: Run 'Safe Preset' before 'Gaming Mode' for best results / Consejo: Ejecuta 'Preset Seguro' antes de 'Modo Gaming' para mejores resultados." -ForegroundColor DarkGray
 
 } while ($choice -ne '0')
 
