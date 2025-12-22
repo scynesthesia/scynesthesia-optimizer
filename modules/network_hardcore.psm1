@@ -577,7 +577,7 @@ function Find-OptimalMtu {
 # Description: Applies a specified MTU to a collection of adapters.
 # Parameters: Mtu - MTU value to set; Adapters - Target adapters.
 # Returns: None.
-function Apply-MtuToAdapters {
+function Invoke-MtuToAdapters {
     param(
         [Parameter(Mandatory)][int]$Mtu,
         [System.Collections.IEnumerable]$Adapters
@@ -824,7 +824,7 @@ function Invoke-NetworkTweaksHardcore {
         if ($mtuResult.WasFallback) {
             Write-Host "  [ ] Applying safe MTU fallback of $($mtuResult.Mtu) to avoid fragmentation issues. / [ ] Aplicando MTU de respaldo seguro de $($mtuResult.Mtu) para evitar problemas de fragmentación." -ForegroundColor Gray
         }
-        Apply-MtuToAdapters -Mtu $mtuResult.Mtu -Adapters @($adapters)
+        Invoke-MtuToAdapters -Mtu $mtuResult.Mtu -Adapters @($adapters)
     }
 
     Set-TcpCongestionProvider

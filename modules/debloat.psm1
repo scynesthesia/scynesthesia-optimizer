@@ -45,7 +45,7 @@ function Get-AppRemovalList {
 # Description: Creates a system restore point for rollback safety.
 # Parameters: None.
 # Returns: None.
-function Create-RestorePointSafe {
+function New-RestorePointSafe {
     Write-Section "Creating restore point"
     try {
         Checkpoint-Computer -Description "Scynesthesia Windows Optimizer v1.0" -RestorePointType "MODIFY_SETTINGS"
@@ -172,7 +172,7 @@ function Invoke-DebloatAggressive {
         }
     }
 
-    if (Get-Confirmation -Question "Also remove provisioned packages for future users? (More aggressive) [y/N]" -Default 'n') {
+    if (Get-Confirmation -Question "Also remove provisioned packages for future users? (More aggressive)" -Default 'n') {
         try {
             $prov = Get-AppxProvisionedPackage -Online | Where-Object { $AppList -contains $_.PackageName }
         } catch {
@@ -198,4 +198,4 @@ function Invoke-DebloatAggressive {
     }
 }
 
-Export-ModuleMember -Function Create-RestorePointSafe, Clear-TempFiles, Clear-DeepTempAndThumbs, Invoke-DebloatSafe, Invoke-DebloatAggressive
+Export-ModuleMember -Function New-RestorePointSafe, Clear-TempFiles, Clear-DeepTempAndThumbs, Invoke-DebloatSafe, Invoke-DebloatAggressive

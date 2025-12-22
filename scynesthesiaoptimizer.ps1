@@ -59,7 +59,7 @@ try {
 # ---------- 3. LOGGING (Transcript and logging initialization.) ----------
 $TranscriptStarted = $false
 # Get-Confirmation is now available from ui.psm1.
-if (Get-Confirmation "Enable session logging to a file? / Habilitar registro de sesion en un archivo? (Recommended for Service Records) [y/N]" 'n') {
+if (Get-Confirmation "Enable session logging to a file? / Habilitar registro de sesion en un archivo? (Recommended for Service Records)" 'n') {
     $logDir = Join-Path $env:TEMP "ScynesthesiaOptimizer"
     if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
     
@@ -177,7 +177,7 @@ function Run-SafePreset {
     $HWProfile = Get-HardwareProfile
 
     Write-Section "Starting Preset 1: Safe (Main)"
-    Create-RestorePointSafe
+    New-RestorePointSafe
     Clear-TempFiles
 
     # Safe Debloat (Standard list)
@@ -206,7 +206,7 @@ function Run-PCSlowPreset {
     $OemServices = Get-OEMServiceInfo
 
     Write-Section "Starting Preset 2: Slow PC / Aggressive"
-    Create-RestorePointSafe
+    New-RestorePointSafe
     Clear-TempFiles
 
     Invoke-PrivacyTelemetrySafe
