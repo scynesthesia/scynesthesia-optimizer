@@ -17,6 +17,8 @@ function Optimize-GamingScheduler {
         if ($logger) {
             Write-Log "[Gaming] Foreground game priorities set (GPU Priority=8, Priority=6, Scheduling/SFIO=High)."
         }
+
+        $Global:NeedsReboot = $true
     } else {
         Write-Host "  [ ] Scheduler left unchanged." -ForegroundColor DarkGray
     }
@@ -126,6 +128,8 @@ function Apply-CustomGamingPowerSettings {
             if ($logger) {
                 Write-Log "[Gaming] Hardcore power plan tweaks applied and set active (GUID=$gamingGuid)."
             }
+
+            $Global:NeedsReboot = $true
         } catch {
             Handle-Error -Context "Applying gaming power settings" -ErrorRecord $_
         }
@@ -184,6 +188,8 @@ function Set-UsbPowerManagementHardcore {
             if ($logger) {
                 Write-Log "[Gaming] USB hub '$($hub.Name)' PnPCapabilities set to 24."
             }
+
+            $Global:NeedsReboot = $true
         } catch {
             Handle-Error -Context "Setting USB power flags on $($hub.Name)" -ErrorRecord $_
         }
@@ -213,6 +219,8 @@ function Optimize-HidLatency {
             Handle-Error -Context "Setting $($entry.Name) for HID latency" -ErrorRecord $_
         }
     }
+
+    $Global:NeedsReboot = $true
 }
 # Description: Tunes processor scheduling registry settings for lower input latency.
 # Parameters: None.
@@ -230,6 +238,8 @@ function Optimize-ProcessorScheduling {
         if ($logger) {
             Write-Log "[Gaming] Win32PrioritySeparation set to 0x28 for fixed/short quanta."
         }
+
+        $Global:NeedsReboot = $true
     } else {
         Write-Host "  [ ] Processor scheduling left unchanged." -ForegroundColor DarkGray
     }
@@ -258,4 +268,18 @@ function Set-FsoGlobalOverride {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Apply-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-FsoGlobalOverride
+# Description: Runs the complete Gaming preset sequence following modular standards.
+# Parameters: None.
+# Returns: None. Sequentially applies gaming optimizations and reports completion.
+function Invoke-GamingOptimizations {
+    Optimize-GamingScheduler
+    Apply-CustomGamingPowerSettings
+    Optimize-ProcessorScheduling
+    Set-UsbPowerManagementHardcore
+    Optimize-HidLatency
+    Set-FsoGlobalOverride
+
+    Write-Host "[+] Global Gaming Optimizations complete / [+] Optimizaciones de Gaming globales completadas." -ForegroundColor Magenta
+}
+
+Export-ModuleMember -Function Optimize-GamingScheduler, Apply-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-FsoGlobalOverride, Invoke-GamingOptimizations
