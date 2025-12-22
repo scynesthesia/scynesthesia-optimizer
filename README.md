@@ -46,7 +46,7 @@ Scynesthesia Optimizer is built for power users, creators, and competitive gamer
 
 ### One-liner (recommended)
 ```powershell
-powershell -Command "Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass','-NoExit','-Command','irm https://raw.githubusercontent.com/scynesthesia/scynesthesia-optimizer/main/setup.ps1 | iex'"
+start powershell -ArgumentList '-NoExit -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; irm https://raw.githubusercontent.com/scynesthesia/scynesthesia-optimizer/main/setup.ps1 | iex"'
 ```
 
 ### Local clone
