@@ -8,9 +8,10 @@ function Get-HardwareProfile {
     $memoryGB = if ($memoryBytes) { [math]::Round($memoryBytes / 1GB, 1) } else { 0 }
 
     $disks = Get-PhysicalDisk -ErrorAction SilentlyContinue
+    $hasDiskData = $disks -ne $null -and $disks.Count -gt 0
     $hasSSD = $false
     $hasHDD = $false
-    foreach ($disk in $disks) {
+    foreach ($disk in ($disks | Where-Object { $_ })) {
         switch ($disk.MediaType) {
             'SSD' { $hasSSD = $true }
             'HDD' { $hasHDD = $true }
@@ -25,7 +26,7 @@ function Get-HardwareProfile {
         TotalMemoryGB  = $memoryGB
         MemoryCategory = if ($memoryGB -lt 6) { 'Low' } else { 'Normal' }
         HasSSD         = $hasSSD
-        HasHDD         = $hasHDD -or -not $hasSSD
+        HasHDD         = if ($hasDiskData) { $hasHDD -or -not $hasSSD } else { $false }
     }
 }
 
@@ -34,7 +35,15 @@ function Get-HardwareProfile {
 # Returns: Collection of services matching OEM identifiers.
 function Get-OEMServiceInfo {
     $patterns = 'Dell','Alienware','HP','Hewlett','Lenovo','Acer','ASUS','MSI','Samsung','Razer'
-    $services = Get-Service | Where-Object { $patterns -contains ($_.DisplayName.Split(' ')[0]) -or $patterns -contains ($_.ServiceName.Split(' ')[0]) }
+    $services = Get-Service | Where-Object {
+        $displayName = $_.DisplayName
+        $serviceName = $_.ServiceName
+        foreach ($pattern in $patterns) {
+            $escaped = [regex]::Escape($pattern)
+            if ($displayName -match $escaped -or $serviceName -match $escaped) { return $true }
+        }
+        return $false
+    }
     $services
 }
 

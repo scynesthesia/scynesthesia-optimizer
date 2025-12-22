@@ -28,6 +28,31 @@ function Write-Log {
     }
 }
 
+# Description: Normalizes GUID input into uppercase brace-enclosed string form.
+# Parameters: Value - Input GUID or string representation.
+# Returns: Normalized GUID string or null when conversion fails.
+function Normalize-GuidString {
+    param($Value)
+
+    try {
+        if ($null -eq $Value) { return $null }
+
+        if ($Value -is [string]) {
+            $trimmed = $Value.Trim('{}').Trim()
+            if (-not $trimmed) { return $null }
+            return "{$trimmed}".ToUpperInvariant()
+        }
+
+        if ($Value -is [guid]) {
+            return $Value.ToString('B').ToUpperInvariant()
+        }
+
+        return ([guid]$Value).ToString('B').ToUpperInvariant()
+    } catch {
+        return $null
+    }
+}
+
 # Description: Logs and displays a warning message for an encountered error.
 # Parameters: Context - Operation being performed; ErrorRecord - Error details from the exception.
 # Returns: None.
@@ -129,22 +154,22 @@ function Write-OutcomeSummary {
     )
 
     Write-Host ""
-    Write-Host "===== Summary =====" -ForegroundColor Cyan
-    Write-Host "[+] Privacy hardened" -ForegroundColor Green
-    Write-Host "[+] Debloat applied" -ForegroundColor Green
-    Write-Host "[+] Performance tweaks applied" -ForegroundColor Green
+    Write-Host "===== Summary / Resumen =====" -ForegroundColor Cyan
+    Write-Host "[+] Privacy hardened / Privacidad reforzada" -ForegroundColor Green
+    Write-Host "[+] Debloat applied / Eliminación de bloat aplicada" -ForegroundColor Green
+    Write-Host "[+] Performance tweaks applied / Ajustes de rendimiento aplicados" -ForegroundColor Green
 
     if ($Status.PackagesFailed.Count -gt 0) {
-        Write-Host "[X] Some packages could not be removed ($($Status.PackagesFailed -join ', '))" -ForegroundColor Yellow
+        Write-Host "[X] Some packages could not be removed ($($Status.PackagesFailed -join ', ')) / Algunos paquetes no pudieron eliminarse ($($Status.PackagesFailed -join ', '))" -ForegroundColor Yellow
     } else {
-        Write-Host "[+] All targeted packages removed" -ForegroundColor Green
+        Write-Host "[+] All targeted packages removed / Todos los paquetes seleccionados eliminados" -ForegroundColor Green
     }
 
     if ($Status.RebootRequired) {
-        Write-Host "[!] Reboot required" -ForegroundColor Yellow
+        Write-Host "[!] Reboot required / Reinicio requerido" -ForegroundColor Yellow
     } else {
-        Write-Host "[ ] Reboot optional" -ForegroundColor Gray
+        Write-Host "[ ] Reboot optional / Reinicio opcional" -ForegroundColor Gray
     }
 }
 
-Export-ModuleMember -Function Write-Section, Write-Log, Handle-Error, Ask-YesNo, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary
+Export-ModuleMember -Function Write-Section, Write-Log, Normalize-GuidString, Handle-Error, Ask-YesNo, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary

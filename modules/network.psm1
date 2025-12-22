@@ -15,31 +15,6 @@ function Get-PhysicalNetAdapters {
     }
 }
 
-# Description: Normalizes GUID input into uppercase brace-enclosed string form.
-# Parameters: Value - Input GUID or string representation.
-# Returns: Normalized GUID string or null when conversion fails.
-function Normalize-GuidString {
-    param($Value)
-
-    try {
-        if ($null -eq $Value) { return $null }
-
-        if ($Value -is [string]) {
-            $trimmed = $Value.Trim('{}').Trim()
-            if (-not $trimmed) { return $null }
-            return "{$trimmed}".ToUpperInvariant()
-        }
-
-        if ($Value -is [guid]) {
-            return $Value.ToString('B').ToUpperInvariant()
-        }
-
-        return ([guid]$Value).ToString('B').ToUpperInvariant()
-    } catch {
-        return $null
-    }
-}
-
 # Description: Maps physical adapters to their registry class paths for advanced tweaks.
 # Parameters: None.
 # Returns: Collection of objects containing adapter references and registry paths.
@@ -48,12 +23,18 @@ function Get-NicRegistryPaths {
         $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002bE10318}'
         $adapters = Get-PhysicalNetAdapters
         $results = @()
+        $entries = @()
+
+        try {
+            $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
+        } catch {
+            Handle-Error -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
+        }
 
         foreach ($adapter in $adapters) {
             try {
                 $guidString = Normalize-GuidString -Value $adapter.InterfaceGuid
                 if (-not $guidString) { continue }
-                $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
                 foreach ($entry in $entries) {
                     try {
                         $netCfg = (Get-ItemProperty -Path $entry.PSPath -Name 'NetCfgInstanceId' -ErrorAction SilentlyContinue).NetCfgInstanceId
@@ -157,11 +138,13 @@ function Set-TcpAutotuningNormal {
 
 # Description: Prefers IPv4 addressing without disabling IPv6.
 # Parameters: None.
-# Returns: None.
+# Returns: None. Sets global reboot flag after registry update.
 function Set-IPvPreferenceIPv4First {
-    Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6)" -ForegroundColor Gray
+    Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6) / Prefiriendo IPv4 sobre IPv6 (sin desactivar IPv6)" -ForegroundColor Gray
     try {
         Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" "DisabledComponents" 0x20
+        $Global:NeedsReboot = $true
+        Write-Host "      [>] Preference recorded. Reboot recommended / Preferencia registrada. Se recomienda reiniciar." -ForegroundColor Yellow
         if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
             Write-Log "[Network] IPv4 preference set (DisabledComponents=0x20)."
         }

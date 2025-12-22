@@ -224,31 +224,6 @@ function Get-NicRegistryPaths {
         $adapters = Get-EligibleNetAdapters
         $results = @()
 
-        # Description: Normalizes GUID input into uppercase brace-enclosed string form.
-        # Parameters: Value - Input GUID or string representation.
-        # Returns: Normalized GUID string or null when conversion fails.
-        function Normalize-GuidString {
-            param($Value)
-
-            try {
-                if ($null -eq $Value) { return $null }
-
-                if ($Value -is [string]) {
-                    $trimmed = $Value.Trim('{}').Trim()
-                    if (-not $trimmed) { return $null }
-                    return "{$trimmed}".ToUpperInvariant()
-                }
-
-                if ($Value -is [guid]) {
-                    return $Value.ToString('B').ToUpperInvariant()
-                }
-
-                return ([guid]$Value).ToString('B').ToUpperInvariant()
-            } catch {
-                return $null
-            }
-        }
-
         foreach ($adapter in $adapters) {
             try {
                 $guidString = Normalize-GuidString -Value $adapter.InterfaceGuid
