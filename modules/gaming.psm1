@@ -235,4 +235,27 @@ function Optimize-ProcessorScheduling {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Apply-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency
+# Description: Disables Fullscreen Optimizations globally for DX11 input latency gains.
+# Parameters: None.
+# Returns: None. Sets reboot flag after applying registry overrides.
+function Set-FsoGlobalOverride {
+    Write-Section "Fullscreen Optimizations (Global Override)"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    try {
+        Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+        Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+
+        Write-Host "  [+] Fullscreen Optimizations disabled globally / Optimizaciones de pantalla completa deshabilitadas globalmente." -ForegroundColor Green
+        if ($logger) {
+            Write-Log "[Gaming] Fullscreen Optimizations globally disabled (GameDVR_FSEBehaviorMode=2, AllowGameDVR=0)."
+        }
+
+        $Global:NeedsReboot = $true
+        Write-Host "  [!] Reboot required to finalize FSO override / [!] Se requiere reinicio para finalizar la anulación de FSO." -ForegroundColor Yellow
+    } catch {
+        Handle-Error -Context "Applying Fullscreen Optimizations global override" -ErrorRecord $_
+    }
+}
+
+Export-ModuleMember -Function Optimize-GamingScheduler, Apply-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-FsoGlobalOverride
