@@ -23,10 +23,14 @@ try {
     Import-Module $servicesModule -Force -ErrorAction Stop
     Write-Host "[OK] Module loaded: services.psm1" -ForegroundColor Green
 
+    $softwareModule = Join-Path $modulesRoot 'software.psm1'
+    Import-Module $softwareModule -Force -ErrorAction Stop
+    Write-Host "[OK] Module loaded: software.psm1" -ForegroundColor Green
+
     $moduleFiles = Get-ChildItem -Path $modulesRoot -Filter '*.psm1' -File -ErrorAction Stop
 
     foreach ($module in $moduleFiles) {
-        if ($module.Name -in @('ui.psm1','services.psm1')) { continue }
+        if ($module.Name -in @('ui.psm1','services.psm1','software.psm1')) { continue }
         try {
             Import-Module $module.FullName -Force -ErrorAction Stop
             Write-Host "[OK] Module loaded: $($module.Name)" -ForegroundColor Green
@@ -296,6 +300,41 @@ function Show-NetworkTweaksMenu {
     } while ($true)
 }
 
+# Description: Presents software installation and Windows Update controls.
+# Parameters: None.
+# Returns: None.
+function Show-SoftwareUpdatesMenu {
+    do {
+        Write-Section "Software & Updates / Software y Actualizaciones"
+        Write-Host "1) Install essential software / Instalar software esencial"
+        Write-Host "2) Set Windows Update to Notify Only / Configurar Windows Update en Solo Notificar"
+        Write-Host "3) Manual update scan / Escaneo manual de actualizaciones"
+        Write-Host "4) Back / Volver"
+        Write-Host ""
+
+        $swChoice = Read-MenuChoice "Select a software/update option" @('1','2','3','4')
+
+        switch ($swChoice) {
+            '1' {
+                Invoke-SoftwareInstaller
+                Write-Host ""
+                Read-Host "Press Enter to return to Software & Updates / Presiona Enter para volver a Software y Actualizaciones"
+            }
+            '2' {
+                Set-WindowsUpdateNotifyOnly
+                Write-Host ""
+                Read-Host "Press Enter to return to Software & Updates / Presiona Enter para volver a Software y Actualizaciones"
+            }
+            '3' {
+                Invoke-WindowsUpdateScan
+                Write-Host ""
+                Read-Host "Press Enter to return to Software & Updates / Presiona Enter para volver a Software y Actualizaciones"
+            }
+            '4' { return }
+        }
+    } while ($true)
+}
+
 # ---------- 6. MAIN LOOP ----------
 
 do {
@@ -305,9 +344,10 @@ do {
     Write-Host "3) Gaming preset / Modo Gaming (Baja latencia)"
     Write-Host "4) Repair tools / Herramientas de reparacion"
     Write-Host "5) Network Tweaks / Tweaks de red"
+    Write-Host "6) Software & Updates / Software y Actualizaciones"
     Write-Host "0) Exit / Salir"
     Write-Host ""
-    $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','0')
+    $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','6','0')
 
     switch ($choice) {
         '1' { Run-SafePreset }
@@ -356,6 +396,9 @@ do {
         }
         '5' {
             Show-NetworkTweaksMenu
+        }
+        '6' {
+            Show-SoftwareUpdatesMenu
         }
         '0' { break }
     }
