@@ -27,10 +27,14 @@ try {
     Import-Module $softwareModule -Force -ErrorAction Stop
     Write-Host "[OK] Module loaded: software.psm1" -ForegroundColor Green
 
+    $tweaksModule = Join-Path $modulesRoot 'tweaks.psm1'
+    Import-Module $tweaksModule -Force -ErrorAction Stop
+    Write-Host "[OK] Module loaded: tweaks.psm1" -ForegroundColor Green
+
     $moduleFiles = Get-ChildItem -Path $modulesRoot -Filter '*.psm1' -File -ErrorAction Stop
 
     foreach ($module in $moduleFiles) {
-        if ($module.Name -in @('ui.psm1','services.psm1','software.psm1')) { continue }
+        if ($module.Name -in @('ui.psm1','services.psm1','software.psm1','tweaks.psm1')) { continue }
         try {
             Import-Module $module.FullName -Force -ErrorAction Stop
             Write-Host "[OK] Module loaded: $($module.Name)" -ForegroundColor Green
@@ -335,6 +339,38 @@ function Show-SoftwareUpdatesMenu {
     } while ($true)
 }
 
+# Description: Presents UI and Explorer tweaks that can be applied individually or together.
+# Parameters: None.
+# Returns: None. May set global reboot flag.
+function Show-ExplorerTweaksMenu {
+    do {
+        Write-Section "UI & Explorer Tweaks / Ajustes de UI y Explorador"
+        Write-Host "1) Enable classic context menus (Win10 style) / Habilitar menús contextuales clásicos (estilo Win10)"
+        Write-Host "2) Add Take Ownership menu (files/folders) / Agregar menú Tomar Propiedad (archivos/carpetas)"
+        Write-Host "3) Show extensions and hidden files / Mostrar extensiones y archivos ocultos"
+        Write-Host "4) Apply all / Aplicar todo"
+        Write-Host "5) Back / Volver"
+        Write-Host ""
+
+        $tweakChoice = Read-MenuChoice "Select a UI/Explorer option" @('1','2','3','4','5')
+
+        switch ($tweakChoice) {
+            '1' { Set-ClassicContextMenus }
+            '2' { Add-TakeOwnershipMenu }
+            '3' { Set-ExplorerProSettings }
+            '4' {
+                Set-ClassicContextMenus
+                Add-TakeOwnershipMenu
+                Set-ExplorerProSettings
+            }
+            '5' { return }
+        }
+
+        Write-Host ""
+        Read-Host "Press Enter to return to UI & Explorer Tweaks / Presiona Enter para volver a Ajustes de UI y Explorador"
+    } while ($true)
+}
+
 # ---------- 6. MAIN LOOP ----------
 
 do {
@@ -345,9 +381,10 @@ do {
     Write-Host "4) Repair tools / Herramientas de reparacion"
     Write-Host "5) Network Tweaks / Tweaks de red"
     Write-Host "6) Software & Updates / Software y Actualizaciones"
+    Write-Host "7) UI & Explorer Tweaks / Ajustes de UI y Explorador"
     Write-Host "0) Exit / Salir"
     Write-Host ""
-    $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','6','0')
+    $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','6','7','0')
 
     switch ($choice) {
         '1' { Run-SafePreset }
@@ -399,6 +436,9 @@ do {
         }
         '6' {
             Show-SoftwareUpdatesMenu
+        }
+        '7' {
+            Show-ExplorerTweaksMenu
         }
         '0' { break }
     }
