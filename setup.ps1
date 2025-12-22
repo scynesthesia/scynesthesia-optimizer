@@ -1,4 +1,4 @@
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+﻿[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 # Scynesthesia Windows Optimizer - Remote Installer
 # This script downloads the full repository to handle modular dependencies.
 
@@ -16,18 +16,36 @@ if (Test-Path $tempDir) {
 }
 
 # Create temp directory if it doesn't exist
-if (!(Test-Path $tempDir)) { 
-    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null 
+if (!(Test-Path $tempDir)) {
+    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 }
 
 Write-Host "[*] Downloading Scynesthesia Windows Optimizer components..." -ForegroundColor Cyan
-try {
-    # Añadimos -UseBasicParsing para evitar depender del motor de Internet Explorer
-    Invoke-WebRequest -Uri $url -OutFile $zipFile -ErrorAction Stop -UseBasicParsing
-} catch {
-    # Cambiamos Write-Error por Write-Host para que no se cierre la sesión de IEX antes del pause
-    Write-Host "[!] Failed to download the repository. Please check your internet connection." -ForegroundColor Red
-    Write-Host "[!] Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+$maxAttempts = 3
+$attempt = 0
+$downloaded = $false
+$lastErrorMessage = $null
+while (-not $downloaded -and $attempt -lt $maxAttempts) {
+    $attempt++
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $zipFile -ErrorAction Stop -UseBasicParsing -UserAgent "Mozilla/5.0 (Windows NT 10.0; Microsoft Windows 10.0.19045; en-US) PowerShell/5.1"
+        $downloaded = $true
+    } catch {
+        $lastErrorMessage = $_.Exception.Message
+        $remaining = $maxAttempts - $attempt
+        Write-Host "[!] Download attempt $attempt failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        if ($remaining -gt 0) {
+            Write-Host "    Retrying in 3 seconds... ($remaining retries left)" -ForegroundColor DarkGray
+            Start-Sleep -Seconds 3
+        }
+    }
+}
+
+if (-not $downloaded) {
+    Write-Host "[!] Failed to download the repository after $maxAttempts attempts. Please check your internet connection." -ForegroundColor Red
+    if ($lastErrorMessage) {
+        Write-Host "[!] Error: $lastErrorMessage" -ForegroundColor DarkGray
+    }
     Read-Host "Press Enter to exit / Presiona Enter para salir"
     exit 1
 }
@@ -57,7 +75,3 @@ $launchPath = Join-Path $scriptRoot 'scynesthesiaoptimizer.ps1'
 Write-Host "[+] Launching Optimizer..." -ForegroundColor Green
 Set-Location $scriptRoot
 & $launchPath
-
-
-
-
