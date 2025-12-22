@@ -276,6 +276,36 @@ function Set-WaitToKillServiceTimeout {
         -SuccessMessage "Set $name to $value under $path to reduce service shutdown timeout."
 }
 
+# Description: Disables Multi-Plane Overlay (MPO) to mitigate flickering and stutter issues.
+# Parameters: None.
+# Returns: None. Sets registry value and flags reboot requirement.
+function Disable-MpoVisualFix {
+    [CmdletBinding()]
+    param()
+
+    $path = "HKLM:\SOFTWARE\Microsoft\Windows\Dwm"
+    $name = "OverlayTestMode"
+
+    Set-RegistryValueSafe -Path $path -Name $name -Value 5 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+    $Global:NeedsReboot = $true
+    Write-Host "  [+] MPO disabled for stability / MPO desactivado para estabilidad." -ForegroundColor Gray
+}
+
+# Description: Enables Hardware-accelerated GPU scheduling (HAGS) for supported GPUs.
+# Parameters: None.
+# Returns: None. Sets registry value and flags reboot requirement.
+function Enable-HagsPerformance {
+    [CmdletBinding()]
+    param()
+
+    $path = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
+    $name = "HwSchMode"
+
+    Set-RegistryValueSafe -Path $path -Name $name -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+    $Global:NeedsReboot = $true
+    Write-Host "  [+] HAGS enabled for performance / HAGS habilitado para rendimiento." -ForegroundColor Gray
+}
+
 # Description: Applies conservative performance tweaks suitable for most systems.
 # Parameters: None.
 # Returns: None. Calls supporting registry tweak functions.
@@ -284,6 +314,7 @@ function Apply-SafePerformanceTweaks {
     param()
 
     Write-Section "Applying Safe performance tweaks..."
+    Disable-MpoVisualFix
     Set-NtfsLastAccessUpdate
     Set-MenuShowDelay -DelayMs 20
 }
@@ -297,10 +328,11 @@ function Apply-AggressivePerformanceTweaks {
 
     Write-Section "Applying Aggressive/Low-end performance tweaks..."
     Set-NtfsLastAccessUpdate
+    Enable-HagsPerformance
     Set-MenuShowDelay -DelayMs 0
     Set-WaitToKillServiceTimeout -Milliseconds 2000
     Disable-TransparencyEffects
     Set-VisualEffectsBestPerformance
 }
 
-Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Handle-SysMainPrompt, Apply-PerformanceBaseline, Enable-UltimatePerformancePlan, Set-NtfsLastAccessUpdate, Set-MenuShowDelay, Disable-TransparencyEffects, Set-VisualEffectsBestPerformance, Set-WaitToKillServiceTimeout, Apply-SafePerformanceTweaks, Apply-AggressivePerformanceTweaks
+Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Handle-SysMainPrompt, Apply-PerformanceBaseline, Enable-UltimatePerformancePlan, Set-NtfsLastAccessUpdate, Set-MenuShowDelay, Disable-TransparencyEffects, Set-VisualEffectsBestPerformance, Set-WaitToKillServiceTimeout, Disable-MpoVisualFix, Enable-HagsPerformance, Apply-SafePerformanceTweaks, Apply-AggressivePerformanceTweaks
