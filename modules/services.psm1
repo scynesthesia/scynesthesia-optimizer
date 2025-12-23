@@ -55,7 +55,9 @@ function Invoke-SafeServiceOptimization {
 # Returns: None. Disables telemetry and remote access services with user confirmation for printing/Bluetooth.
 function Invoke-AggressiveServiceOptimization {
     [CmdletBinding()]
-    param()
+    param(
+        $OemServices
+    )
 
     Write-Section "Service reductions (Aggressive)"
 
@@ -64,10 +66,18 @@ function Invoke-AggressiveServiceOptimization {
         Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
     }
 
-    if (Get-Confirmation "Disable Print Spooler service?" 'n') {
-        Set-ServiceState -Name 'Spooler' -StartupType 'Disabled' -Status 'Stopped'
+    $skipSpooler = $OemServices -and $OemServices.Count -gt 0
+    if ($skipSpooler) {
+        $oemDisplayNames = $OemServices | ForEach-Object { $_.DisplayName } | Where-Object { $_ }
+        $oemLabel = if ($oemDisplayNames) { ($oemDisplayNames -join ', ') } else { 'OEM services' }
+        Write-Host "  [!] OEM services detected: $oemLabel" -ForegroundColor Yellow
+        Write-Host "      Skipping Print Spooler prompt to avoid breaking vendor tooling." -ForegroundColor Yellow
     } else {
-        Write-Host "  [ ] Print Spooler kept enabled." -ForegroundColor DarkGray
+        if (Get-Confirmation "Disable Print Spooler service?" 'n') {
+            Set-ServiceState -Name 'Spooler' -StartupType 'Disabled' -Status 'Stopped'
+        } else {
+            Write-Host "  [ ] Print Spooler kept enabled." -ForegroundColor DarkGray
+        }
     }
 
     if (Get-Confirmation "Disable Bluetooth Support service?" 'n') {

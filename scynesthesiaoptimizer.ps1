@@ -240,7 +240,7 @@ function Run-PCSlowPreset {
     Ensure-PowerPlan -Mode 'HighPerformance'
 
     # Additional tweaks specific to slow PCs
-    Invoke-AggressivePerformanceTweaks
+    Invoke-AggressivePerformanceTweaks -OemServices $OemServices
     Invoke-AggressiveTweaks -HardwareProfile $HWProfile -FailedPackages ([ref]$Status.PackagesFailed) -OemServices $OemServices
 
     $Status.RebootRequired = $Global:NeedsReboot
