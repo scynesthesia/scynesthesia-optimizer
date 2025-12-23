@@ -148,7 +148,7 @@ function Set-UsbPowerManagementHardcore {
     $targetNames = @('USB Root Hub','Generic USB Hub')
 
     if (-not (Test-Path $usbRoot)) {
-        Write-Host "  [!] USB registry path not found. Skipping USB power tweaks. / [!] Ruta de registro USB no encontrada. Omitiendo ajustes de energía USB." -ForegroundColor Yellow
+        Write-Host "  [!] USB registry path not found. Skipping USB power tweaks." -ForegroundColor Yellow
         return
     }
 
@@ -178,14 +178,14 @@ function Set-UsbPowerManagementHardcore {
     }
 
     if ($hubs.Count -eq 0) {
-        Write-Host "  [!] No USB hubs found for power override. / [!] No se encontraron hubs USB para ajustar energía." -ForegroundColor Yellow
+        Write-Host "  [!] No USB hubs found for power override." -ForegroundColor Yellow
         return
     }
 
     foreach ($hub in $hubs) {
         try {
             Set-RegistryValueSafe -Path $hub.Path -Name 'PnPCapabilities' -Value 24 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-            Write-Host "  [+] USB hub '$($hub.Name)' power disable applied. /  [+] Hub USB '$($hub.Name)' con energía deshabilitada." -ForegroundColor Green
+            Write-Host "  [+] USB hub '$($hub.Name)' power disable applied." -ForegroundColor Green
             if ($logger) {
                 Write-Log "[Gaming] USB hub '$($hub.Name)' PnPCapabilities set to 24."
             }
@@ -196,7 +196,7 @@ function Set-UsbPowerManagementHardcore {
         }
     }
 
-    Write-Host "[+] USB Power Management annihilated / [+] Gestión de energía USB aniquilada." -ForegroundColor Magenta
+    Write-Host "[+] USB power management overrides applied." -ForegroundColor Magenta
 }
 
 # Description: Tunes HID class queue sizes to reduce input buffering latency.
@@ -214,7 +214,7 @@ function Optimize-HidLatency {
     foreach ($entry in $hidPaths) {
         try {
             Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value 100 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-            Write-Host "  [+] $($entry.Name) set to 100 / $($entry.Name) configurado a 100" -ForegroundColor Green
+            Write-Host "  [+] $($entry.Name) set to 100." -ForegroundColor Green
             if ($logger) { Write-Log "[Gaming] $($entry.Name) set to 100 for HID latency optimization." }
         } catch {
             Invoke-ErrorHandler -Context "Setting $($entry.Name) for HID latency" -ErrorRecord $_
@@ -257,13 +257,13 @@ function Set-FsoGlobalOverride {
         Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
         Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
 
-        Write-Host "  [+] Fullscreen Optimizations disabled globally / Optimizaciones de pantalla completa deshabilitadas globalmente." -ForegroundColor Green
+        Write-Host "  [+] Fullscreen Optimizations disabled globally." -ForegroundColor Green
         if ($logger) {
             Write-Log "[Gaming] Fullscreen Optimizations globally disabled (GameDVR_FSEBehaviorMode=2, AllowGameDVR=0)."
         }
 
         $Global:NeedsReboot = $true
-        Write-Host "  [!] Reboot required to finalize FSO override / [!] Se requiere reinicio para finalizar la anulación de FSO." -ForegroundColor Yellow
+        Write-Host "  [!] Reboot required to finalize Fullscreen Optimizations override." -ForegroundColor Yellow
     } catch {
         Invoke-ErrorHandler -Context "Applying Fullscreen Optimizations global override" -ErrorRecord $_
     }
@@ -278,10 +278,10 @@ function Invoke-GamingOptimizations {
     Optimize-ProcessorScheduling
     Set-UsbPowerManagementHardcore
     Optimize-HidLatency
-    Optimize-DriverTelemetry
+    Invoke-DriverTelemetry
     Set-FsoGlobalOverride
 
-    Write-Host "[+] Global Gaming Optimizations complete / [+] Optimizaciones de Gaming globales completadas." -ForegroundColor Magenta
+    Write-Host "[+] Global Gaming Optimizations complete." -ForegroundColor Magenta
 }
 
 Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-FsoGlobalOverride, Invoke-GamingOptimizations
