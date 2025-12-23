@@ -65,14 +65,44 @@ function Clear-TempFiles {
         "${env:WINDIR}\Temp"
     )
 
+    # Avoid deleting the currently running payload (downloaded into %TEMP% by setup.ps1).
+    $protectedRoots = @()
+    try {
+        $resolvedRoot = (Resolve-Path $Global:ScriptRoot -ErrorAction Stop).Path
+        $protectedRoots += $resolvedRoot
+    } catch { }
+
+    $installerTemp = Join-Path $env:TEMP 'ScynesthesiaTemp'
+    if (Test-Path $installerTemp) {
+        $protectedRoots += (Resolve-Path $installerTemp -ErrorAction SilentlyContinue).Path
+    }
+
     foreach ($p in $paths) {
-        if (Test-Path $p) {
-            Write-Host "  [+] Cleaning $p"
-            try {
-                Get-ChildItem $p -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-            } catch {
-                Invoke-ErrorHandler -Context "Cleaning path $p" -ErrorRecord $_
+        if (-not (Test-Path $p)) { continue }
+
+        Write-Host "  [+] Cleaning $p"
+        try {
+            $items = Get-ChildItem $p -Force -ErrorAction SilentlyContinue
+            foreach ($item in $items) {
+                $full = $item.FullName
+                $skip = $false
+
+                foreach ($root in $protectedRoots) {
+                    if ($root -and ($full -like "$root*")) {
+                        $skip = $true
+                        break
+                    }
+                }
+
+                if ($skip) {
+                    Write-Host "  [ ] Skipping $full (used by optimizer)" -ForegroundColor DarkGray
+                    continue
+                }
+
+                Remove-Item $item.FullName -Force -Recurse -ErrorAction SilentlyContinue
             }
+        } catch {
+            Invoke-ErrorHandler -Context "Cleaning path $p" -ErrorRecord $_
         }
     }
 
