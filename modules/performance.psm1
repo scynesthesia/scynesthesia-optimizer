@@ -141,7 +141,7 @@ function Invoke-PerformanceBaseline {
         Write-Host "  [ ] Animations left as-is (RAM >=6GB)."
     }
 
-    Enable-UltimatePerformancePlan
+    Invoke-UltimatePerformancePlan
 }
 
 # Description: Ensures the Ultimate Performance power plan GUID is available, duplicating if necessary.
@@ -193,7 +193,7 @@ function Get-UltimatePerformancePlanGuid {
 # Description: Activates the Ultimate Performance power plan when available.
 # Parameters: None.
 # Returns: None. Writes warnings if activation fails.
-function Enable-UltimatePerformancePlan {
+function Invoke-UltimatePerformancePlan {
     Write-Section "Enabling Ultimate Performance power plan"
     $guid = Get-UltimatePerformancePlanGuid
     if ([string]::IsNullOrWhiteSpace($guid)) {
@@ -238,7 +238,7 @@ function Set-RegistryPerformanceValue {
 # Description: Disables NTFS Last Access time updates to reduce filesystem overhead.
 # Parameters: None.
 # Returns: None. Writes registry values to control last access behavior.
-function Set-NtfsLastAccessUpdate {
+function Invoke-NtfsLastAccessUpdate {
     [CmdletBinding()]
     param()
 
@@ -254,7 +254,7 @@ function Set-NtfsLastAccessUpdate {
 # Description: Adjusts menu display delay for the current user to improve responsiveness.
 # Parameters: DelayMs - Desired delay in milliseconds.
 # Returns: None. Updates registry value controlling menu display timing.
-function Set-MenuShowDelay {
+function Invoke-MenuShowDelay {
     [CmdletBinding()]
     param(
         [ValidateRange(0,1000)]
@@ -274,7 +274,7 @@ function Set-MenuShowDelay {
 # Description: Disables Windows transparency effects for the current user to reduce GPU overhead.
 # Parameters: None.
 # Returns: None. Sets registry key to turn off transparency effects.
-function Disable-TransparencyEffects {
+function Invoke-TransparencyEffectsDisable {
     [CmdletBinding()]
     param()
 
@@ -290,7 +290,7 @@ function Disable-TransparencyEffects {
 # Description: Forces visual effects to the Best Performance preset for the current user.
 # Parameters: None.
 # Returns: None. Writes registry setting for visual effects mode.
-function Set-VisualEffectsBestPerformance {
+function Invoke-VisualEffectsBestPerformance {
     [CmdletBinding()]
     param()
 
@@ -306,7 +306,7 @@ function Set-VisualEffectsBestPerformance {
 # Description: Reduces the service shutdown timeout to speed up system shutdowns.
 # Parameters: Milliseconds - Target timeout value as a string-compatible integer.
 # Returns: None. Updates registry value controlling service shutdown wait time.
-function Set-WaitToKillServiceTimeout {
+function Invoke-WaitToKillServiceTimeout {
     [CmdletBinding()]
     param(
         [int]$Milliseconds = 2000
@@ -325,7 +325,7 @@ function Set-WaitToKillServiceTimeout {
 # Description: Disables Multi-Plane Overlay (MPO) to mitigate flickering and stutter issues.
 # Parameters: None.
 # Returns: None. Sets registry value and flags reboot requirement.
-function Disable-MpoVisualFix {
+function Invoke-MpoVisualFixDisable {
     [CmdletBinding()]
     param()
 
@@ -334,13 +334,13 @@ function Disable-MpoVisualFix {
 
     Set-RegistryValueSafe -Path $path -Name $name -Value 5 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
     $Global:NeedsReboot = $true
-    Write-Host "  [+] MPO disabled for stability / MPO desactivado para estabilidad." -ForegroundColor Gray
+    Write-Host "  [+] MPO disabled for stability." -ForegroundColor Gray
 }
 
 # Description: Enables Hardware-accelerated GPU scheduling (HAGS) for supported GPUs.
 # Parameters: None.
 # Returns: None. Sets registry value and flags reboot requirement.
-function Enable-HagsPerformance {
+function Invoke-HagsPerformanceEnablement {
     [CmdletBinding()]
     param()
 
@@ -349,13 +349,13 @@ function Enable-HagsPerformance {
 
     Set-RegistryValueSafe -Path $path -Name $name -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
     $Global:NeedsReboot = $true
-    Write-Host "  [+] HAGS enabled for performance / HAGS habilitado para rendimiento." -ForegroundColor Gray
+    Write-Host "  [+] HAGS enabled for performance." -ForegroundColor Gray
 }
 
 # Description: Disables global power throttling to maintain consistent CPU performance.
 # Parameters: None.
 # Returns: None. Writes registry value and flags reboot requirement.
-function Disable-PowerThrottlingGlobal {
+function Invoke-PowerThrottlingDisablement {
     [CmdletBinding()]
     param()
 
@@ -364,13 +364,13 @@ function Disable-PowerThrottlingGlobal {
 
     Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
     $Global:NeedsReboot = $true
-    Write-Host "  [+] Global power throttling disabled / Limitación de energía global desactivada." -ForegroundColor Gray
+    Write-Host "  [+] Global power throttling disabled." -ForegroundColor Gray
 }
 
 # Description: Keeps the Windows kernel and drivers resident in physical memory.
 # Parameters: None.
 # Returns: None. Writes registry value and flags reboot requirement.
-function Set-PagingExecutivePerformance {
+function Invoke-PagingExecutivePerformance {
     [CmdletBinding()]
     param()
 
@@ -379,13 +379,13 @@ function Set-PagingExecutivePerformance {
 
     Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
     $Global:NeedsReboot = $true
-    Write-Host "  [+] Kernel paging disabled (kept in RAM) / Paginación del kernel desactivada (se mantiene en RAM)." -ForegroundColor Gray
+    Write-Host "  [+] Kernel paging disabled (kept in RAM)." -ForegroundColor Gray
 }
 
 # Description: Disables Windows memory compression when sufficient RAM is available.
 # Parameters: None.
 # Returns: None. Evaluates hardware profile and adjusts compression accordingly.
-function Optimize-MemoryCompression {
+function Invoke-MemoryCompressionOptimization {
     [CmdletBinding()]
     param()
 
@@ -393,9 +393,9 @@ function Optimize-MemoryCompression {
     if ($hardware.TotalMemoryGB -ge 8) {
         Disable-MMAgent -MemoryCompression -ErrorAction SilentlyContinue
         $Global:NeedsReboot = $true
-        Write-Host "  [+] Memory compression disabled (>=8GB RAM) / Compresión de memoria desactivada (>=8GB RAM)." -ForegroundColor Gray
+        Write-Host "  [+] Memory compression disabled (>=8GB RAM)." -ForegroundColor Gray
     } else {
-        Write-Host "  [ ] Memory compression kept (RAM <8GB) / Compresión de memoria mantenida (RAM <8GB)." -ForegroundColor Gray
+        Write-Host "  [ ] Memory compression kept (RAM <8GB)." -ForegroundColor Gray
     }
 }
 
@@ -407,10 +407,10 @@ function Invoke-SafePerformanceTweaks {
     param()
 
     Write-Section "Applying Safe performance tweaks..."
-    Disable-MpoVisualFix
-    Set-NtfsLastAccessUpdate
-    Set-MenuShowDelay -DelayMs 20
-    Optimize-ServicesSafe
+    Invoke-MpoVisualFixDisable
+    Invoke-NtfsLastAccessUpdate
+    Invoke-MenuShowDelay -DelayMs 20
+    Invoke-SafeServiceOptimization
 }
 
 # Description: Applies more aggressive performance tweaks for low-end systems.
@@ -421,16 +421,16 @@ function Invoke-AggressivePerformanceTweaks {
     param()
 
     Write-Section "Applying Aggressive/Low-end performance tweaks..."
-    Set-NtfsLastAccessUpdate
-    Enable-HagsPerformance
-    Disable-PowerThrottlingGlobal
-    Set-PagingExecutivePerformance
-    Optimize-MemoryCompression
-    Set-MenuShowDelay -DelayMs 0
-    Set-WaitToKillServiceTimeout -Milliseconds 2000
-    Disable-TransparencyEffects
-    Set-VisualEffectsBestPerformance
-    Optimize-ServicesAggressive
+    Invoke-NtfsLastAccessUpdate
+    Invoke-HagsPerformanceEnablement
+    Invoke-PowerThrottlingDisablement
+    Invoke-PagingExecutivePerformance
+    Invoke-MemoryCompressionOptimization
+    Invoke-MenuShowDelay -DelayMs 0
+    Invoke-WaitToKillServiceTimeout -Milliseconds 2000
+    Invoke-TransparencyEffectsDisable
+    Invoke-VisualEffectsBestPerformance
+    Invoke-AggressiveServiceOptimization
 }
 
-Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Invoke-SysMainOptimization, Invoke-PerformanceBaseline, Enable-UltimatePerformancePlan, Set-NtfsLastAccessUpdate, Set-MenuShowDelay, Disable-TransparencyEffects, Set-VisualEffectsBestPerformance, Set-WaitToKillServiceTimeout, Disable-MpoVisualFix, Enable-HagsPerformance, Disable-PowerThrottlingGlobal, Set-PagingExecutivePerformance, Optimize-MemoryCompression, Invoke-SafePerformanceTweaks, Invoke-AggressivePerformanceTweaks
+Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Invoke-SysMainOptimization, Invoke-PerformanceBaseline, Invoke-UltimatePerformancePlan, Invoke-NtfsLastAccessUpdate, Invoke-MenuShowDelay, Invoke-TransparencyEffectsDisable, Invoke-VisualEffectsBestPerformance, Invoke-WaitToKillServiceTimeout, Invoke-MpoVisualFixDisable, Invoke-HagsPerformanceEnablement, Invoke-PowerThrottlingDisablement, Invoke-PagingExecutivePerformance, Invoke-MemoryCompressionOptimization, Invoke-SafePerformanceTweaks, Invoke-AggressivePerformanceTweaks

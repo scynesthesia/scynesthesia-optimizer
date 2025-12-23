@@ -16,7 +16,7 @@ function Get-AppRemovalList {
     $configPath = if ($Path) { $Path } else { Join-Path $Global:ScriptRoot "config\apps.json" }
 
     if (-not (Test-Path $configPath)) {
-        $message = "[Debloat] No se encontro el archivo de configuracion de apps: $configPath. Saltando la fase de App Removal."
+        $message = "[Debloat] App configuration file not found: $configPath. Skipping app removal stage."
         Write-Host $message -ForegroundColor Yellow
         if ($logger) { Write-Log $message }
         return @()
@@ -27,7 +27,7 @@ function Get-AppRemovalList {
             $script:AppRemovalConfig = Get-Content $configPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
             $script:AppRemovalConfigPath = (Resolve-Path $configPath).Path
         } catch {
-            $errorMessage = "[Debloat] Error al analizar el archivo de configuracion de apps ($configPath): $($_.Exception.Message)"
+            $errorMessage = "[Debloat] Failed to parse app configuration file ($configPath): $($_.Exception.Message)"
             Write-Host $errorMessage -ForegroundColor Red
             if ($logger) { Write-Log $errorMessage }
             return @()
