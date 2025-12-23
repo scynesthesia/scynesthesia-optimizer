@@ -12,7 +12,7 @@ function Set-ServiceState {
 
     $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
     if (-not $service) {
-        $message = "[Services] Service not found: $Name / Servicio no encontrado: $Name"
+        $message = "[Services] Service not found: $Name"
         Write-Host "  [!] $message" -ForegroundColor Yellow
         Write-Log -Message $message -Level 'Warning'
         return
@@ -27,7 +27,7 @@ function Set-ServiceState {
             Start-Service -Name $Name -ErrorAction SilentlyContinue
         }
 
-        $message = "[Services] $Name set to $StartupType / Estado en tiempo de ejecucion: $Status"
+        $message = "[Services] $Name set to $StartupType; runtime: $Status"
         Write-Host "  [+] $message" -ForegroundColor Gray
         Write-Log -Message $message -Level 'Info'
     } catch {
@@ -38,11 +38,11 @@ function Set-ServiceState {
 # Description: Applies conservative service optimizations suitable for Safe preset.
 # Parameters: None.
 # Returns: None. Disables non-essential consumer/demo services.
-function Optimize-ServicesSafe {
+function Invoke-SafeServiceOptimization {
     [CmdletBinding()]
     param()
 
-    Write-Section "Service hardening (Safe) / Endurecimiento de servicios (Seguro)"
+    Write-Section "Service hardening (Safe)"
     $safeServices = 'RetailDemo','MapsBroker','stisvc'
 
     foreach ($svc in $safeServices) {
@@ -53,38 +53,38 @@ function Optimize-ServicesSafe {
 # Description: Applies aggressive service reductions with optional prompts for key services.
 # Parameters: None.
 # Returns: None. Disables telemetry and remote access services with user confirmation for printing/Bluetooth.
-function Optimize-ServicesAggressive {
+function Invoke-AggressiveServiceOptimization {
     [CmdletBinding()]
     param()
 
-    Write-Section "Service reductions (Aggressive) / Reduccion de servicios (Agresivo)"
+    Write-Section "Service reductions (Aggressive)"
 
     $coreTargets = 'RemoteRegistry','WerSvc','lfsvc','DiagTrack'
     foreach ($svc in $coreTargets) {
         Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
     }
 
-    if (Get-Confirmation "Disable Print Spooler service? / ¿Deshabilitar el servicio de impresion?" 'n') {
+    if (Get-Confirmation "Disable Print Spooler service?" 'n') {
         Set-ServiceState -Name 'Spooler' -StartupType 'Disabled' -Status 'Stopped'
     } else {
-        Write-Host "  [ ] Print Spooler kept enabled / Cola de impresion mantenida." -ForegroundColor DarkGray
+        Write-Host "  [ ] Print Spooler kept enabled." -ForegroundColor DarkGray
     }
 
-    if (Get-Confirmation "Disable Bluetooth Support service? / ¿Deshabilitar el servicio de Bluetooth?" 'n') {
+    if (Get-Confirmation "Disable Bluetooth Support service?" 'n') {
         Set-ServiceState -Name 'bthserv' -StartupType 'Disabled' -Status 'Stopped'
     } else {
-        Write-Host "  [ ] Bluetooth Support kept enabled / Soporte de Bluetooth mantenido." -ForegroundColor DarkGray
+        Write-Host "  [ ] Bluetooth Support kept enabled." -ForegroundColor DarkGray
     }
 }
 
 # Description: Disables GPU vendor telemetry services for gaming profile stability.
 # Parameters: None.
 # Returns: None. Stops and disables NVIDIA/AMD telemetry listeners when present.
-function Optimize-DriverTelemetry {
+function Invoke-DriverTelemetryOptimization {
     [CmdletBinding()]
     param()
 
-    Write-Section "Driver telemetry cleanup / Limpieza de telemetría de drivers"
+    Write-Section "Driver telemetry cleanup"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
     $nvidiaServices = @('NvTelemetryContainer')
@@ -92,7 +92,7 @@ function Optimize-DriverTelemetry {
         if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
             Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
         } else {
-            $message = "[Services] NVIDIA telemetry service not found: $svc / Servicio de telemetría NVIDIA no encontrado: $svc"
+            $message = "[Services] NVIDIA telemetry service not found: $svc"
             Write-Host "  [ ] $message" -ForegroundColor DarkGray
             if ($logger) { Write-Log -Message $message -Level 'Warning' }
         }
@@ -103,11 +103,11 @@ function Optimize-DriverTelemetry {
         if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
             Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
         } else {
-            $message = "[Services] AMD telemetry service not found: $svc / Servicio de telemetría AMD no encontrado: $svc"
+            $message = "[Services] AMD telemetry service not found: $svc"
             Write-Host "  [ ] $message" -ForegroundColor DarkGray
             if ($logger) { Write-Log -Message $message -Level 'Warning' }
         }
     }
 }
 
-Export-ModuleMember -Function Optimize-ServicesSafe, Optimize-ServicesAggressive, Optimize-DriverTelemetry
+Export-ModuleMember -Function Invoke-SafeServiceOptimization, Invoke-AggressiveServiceOptimization, Invoke-DriverTelemetryOptimization

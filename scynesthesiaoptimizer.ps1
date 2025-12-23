@@ -142,33 +142,18 @@ function Ensure-PowerPlan {
     param([ValidateSet('Balanced','HighPerformance')][string]$Mode = 'HighPerformance')
     Write-Host "  [i] Setting base power plan to: $Mode" -ForegroundColor Gray
     if ($Mode -eq 'HighPerformance') {
-        $targetScheme = $null
-
-        if (Get-Command Get-UltimatePerformancePlanGuid -ErrorAction SilentlyContinue) {
-            $targetScheme = Get-UltimatePerformancePlanGuid
-        }
-
-        if (-not $targetScheme) {
-            try {
-                $dupOutput = powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>$null
-                if ($dupOutput -match '([0-9a-fA-F-]{36})') {
-                    $targetScheme = $Matches[1]
-                }
-            } catch {
-                Write-Warning "  [!] Could not duplicate Ultimate Performance plan: $($_.Exception.Message)"
-            }
-        }
-
-        if (-not $targetScheme) {
-            $targetScheme = 'SCHEME_MIN'
-            Write-Host "  [i] Falling back to built-in High performance plan." -ForegroundColor Gray
-        }
-
         try {
-            powercfg /setactive $targetScheme 2>$null
-            Write-Host "  [+] Base power plan set to $Mode." -ForegroundColor Gray
+            powercfg /duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>$null | Out-Null
+            powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61 2>$null
+            Write-Host "  [+] Base power plan set to $Mode (Ultimate Performance GUID)." -ForegroundColor Gray
         } catch {
-            Write-Warning "  [!] Failed to set $Mode power plan: $($_.Exception.Message)"
+            Write-Warning "  [!] Failed to activate Ultimate Performance GUID directly: $($_.Exception.Message)"
+            try {
+                powercfg /setactive SCHEME_MAX 2>$null
+                Write-Host "  [+] High performance power plan activated via fallback." -ForegroundColor Gray
+            } catch {
+                Write-Warning "  [!] Failed to activate High performance fallback: $($_.Exception.Message)"
+            }
         }
     } else {
         try {
