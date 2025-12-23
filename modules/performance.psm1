@@ -151,7 +151,7 @@ function Get-UltimatePerformancePlanGuid {
     $ultimateTemplateGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
 
     try {
-        $powerPlans = powercfg -list
+        $powerPlans = powercfg -list 2>$null
         if ($powerPlans | Select-String -Pattern $ultimateTemplateGuid -SimpleMatch) {
             Write-Host "  [+] Ultimate Performance plan already available."
             return $ultimateTemplateGuid
@@ -175,7 +175,7 @@ function Get-UltimatePerformancePlanGuid {
     }
 
     try {
-        $duplicateOutput = powercfg -duplicatescheme $ultimateTemplateGuid
+        $duplicateOutput = powercfg -duplicatescheme $ultimateTemplateGuid 2>$null
         $duplicatedGuid = ($duplicateOutput | Select-String -Pattern '[A-Fa-f0-9-]{36}' -AllMatches | Select-Object -First 1).Matches.Value
         if (-not [string]::IsNullOrWhiteSpace($duplicatedGuid)) {
             Write-Host "  [+] Ultimate Performance plan created."
@@ -197,7 +197,13 @@ function Invoke-UltimatePerformancePlan {
     Write-Section "Enabling Ultimate Performance power plan"
     $guid = Get-UltimatePerformancePlanGuid
     if ([string]::IsNullOrWhiteSpace($guid)) {
-        Write-Warning "  [!] Ultimate Performance plan not activated because GUID could not be resolved."
+        Write-Warning "  [!] Ultimate Performance plan not available; switching to High performance instead."
+        try {
+            powercfg -setactive SCHEME_MAX 2>$null
+            Write-Host "  [+] High performance plan activated as fallback." -ForegroundColor Gray
+        } catch {
+            Invoke-ErrorHandler -Context "Activating High performance fallback plan" -ErrorRecord $_
+        }
         return
     }
     try {
@@ -418,7 +424,9 @@ function Invoke-SafePerformanceTweaks {
 # Returns: None. Invokes multiple registry adjustments for responsiveness.
 function Invoke-AggressivePerformanceTweaks {
     [CmdletBinding()]
-    param()
+    param(
+        $OemServices
+    )
 
     Write-Section "Applying Aggressive/Low-end performance tweaks..."
     Invoke-NtfsLastAccessUpdate
@@ -430,7 +438,7 @@ function Invoke-AggressivePerformanceTweaks {
     Invoke-WaitToKillServiceTimeout -Milliseconds 2000
     Invoke-TransparencyEffectsDisable
     Invoke-VisualEffectsBestPerformance
-    Invoke-AggressiveServiceOptimization
+    Invoke-AggressiveServiceOptimization -OemServices $OemServices
 }
 
 Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Invoke-SysMainOptimization, Invoke-PerformanceBaseline, Invoke-UltimatePerformancePlan, Invoke-NtfsLastAccessUpdate, Invoke-MenuShowDelay, Invoke-TransparencyEffectsDisable, Invoke-VisualEffectsBestPerformance, Invoke-WaitToKillServiceTimeout, Invoke-MpoVisualFixDisable, Invoke-HagsPerformanceEnablement, Invoke-PowerThrottlingDisablement, Invoke-PagingExecutivePerformance, Invoke-MemoryCompressionOptimization, Invoke-SafePerformanceTweaks, Invoke-AggressivePerformanceTweaks
