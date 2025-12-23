@@ -133,8 +133,6 @@ function Set-RegistryValueSafe {
         return
     }
 
-    $registryName = if ($Name -eq "(default)") { "" } else { $Name }
-
     try {
         # Auto-fix: HKLM\ / HKCU\ -> HKLM:\ / HKCU:\
         if ($Path -match "^HK(LM|CU)\\" -and $Path -notmatch "^HK(LM|CU):\\") {
@@ -145,7 +143,12 @@ function Set-RegistryValueSafe {
             New-Item -Path $Path -Force | Out-Null
         }
 
-        New-ItemProperty -Path $Path -Name $registryName -Value $Value -PropertyType $Type -Force -ErrorAction Stop | Out-Null
+        if ($Name -eq "(default)") {
+            Set-ItemProperty -Path $Path -Name '(default)' -Value $Value -Type $Type -Force -ErrorAction Stop | Out-Null
+        }
+        else {
+            New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force -ErrorAction Stop | Out-Null
+        }
     }
     catch {
         Invoke-ErrorHandler -Context "Setting registry value $Path -> $Name" -ErrorRecord $_
