@@ -142,18 +142,41 @@ function Ensure-PowerPlan {
     param([ValidateSet('Balanced','HighPerformance')][string]$Mode = 'HighPerformance')
     Write-Host "  [i] Setting base power plan to: $Mode" -ForegroundColor Gray
     if ($Mode -eq 'HighPerformance') {
-        $ultimateGuid = $null
-        try {
-            $dupOutput = powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>$null
-            if ($dupOutput -match '([0-9a-fA-F-]{36})') {
-                $ultimateGuid = $Matches[1]
-            }
-        } catch { }
+        $targetScheme = $null
 
-        $targetScheme = if ($ultimateGuid) { $ultimateGuid } else { 'e9a42b02-d5df-448d-aa00-03f14749eb61' }
-        powercfg /setactive $targetScheme
+        if (Get-Command Get-UltimatePerformancePlanGuid -ErrorAction SilentlyContinue) {
+            $targetScheme = Get-UltimatePerformancePlanGuid
+        }
+
+        if (-not $targetScheme) {
+            try {
+                $dupOutput = powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>$null
+                if ($dupOutput -match '([0-9a-fA-F-]{36})') {
+                    $targetScheme = $Matches[1]
+                }
+            } catch {
+                Write-Warning "  [!] Could not duplicate Ultimate Performance plan: $($_.Exception.Message)"
+            }
+        }
+
+        if (-not $targetScheme) {
+            $targetScheme = 'SCHEME_MIN'
+            Write-Host "  [i] Falling back to built-in High performance plan." -ForegroundColor Gray
+        }
+
+        try {
+            powercfg /setactive $targetScheme 2>$null
+            Write-Host "  [+] Base power plan set to $Mode." -ForegroundColor Gray
+        } catch {
+            Write-Warning "  [!] Failed to set $Mode power plan: $($_.Exception.Message)"
+        }
     } else {
-        powercfg /setactive SCHEME_BALANCED
+        try {
+            powercfg /setactive SCHEME_BALANCED 2>$null
+            Write-Host "  [+] Balanced power plan activated." -ForegroundColor Gray
+        } catch {
+            Write-Warning "  [!] Failed to activate Balanced plan: $($_.Exception.Message)"
+        }
     }
 }
 
