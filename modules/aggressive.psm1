@@ -13,9 +13,10 @@ function Get-AppRemovalListFromConfig {
 
     if (-not $script:AppRemovalConfig) {
         $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-        $configPath = Join-Path $Global:ScriptRoot "config/apps.json"
+        $baseRoot = if ($Global:ScriptRoot) { $Global:ScriptRoot } elseif ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+        $configPath = Join-Path $baseRoot "config/apps.json"
         if (-not (Test-Path $configPath)) {
-            $message = "[Debloat] No se encontro el archivo de configuracion de apps: $configPath. Saltando la fase de App Removal."
+            $message = "[Debloat] App configuration file not found: $configPath. Skipping App Removal phase."
             Write-Host $message -ForegroundColor Yellow
             if ($logger) { Write-Log $message }
             return @()
@@ -123,7 +124,8 @@ function Invoke-AggressiveTweaks {
             "\\Microsoft\\Windows\\Customer Experience Improvement Program\\UsbCeip",
             "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser"
         )
-        Push-Location -Path $env:SystemRoot\System32
+        $system32Path = if ($env:SystemRoot) { Join-Path $env:SystemRoot "System32" } else { "C:\\Windows\\System32" }
+        Push-Location -Path $system32Path
         try {
             foreach ($t in $tasks) {
                 try {
@@ -134,7 +136,7 @@ function Invoke-AggressiveTweaks {
                 }
             }
         } finally {
-            Pop-Location
+            Pop-Location -ErrorAction SilentlyContinue
         }
     }
 

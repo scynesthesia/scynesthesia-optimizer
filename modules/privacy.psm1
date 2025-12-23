@@ -2,6 +2,26 @@
 # Description: Applies privacy-focused registry changes suitable for the Safe preset.
 # Parameters: None.
 # Returns: None. Prompts for optional Cortana and Storage Sense adjustments.
+function Invoke-DriverTelemetry {
+    Write-Section "Disabling GPU driver telemetry services"
+
+    $telemetryServices = @(
+        'NvTelemetryContainer',
+        'NvContainerLocalSystem',
+        'NvContainerNetworkService',
+        'AMD Crash Defender Service',
+        'AMD Crash User Service',
+        'AMD External Events Utility'
+    )
+
+    foreach ($service in $telemetryServices) {
+        Stop-Service -Name $service -ErrorAction SilentlyContinue
+        Set-Service -Name $service -StartupType Disabled -ErrorAction SilentlyContinue
+    }
+
+    Write-Host "  [+] Driver telemetry services disabled where present." -ForegroundColor Green
+}
+
 function Invoke-PrivacyTelemetrySafe {
     Write-Section "Applying privacy/telemetry tweaks (Safe preset)"
 
@@ -76,4 +96,4 @@ function Invoke-PreferencesSafe {
     Set-RegistryValueSafe "HKCU\Control Panel\Keyboard" "InitialKeyboardIndicators" 2147483650
 }
 
-Export-ModuleMember -Function Invoke-PrivacyTelemetrySafe, Invoke-PreferencesSafe
+Export-ModuleMember -Function Invoke-DriverTelemetry, Invoke-PrivacyTelemetrySafe, Invoke-PreferencesSafe

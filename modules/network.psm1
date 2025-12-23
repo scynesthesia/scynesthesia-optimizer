@@ -141,11 +141,11 @@ function Set-TcpAutotuningNormal {
 # Parameters: None.
 # Returns: None. Sets global reboot flag after registry update.
 function Set-IPvPreferenceIPv4First {
-    Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6) / Prefiriendo IPv4 sobre IPv6 (sin desactivar IPv6)" -ForegroundColor Gray
+    Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6)" -ForegroundColor Gray
     try {
         Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" "DisabledComponents" 0x20
         $Global:NeedsReboot = $true
-        Write-Host "      [>] Preference recorded. Reboot recommended / Preferencia registrada. Se recomienda reiniciar." -ForegroundColor Yellow
+        Write-Host "      [>] Preference recorded. Reboot recommended." -ForegroundColor Yellow
         if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
             Write-Log "[Network] IPv4 preference set (DisabledComponents=0x20)."
         }
@@ -412,10 +412,10 @@ function Set-EnergyEfficientEthernet {
 # Parameters: None.
 # Returns: None.
 function Set-NicPowerManagementGaming {
-    Write-Host "  [>] Applying NIC power management overrides / Aplicando reemplazos de gestión de energía NIC" -ForegroundColor Cyan
+    Write-Host "  [>] Applying NIC power management overrides" -ForegroundColor Cyan
     $nicPaths = Get-NicRegistryPaths
     if ($nicPaths.Count -eq 0) {
-        Write-Host "  [!] No NIC registry paths found for gaming power tweaks. / No se encontraron rutas de registro NIC para ajustes de energía de gaming." -ForegroundColor Yellow
+        Write-Host "  [!] No NIC registry paths found for gaming power tweaks." -ForegroundColor Yellow
         return
     }
 
@@ -434,10 +434,10 @@ function Set-NicPowerManagementGaming {
 
     foreach ($item in $nicPaths) {
         $adapterName = $item.Adapter.Name
-        Write-Host "  [>] Optimizing $adapterName power profile / Optimizando perfil de energía de $adapterName" -ForegroundColor Cyan
+        Write-Host "  [>] Optimizing $adapterName power profile" -ForegroundColor Cyan
         try {
             Set-RegistryValueSafe -Path $item.Path -Name 'PnPCapabilities' -Value 24 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-            Write-Host "    [+] PnPCapabilities set to 24 (power management disabled) / PnPCapabilities configurado a 24 (gestión de energía deshabilitada)" -ForegroundColor Green
+            Write-Host "    [+] PnPCapabilities set to 24 (power management disabled)" -ForegroundColor Green
             if ($logger) { Write-Log "[Network] $adapterName PnPCapabilities set to 24 for gaming profile." }
         } catch {
             Invoke-ErrorHandler -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
@@ -446,7 +446,7 @@ function Set-NicPowerManagementGaming {
         foreach ($entry in $powerFlags.GetEnumerator()) {
             try {
                 Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String)
-                Write-Host "    [+] $($entry.Key) set to $($entry.Value) / $($entry.Key) configurado a $($entry.Value)" -ForegroundColor Green
+                Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
                 if ($logger) { Write-Log "[Network] $adapterName $($entry.Key) set to $($entry.Value) for gaming power." }
             } catch {
                 Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
@@ -567,7 +567,7 @@ function Invoke-NetworkTweaksAggressive {
         Write-Host "  [ ] Remote Assistance left enabled." -ForegroundColor Gray
     }
 
-    if (Get-Confirmation "Queres desactivar completamente el Network Discovery? Vas a dejar de ver PCs y carpetas compartidas automaticamente en la red." 'n') {
+    if (Get-Confirmation "Disable Network Discovery entirely? You will stop seeing PCs and shared folders automatically on the network." 'n') {
         Disable-NetworkDiscovery
     } else {
         Write-Host "  [ ] Network Discovery left enabled." -ForegroundColor Gray
@@ -579,7 +579,7 @@ function Invoke-NetworkTweaksAggressive {
 # Returns: None. May set global reboot flag for certain changes.
 function Invoke-NetworkTweaksGaming {
     Write-Section "Network tweaks (Gaming profile)"
-    Write-Host "  [i] Applying hardware power optimizations... / Aplicando optimizaciones de energía de hardware..." -ForegroundColor Gray
+    Write-Host "  [i] Applying hardware power optimizations..." -ForegroundColor Gray
     Set-NicPowerManagementGaming
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     Set-NetworkThrottling
@@ -593,7 +593,7 @@ function Invoke-NetworkTweaksGaming {
         Write-Host "  [ ] Interrupt moderation left unchanged." -ForegroundColor Gray
     }
 
-    if (Get-Confirmation "Queres habilitar MSI Mode para tu placa de red (NIC)? Recomendado en hardware moderno. Nota: si ya aplicaste MSI Mode para la NIC desde otra opcion, no hace falta repetirlo." 'n') {
+    if (Get-Confirmation "Enable MSI Mode for your NIC? Recommended on modern hardware. If you already applied MSI Mode elsewhere, you can skip this." 'n') {
         $msiResult = Enable-MsiModeSafe -Target 'NIC'
         if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {
             Write-Log "[Network] MSI Mode enabled for NIC via gaming profile."
@@ -604,7 +604,7 @@ function Invoke-NetworkTweaksGaming {
         Write-Host "  [ ] MSI Mode for NIC skipped." -ForegroundColor Gray
     }
 
-    if (Get-Confirmation "Queres aplicar tambien tweaks TCP avanzados (Chimney Offload / DCA)? Son experimentales y pueden causar inestabilidad en hardware viejo o drivers raros." 'n') {
+    if (Get-Confirmation "Apply advanced TCP tweaks (Chimney Offload / DCA)? These are experimental and may be unstable on older hardware or uncommon drivers." 'n') {
         try {
             $safePath = $env:SystemRoot
             if (-not $safePath) { $safePath = $env:WINDIR }
@@ -627,13 +627,13 @@ function Invoke-NetworkTweaksGaming {
                 Pop-Location -ErrorAction SilentlyContinue
             }
         } catch {
-            Write-Host "  [!] No se pudieron aplicar los tweaks Chimney/DCA: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "  [!] Could not apply Chimney/DCA tweaks: $($_.Exception.Message)" -ForegroundColor Yellow
             if ($logger) {
                 Write-Log "[Network] Could not apply Chimney/DCA tweaks: $($_.Exception.Message)" -Level 'Warning'
             }
         }
     } else {
-        Write-Host "  [ ] Tweaks Chimney/DCA omitidos." -ForegroundColor Gray
+        Write-Host "  [ ] Chimney/DCA tweaks skipped." -ForegroundColor Gray
     }
 }
 
@@ -734,14 +734,14 @@ function Restore-NetworkBackupState {
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
     if (-not (Test-Path $file)) {
-        Write-Host "[Backup] No se encontro backup de red para restaurar." -ForegroundColor Yellow
+        Write-Host "[Backup] No network backup found to restore." -ForegroundColor Yellow
         return
     }
 
     try {
         $data = Get-Content -Path $file -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
     } catch {
-        Write-Host "[Backup] No se pudo leer el archivo de backup de red." -ForegroundColor Yellow
+        Write-Host "[Backup] Could not read network backup file." -ForegroundColor Yellow
         return
     }
 
