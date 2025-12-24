@@ -16,10 +16,10 @@ function Get-EligibleNetAdapters {
     }
 }
 
-# Description: Converts a link speed value to bytes per second, handling string units.
+# Description: Converts a link speed value to bits per second, handling string units.
 # Parameters: LinkSpeed - Raw speed value or string with units.
-# Returns: Int64 representing bytes per second, or null when parsing fails.
-function Convert-LinkSpeedToBytes {
+# Returns: Int64 representing bits per second, or null when parsing fails.
+function Convert-LinkSpeedToBits {
     param(
         [Parameter(Mandatory)]$LinkSpeed
     )
@@ -33,8 +33,8 @@ function Convert-LinkSpeedToBytes {
                 $value = [double]$match.Groups[1].Value
                 $unit = $match.Groups[2].Value.ToLower()
                 switch ($unit) {
-                    'g' { return [int64]($value * 1GB) }
-                    'm' { return [int64]($value * 1MB) }
+                    'g' { return [int64]($value * 1e9) }
+                    'm' { return [int64]($value * 1e6) }
                     default { return [int64]$value }
                 }
             }
@@ -392,7 +392,7 @@ function Get-PrimaryNetAdapter {
         if ($adapters.Count -eq 0) { return $null }
         $sortedAdapters = $adapters |
             Sort-Object -Property @{ Expression = {
-                    $parsed = Convert-LinkSpeedToBytes -LinkSpeed $_.LinkSpeed
+                    $parsed = Convert-LinkSpeedToBits -LinkSpeed $_.LinkSpeed
                     if ($null -eq $parsed) { return 0 }
                     return $parsed
                 }
@@ -757,13 +757,16 @@ function Invoke-NetworkTweaksHardcore {
         $primaryAdapters = $adapters
     } else {
         $primaryAdapters = @($primary)
-        $parsedSpeed = Convert-LinkSpeedToBytes -LinkSpeed $primary.LinkSpeed
-        if ($null -eq $parsedSpeed) { $parsedSpeed = 0 }
-        $speedMbps = [math]::Round($parsedSpeed / 1MB, 2)
-        $speedLabel = if ($parsedSpeed -gt 0) {
-            if ($speedMbps -ge 1000) { "{0} Gbps" -f ([math]::Round($speedMbps / 1000, 2)) } else { "{0} Mbps" -f $speedMbps }
+        $parsedSpeed = Convert-LinkSpeedToBits -LinkSpeed $primary.LinkSpeed
+        if ($null -eq $parsedSpeed -or $parsedSpeed -le 0) {
+            $speedLabel = 'Unknown speed'
         } else {
-            'Unknown speed'
+            $speedMbps = [math]::Round($parsedSpeed / 1e6, 2)
+            $speedLabel = if ($speedMbps -ge 1000) {
+                "{0} Gbps" -f ([math]::Round($speedMbps / 1000, 2))
+            } else {
+                "{0} Mbps" -f $speedMbps
+            }
         }
         Write-Host "  [i] Primary adapter detected: $($primary.Name) ($speedLabel)." -ForegroundColor Cyan
     }
