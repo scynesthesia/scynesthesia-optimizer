@@ -43,6 +43,24 @@ function Enable-MsiModeSafe {
         }
         foreach ($dev in $devices) {
             try {
+                $driverDate = $null
+                $driverDateProperty = Get-PnpDeviceProperty -InstanceId $dev.InstanceId -KeyName 'DEVPKEY_Device_DriverDate' -ErrorAction SilentlyContinue
+                if ($driverDateProperty -and $driverDateProperty.Data) {
+                    [datetime]::TryParse($driverDateProperty.Data, [ref]$driverDate) | Out-Null
+                }
+
+                if ($driverDate) {
+                    if ($driverDate -lt (Get-Date '2014-01-01')) {
+                        Write-Host "  [!] Skipping $($dev.FriendlyName): driver date $driverDate is older than 2014-01-01." -ForegroundColor Yellow
+                        continue
+                    }
+
+                    if ($dev.Manufacturer -and ($dev.Manufacturer -match '^(?i)(Realtek|JMicron)') -and $driverDate -lt (Get-Date '2017-01-01')) {
+                        Write-Host "  [!] Skipping $($dev.FriendlyName): $($dev.Manufacturer) driver date $driverDate is older than 2017-01-01." -ForegroundColor Yellow
+                        continue
+                    }
+                }
+
                 $regPath = "HKLM\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
                 if (-not (Test-Path $regPath)) { continue }
 
