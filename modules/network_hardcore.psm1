@@ -458,6 +458,14 @@ function Set-WakeOnLanHardcore {
     }
 
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    if ($script:NicRegistryAccessDenied) {
+        $message = "NIC registry tweaks skipped because registry access was denied earlier. Run PowerShell as Administrator for full coverage."
+        Write-Host "  [!] $message" -ForegroundColor Yellow
+        if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
+        return
+    }
+
     $nicPaths = Get-NicRegistryPaths
     if ($nicPaths.Count -eq 0) {
         if ($script:NicRegistryAccessDenied) {
