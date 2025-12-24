@@ -251,17 +251,54 @@ function Get-NicRegistryPaths {
         } catch {
             $isUnauthorized = ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException])
             if ($isUnauthorized) {
+                $ownershipAdjusted = $false
+                $originalOwner = $null
+                try {
+                    $adminsSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
+                    $acl = Get-Acl -Path $classPath -ErrorAction Stop
+                    $originalOwner = $acl.Owner
+                    if ($acl.Owner -ne $adminsSid.Value) {
+                        $acl.SetOwner($adminsSid)
+                    }
+                    $rule = New-Object System.Security.AccessControl.RegistryAccessRule($adminsSid, 'ReadKey', 'ContainerInherit', 'None', 'Allow')
+                    $acl.SetAccessRule($rule)
+                    Set-Acl -Path $classPath -AclObject $acl -ErrorAction Stop
+                    $ownershipAdjusted = $true
+                    Write-Host "  [i] Temporary ownership granted on $classPath for NIC discovery." -ForegroundColor Cyan
+                } catch {
+                    $ownershipAdjusted = $false
+                }
+
                 $entries = Get-ChildItem -Path $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^\d{4}$' }
                 if ($entries.Count -gt 0) {
-                    $note = "Partial registry access detected; proceeding with readable NIC entries only."
+                    if ($ownershipAdjusted -and $originalOwner) {
+                        try {
+                            $acl = Get-Acl -Path $classPath -ErrorAction Stop
+                            try {
+                                $ownerRef = New-Object System.Security.Principal.SecurityIdentifier($originalOwner)
+                            } catch {
+                                $ownerRef = New-Object System.Security.Principal.NTAccount($originalOwner)
+                            }
+                            if ($ownerRef) {
+                                $acl.SetOwner($ownerRef)
+                                Set-Acl -Path $classPath -AclObject $acl -ErrorAction Stop
+                                Write-Host "  [i] Restored original ownership on $classPath after discovery." -ForegroundColor Cyan
+                            }
+                        } catch { }
+                    }
+                    $note = if ($ownershipAdjusted) {
+                        "Registry access tightened; temporary ownership was used to read NIC entries. Prefer driver-exposed properties when possible."
+                    } else {
+                        "Partial registry access detected; proceeding with readable NIC entries only."
+                    }
                     Write-Host "  [!] $note" -ForegroundColor Yellow
                     if ($logger) { Write-Log "[NetworkHardcore] $note" -Level 'Warning' }
                 } else {
                     $isAdmin = Test-IsAdminSession
                     $message = if ($isAdmin) {
-                        "Registry protection blocked access to $classPath even in an elevated session. Disable registry protection or rerun as SYSTEM to apply NIC registry tweaks."
+                        "Registry protection blocked access to $classPath even in an elevated session. Prefer Set-NetAdapterAdvancedProperty where exposed, or take ownership of the key temporarily to proceed."
                     } else {
-                        "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks."
+                        "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks or rely on driver properties instead of registry edits."
                     }
                     Write-Host "  [!] $message" -ForegroundColor Yellow
                     if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
@@ -312,6 +349,22 @@ function Set-NicRegistryHardcore {
             return
         }
 
+        $setValueIfDifferent = {
+            param($path, $name, $value, $type)
+            $current = $null
+            try {
+                $existing = Get-ItemProperty -Path $path -Name $name -ErrorAction Stop
+                $current = $existing.$name
+            } catch { }
+            if ($current -eq $value) { return $false }
+            try {
+                Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type $type
+                return $true
+            } catch {
+                return $false
+            }
+        }
+
         $powerOffload = @{
             '*EEE'                 = '0'
             '*WakeOnMagicPacket'   = '0'
@@ -342,17 +395,26 @@ function Set-NicRegistryHardcore {
         foreach ($item in $nicPaths) {
             $adapterName = $item.Adapter.Name
             Write-Host "  [>] Applying registry tweaks to $adapterName" -ForegroundColor Cyan
+            $adapterChanged = $false
             try {
-                Set-RegistryValueSafe -Path $item.Path -Name 'PnPCapabilities' -Value 24 -Type DWord
-                Write-Host "    [+] PnPCapabilities set to 24 (power management disabled)" -ForegroundColor Green
+                if (& $setValueIfDifferent $item.Path 'PnPCapabilities' 24 ([Microsoft.Win32.RegistryValueKind]::DWord)) {
+                    Write-Host "    [+] PnPCapabilities set to 24 (power management disabled)" -ForegroundColor Green
+                    $adapterChanged = $true
+                } else {
+                    Write-Host "    [i] PnPCapabilities already set; skipping change." -ForegroundColor Gray
+                }
             } catch {
                 Invoke-ErrorHandler -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
             }
 
             foreach ($entry in $powerOffload.GetEnumerator()) {
                 try {
-                    Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type String
-                    Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
+                    if (& $setValueIfDifferent $item.Path $entry.Key $entry.Value ([Microsoft.Win32.RegistryValueKind]::String)) {
+                        Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
+                        $adapterChanged = $true
+                    } else {
+                        Write-Host "    [i] $($entry.Key) already set; skipping change." -ForegroundColor Gray
+                    }
                 } catch {
                     Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
                 }
@@ -360,8 +422,12 @@ function Set-NicRegistryHardcore {
 
             foreach ($entry in $interruptDelays.GetEnumerator()) {
                 try {
-                    Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type String
-                    Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
+                    if (& $setValueIfDifferent $item.Path $entry.Key $entry.Value ([Microsoft.Win32.RegistryValueKind]::String)) {
+                        Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
+                        $adapterChanged = $true
+                    } else {
+                        Write-Host "    [i] $($entry.Key) already set; skipping change." -ForegroundColor Gray
+                    }
                 } catch {
                     Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
                 }
@@ -378,33 +444,47 @@ function Set-NicRegistryHardcore {
                 $noiseKeys = @($powerOffload.Keys) + @($interruptDelays.Keys)
                 foreach ($noiseKey in $noiseKeys | Select-Object -Unique) {
                     try {
-                        Remove-ItemProperty -Path $interfacePath -Name $noiseKey -ErrorAction SilentlyContinue
+                        $existingNoise = (Get-ItemProperty -Path $interfacePath -Name $noiseKey -ErrorAction SilentlyContinue)
+                        if ($existingNoise) {
+                            Remove-ItemProperty -Path $interfacePath -Name $noiseKey -ErrorAction SilentlyContinue
+                            $adapterChanged = $true
+                        }
                     } catch { }
                 }
 
-                Set-RegistryValueSafe -Path $interfacePath -Name 'TcpAckFrequency' -Value 1 -Type DWord
-                Set-RegistryValueSafe -Path $interfacePath -Name 'TCPNoDelay' -Value 1 -Type DWord
-                Set-RegistryValueSafe -Path $interfacePath -Name 'TcpDelAckTicks' -Value 0 -Type DWord
-                Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
+                $nagleChanged = $false
+                if (& $setValueIfDifferent $interfacePath 'TcpAckFrequency' 1 ([Microsoft.Win32.RegistryValueKind]::DWord)) { $nagleChanged = $true }
+                if (& $setValueIfDifferent $interfacePath 'TCPNoDelay' 1 ([Microsoft.Win32.RegistryValueKind]::DWord)) { $nagleChanged = $true }
+                if (& $setValueIfDifferent $interfacePath 'TcpDelAckTicks' 0 ([Microsoft.Win32.RegistryValueKind]::DWord)) { $nagleChanged = $true }
+                if ($nagleChanged) {
+                    Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
+                    $adapterChanged = $true
+                } else {
+                    Write-Host "    [i] Nagle parameters already aligned; skipping change." -ForegroundColor Gray
+                }
             } catch {
                 Invoke-ErrorHandler -Context "Setting Nagle parameters for $adapterName" -ErrorRecord $_
             }
 
-            try {
-                & cmd.exe /c 'netsh int ip reset' 2>&1 | Out-Null
-                & cmd.exe /c 'netsh winsock reset' 2>&1 | Out-Null
-                Write-Host "    [+] Network stack cache cleared (IP/Winsock reset)" -ForegroundColor Green
-            } catch {
-                Invoke-ErrorHandler -Context "Resetting network stack for $adapterName" -ErrorRecord $_
-            }
+            if ($adapterChanged) {
+                try {
+                    & cmd.exe /c 'netsh int ip reset' 2>&1 | Out-Null
+                    & cmd.exe /c 'netsh winsock reset' 2>&1 | Out-Null
+                    Write-Host "    [+] Network stack cache cleared (IP/Winsock reset)" -ForegroundColor Green
+                } catch {
+                    Invoke-ErrorHandler -Context "Resetting network stack for $adapterName" -ErrorRecord $_
+                }
 
-            try {
-                Disable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
-                Start-Sleep -Seconds 3
-                Enable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
-                Write-Host "    [+] Adapter reset to reload driver settings" -ForegroundColor Green
-            } catch {
-                Invoke-ErrorHandler -Context "Resetting adapter $adapterName" -ErrorRecord $_
+                try {
+                    Disable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
+                    Start-Sleep -Seconds 3
+                    Enable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
+                    Write-Host "    [+] Adapter reset to reload driver settings" -ForegroundColor Green
+                } catch {
+                    Invoke-ErrorHandler -Context "Resetting adapter $adapterName" -ErrorRecord $_
+                }
+            } else {
+                Write-Host "    [i] No registry changes detected for $adapterName; skipping resets." -ForegroundColor Gray
             }
         }
 
@@ -452,10 +532,15 @@ function Set-NetAdapterAdvancedPropertySafe {
             return
         }
 
+        if ($property.DisplayValue -eq $DisplayValue) {
+            Write-Host "  [i] $DisplayName already set to $DisplayValue on $AdapterName; no change needed." -ForegroundColor Gray
+            return
+        }
+
         $valuesToTry = @($DisplayValue)
-        if ($DisplayName -eq 'Transmit Buffers') {
+        if ($DisplayName -in @('Transmit Buffers', 'Receive Buffers')) {
             $fallbackDefault = if ($property.DefaultDisplayValue) { $property.DefaultDisplayValue } else { $property.DisplayValue }
-            $valuesToTry = @('4096', '128', $fallbackDefault) | Where-Object { $_ }
+            $valuesToTry = @('4096', '2048', '1024', '512', $fallbackDefault) | Where-Object { $_ }
         }
 
         foreach ($value in $valuesToTry) {
@@ -586,7 +671,7 @@ function Set-WakeOnLanHardcore {
 
 # Description: Tests whether a given ICMP payload size passes without fragmentation.
 # Parameters: PayloadSize - Size of the ICMP payload; Target - Host to ping.
-# Returns: Boolean indicating success of the ping test.
+# Returns: Object indicating Success/Fragmented flags plus raw output metadata.
 function Test-MtuSize {
     param(
         [Parameter(Mandatory)][int]$PayloadSize,
@@ -597,10 +682,17 @@ function Test-MtuSize {
         $pingResult = & cmd.exe /c $cmd 2>&1
         $successExit = $LASTEXITCODE -eq 0
         $successTtl = $pingResult -match '(?i)ttl='
-        return ($successExit -and $successTtl)
+        $fragmented = ($pingResult -match '(?i)Packet needs to be fragmented but DF set')
+
+        return [pscustomobject]@{
+            Success      = ($successExit -and $successTtl)
+            Fragmented   = $fragmented
+            RawOutput    = $pingResult
+            ExitCode     = $LASTEXITCODE
+        }
     } catch {
         Invoke-ErrorHandler -Context "Testing MTU payload size $PayloadSize" -ErrorRecord $_
-        return $false
+        return [pscustomobject]@{ Success = $false; Fragmented = $false; RawOutput = $null; ExitCode = $null }
     }
 }
 
@@ -612,6 +704,29 @@ function Find-OptimalMtu {
         [string]$Target = '1.1.1.1'
     )
     try {
+        $selectedTarget = $Target
+        $basePing = & cmd.exe /c "ping -n 1 -w 1200 $Target" 2>&1
+        $baseSuccess = ($LASTEXITCODE -eq 0 -and $basePing -match '(?i)ttl=')
+        if (-not $baseSuccess) {
+            $routeCmd = Join-Path -Path $env:WINDIR -ChildPath 'system32\\route.exe'
+            $routeOutput = & cmd.exe /c "`"$routeCmd`" print" 2>&1
+            $gatewayMatch = $routeOutput | Select-String -Pattern '0\\.0\\.0\\.0\\s+0\\.0\\.0\\.0\\s+([\\d\\.]+)' -AllMatches | Select-Object -First 1
+            if ($gatewayMatch -and $gatewayMatch.Matches[0].Groups.Count -gt 1) {
+                $gateway = $gatewayMatch.Matches[0].Groups[1].Value
+                $gwPing = & cmd.exe /c "ping -n 1 -w 1200 $gateway" 2>&1
+                if ($LASTEXITCODE -eq 0 -and $gwPing -match '(?i)ttl=') {
+                    Write-Host "  [i] Original target $Target unreachable; using gateway $gateway for MTU probe." -ForegroundColor Cyan
+                    $selectedTarget = $gateway
+                } else {
+                    Write-Host "  [!] Neither $Target nor gateway $gateway responded to connectivity probe; using safe MTU fallback." -ForegroundColor Yellow
+                    return [pscustomobject]@{ Mtu = 1500; WasFallback = $true }
+                }
+            } else {
+                Write-Host "  [!] Unable to determine gateway for MTU probe; using safe MTU fallback." -ForegroundColor Yellow
+                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true }
+            }
+        }
+
         $low = 1200
         $high = 1472 # 1500 - 28 bytes for ICMP/IPv4 headers
         $best = $low
@@ -622,14 +737,20 @@ function Find-OptimalMtu {
             $mid = [int](($low + $high) / 2)
             $mtuCandidate = $mid + 28
             Write-Host "  [>] MTU test step ${step}: payload $mid bytes (candidate MTU $mtuCandidate)" -ForegroundColor Cyan
-            if (Test-MtuSize -PayloadSize $mid -Target $Target) {
+            $testResult = Test-MtuSize -PayloadSize $mid -Target $selectedTarget
+            if ($testResult.Success) {
                 $best = $mid
                 $success = $true
                 $low = $mid + 1
                 Write-Host "      ✓ Success, raising floor to $low" -ForegroundColor Green
             } else {
-                $high = $mid - 1
-                Write-Host "      x Fragmentation detected, lowering ceiling to $high" -ForegroundColor Yellow
+                if ($testResult.Fragmented) {
+                    $high = $mid - 1
+                    Write-Host "      x Fragmentation detected, lowering ceiling to $high" -ForegroundColor Yellow
+                } else {
+                    Write-Host "      x Ping failed without fragmentation (code $($testResult.ExitCode)); stopping probe." -ForegroundColor Yellow
+                    break
+                }
             }
             $step++
         }
@@ -681,7 +802,18 @@ function Get-HardwareAgeYears {
         try {
             $parsedDate = [Management.ManagementDateTimeConverter]::ToDateTime($releaseDate)
         } catch {
-            return $null
+            $parsedDate = $null
+            $formats = @('yyyyMMddHHmmss', 'yyyyMMdd', 'MM/dd/yy', 'MM/dd/yyyy', 'dd/MM/yyyy', 'yyyy-MM-dd')
+            foreach ($fmt in $formats) {
+                try {
+                    $candidate = $null
+                    if ([DateTime]::TryParseExact($releaseDate, $fmt, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$candidate)) {
+                        $parsedDate = $candidate
+                        break
+                    }
+                } catch { }
+            }
+            if (-not $parsedDate) { return $null }
         }
         $years = ((Get-Date) - $parsedDate).TotalDays / 365
         return [int][Math]::Round($years, 0)
