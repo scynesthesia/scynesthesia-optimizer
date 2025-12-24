@@ -68,14 +68,20 @@ function Convert-LinkSpeedToBits {
 # Returns: None. Sets global reboot flag after changes.
 function Set-TcpIpAdvancedParameters {
     try {
+        $buildNumber = [Environment]::OSVersion.Version.Build
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
         $values = @{
             DefaultTTL          = 64
             Tcp1323Opts         = 1
             TcpMaxDupAcks       = 2
-            SackOpts            = 0
             MaxUserPort         = 65534
             TcpTimedWaitDelay   = 30
+        }
+
+        if ($buildNumber -ge 16299) {
+            $values['SackOpts'] = 0
+        } else {
+            Write-Host "  [!] SackOpts skipped for build $buildNumber to maintain compatibility." -ForegroundColor Yellow
         }
 
         foreach ($entry in $values.GetEnumerator()) {
