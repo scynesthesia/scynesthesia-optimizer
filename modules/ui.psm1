@@ -126,7 +126,7 @@ function Set-RegistryValueSafe {
         [Microsoft.Win32.RegistryValueKind]$Type = [Microsoft.Win32.RegistryValueKind]::DWord
     )
 
-    if ($Path -like "HKCR:*" -and -not (Test-Path HKCR:)) {
+    if ($Path.StartsWith("HKCR") -and -not (Test-Path HKCR:)) {
         New-PSDrive -Name HKCR -PSProvider Registry -Root HKEY_CLASSES_ROOT | Out-Null
     }
 

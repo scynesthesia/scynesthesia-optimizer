@@ -390,7 +390,7 @@ function Show-ExplorerTweaksMenu {
             '5' { return }
         }
 
-        if ($tweakChoice -ne '5') { Read-Host "`nPress Enter to continue..." }
+        if ($tweakChoice -ne '5') { Read-Host "`n[DONE] Press Enter to return to the menu..." }
     } while ($true)
 }
 
