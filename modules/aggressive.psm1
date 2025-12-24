@@ -51,9 +51,14 @@ function Invoke-AggressiveTweaks {
 
     Write-Section "Additional tweaks for slow PCs (more aggressive)"
 
-    if ($HardwareProfile.IsLaptop) {
-        Write-Host "  [ ] Laptop detected: hibernation kept to avoid breaking sleep." -ForegroundColor Yellow
-    } elseif (Get-Confirmation "Disable hibernation to free disk space and speed up boot?" 'y') {
+    $hibernationWarning = "WARNING: Disabling hibernation on laptops will disable Fast Startup and may prevent the system from saving state if the battery dies."
+    $hibernationPrompt = if ($HardwareProfile.IsLaptop) {
+        "$hibernationWarning`nDisable hibernation on this laptop to free disk space and speed up boot?"
+    } else {
+        "$hibernationWarning`nDisable hibernation to free disk space and speed up boot?"
+    }
+
+    if (Get-Confirmation $hibernationPrompt 'y') {
         Write-Host "  [+] Disabling hibernation"
         try {
             powercfg -h off
@@ -61,7 +66,12 @@ function Invoke-AggressiveTweaks {
             Invoke-ErrorHandler -Context "Disabling hibernation" -ErrorRecord $_
         }
     } else {
-        Write-Host "  [ ] Hibernation left unchanged."
+        $message = if ($HardwareProfile.IsLaptop) {
+            "  [ ] Laptop detected: hibernation left enabled unless you confirm otherwise."
+        } else {
+            "  [ ] Hibernation left unchanged."
+        }
+        Write-Host $message -ForegroundColor Yellow
     }
 
     Write-Host "  [+] Blocking background apps"
