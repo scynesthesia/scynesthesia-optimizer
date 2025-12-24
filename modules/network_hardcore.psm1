@@ -484,8 +484,6 @@ function Set-NicRegistryHardcore {
                 } catch {
                     Invoke-ErrorHandler -Context "Resetting adapter $adapterName" -ErrorRecord $_
                 }
-            } else {
-                Write-Host "    [i] No registry changes detected for $adapterName; skipping resets." -ForegroundColor Gray
             }
         }
 
@@ -527,6 +525,13 @@ function Set-NetAdapterAdvancedPropertySafe {
         [Parameter(Mandatory)][string]$DisplayValue
     )
     try {
+        $adapterInfo = $null
+        try {
+            $adapterInfo = Get-NetAdapter -Name $AdapterName -ErrorAction SilentlyContinue
+        } catch { }
+        $linkSpeedBits = if ($adapterInfo) { Convert-LinkSpeedToBits -LinkSpeed $adapterInfo.LinkSpeed } else { $null }
+        $isSubGigabit = ($linkSpeedBits -and $linkSpeedBits -lt 1e9)
+
         $property = Get-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -ErrorAction SilentlyContinue
         if (-not $property) {
             Write-Host "  [!] $DisplayName not available on $AdapterName; skipping." -ForegroundColor Yellow
@@ -539,7 +544,13 @@ function Set-NetAdapterAdvancedPropertySafe {
         }
 
         $valuesToTry = New-Object System.Collections.Generic.List[string]
-        $valuesToTry.Add($DisplayValue) | Out-Null
+        $preferredBufferValues = New-Object System.Collections.Generic.List[string]
+        $addUnique = {
+            param($list, $candidate)
+            if (-not $candidate) { return }
+            $valString = "$candidate"
+            if (-not $list.Contains($valString)) { $list.Add($valString) | Out-Null }
+        }
 
         if ($DisplayName -in @('Transmit Buffers', 'Receive Buffers')) {
             $collectValidValues = {
@@ -595,15 +606,37 @@ function Set-NetAdapterAdvancedPropertySafe {
 
             if ($validValues.Count -gt 0) {
                 Write-Host "  [i] Using driver-advertised buffer range for $DisplayName on ${AdapterName}: $([string]::Join(', ', $validValues))." -ForegroundColor Cyan
-                foreach ($candidate in $validValues) {
-                    if (-not $valuesToTry.Contains($candidate)) { $valuesToTry.Add($candidate) | Out-Null }
-                }
+                foreach ($candidate in $validValues) { & $addUnique $valuesToTry $candidate }
             }
 
             $fallbackDefault = if ($property.DefaultDisplayValue) { $property.DefaultDisplayValue } else { $property.DisplayValue }
-            if ($fallbackDefault -and -not $valuesToTry.Contains($fallbackDefault)) {
-                $valuesToTry.Add($fallbackDefault) | Out-Null
+            & $addUnique $valuesToTry $fallbackDefault
+
+            if ($isSubGigabit) {
+                $boundedCandidate = $null
+                $numericValid = @()
+                foreach ($value in $validValues) {
+                    $parsed = 0
+                    if ([int]::TryParse("$value", [ref]$parsed)) {
+                        $numericValid += $parsed
+                    }
+                }
+                if ($numericValid.Count -gt 0) {
+                    $boundedCandidate = ($numericValid | Where-Object { $_ -le 2048 } | Sort-Object -Descending | Select-Object -First 1)
+                }
+
+                if ($boundedCandidate) { & $addUnique $preferredBufferValues "$boundedCandidate" }
+                foreach ($fallback in @('512', '256')) { & $addUnique $preferredBufferValues $fallback }
             }
+        }
+
+        & $addUnique $valuesToTry $DisplayValue
+
+        if ($preferredBufferValues.Count -gt 0) {
+            $ordered = New-Object System.Collections.Generic.List[string]
+            foreach ($val in $preferredBufferValues) { & $addUnique $ordered $val }
+            foreach ($val in $valuesToTry) { & $addUnique $ordered $val }
+            $valuesToTry = $ordered
         }
 
         foreach ($value in $valuesToTry) {
@@ -767,25 +800,52 @@ function Find-OptimalMtu {
         [string]$Target = '1.1.1.1'
     )
     try {
+        $testBasicPing = {
+            param($probeTarget)
+            $probeOutput = & cmd.exe /c "ping -n 1 -w 1200 $probeTarget" 2>&1
+            return @{
+                Success = ($LASTEXITCODE -eq 0 -and $probeOutput -match '(?i)ttl=')
+                Raw     = $probeOutput
+            }
+        }
+
         $selectedTarget = $Target
-        $basePing = & cmd.exe /c "ping -n 1 -w 1200 $Target" 2>&1
-        $baseSuccess = ($LASTEXITCODE -eq 0 -and $basePing -match '(?i)ttl=')
+        $baseCheck = & $testBasicPing $Target
+        $baseSuccess = $baseCheck.Success
         if (-not $baseSuccess) {
-            $routeCmd = Join-Path -Path $env:WINDIR -ChildPath 'system32\\route.exe'
-            $routeOutput = & cmd.exe /c "`"$routeCmd`" print" 2>&1
-            $gatewayMatch = $routeOutput | Select-String -Pattern '0\\.0\\.0\\.0\\s+0\\.0\\.0\\.0\\s+([\\d\\.]+)' -AllMatches | Select-Object -First 1
-            if ($gatewayMatch -and $gatewayMatch.Matches[0].Groups.Count -gt 1) {
-                $gateway = $gatewayMatch.Matches[0].Groups[1].Value
-                $gwPing = & cmd.exe /c "ping -n 1 -w 1200 $gateway" 2>&1
-                if ($LASTEXITCODE -eq 0 -and $gwPing -match '(?i)ttl=') {
+            $gateway = $null
+            try {
+                $defaultRoute = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+                    Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' } |
+                    Sort-Object -Property @{ Expression = { $_.RouteMetric } }, @{ Expression = { $_.InterfaceMetric } } |
+                    Select-Object -First 1
+                if ($defaultRoute) { $gateway = $defaultRoute.NextHop }
+            } catch { }
+
+            if ($gateway) {
+                $gwCheck = & $testBasicPing $gateway
+                if ($gwCheck.Success) {
                     Write-Host "  [i] Original target $Target unreachable; using gateway $gateway for MTU probe." -ForegroundColor Cyan
                     $selectedTarget = $gateway
-                } else {
-                    Write-Host "  [!] Neither $Target nor gateway $gateway responded to connectivity probe; using safe MTU fallback." -ForegroundColor Yellow
-                    return [pscustomobject]@{ Mtu = 1500; WasFallback = $true }
+                    $baseSuccess = $true
                 }
-            } else {
-                Write-Host "  [!] Unable to determine gateway for MTU probe; using safe MTU fallback." -ForegroundColor Yellow
+            }
+
+            if (-not $baseSuccess -and $selectedTarget -eq $Target) {
+                $fallbackTargets = @('8.8.8.8', '1.1.1.1')
+                foreach ($candidate in $fallbackTargets) {
+                    $fallbackCheck = & $testBasicPing $candidate
+                    if ($fallbackCheck.Success) {
+                        Write-Host "  [i] Switching MTU probe target to $candidate after connectivity probe failure." -ForegroundColor Cyan
+                        $selectedTarget = $candidate
+                        $baseSuccess = $true
+                        break
+                    }
+                }
+            }
+
+            if (-not $baseSuccess -and $selectedTarget -eq $Target) {
+                Write-Host "  [!] Neither $Target nor a default gateway/Public DNS target responded; using safe MTU fallback." -ForegroundColor Yellow
                 return [pscustomobject]@{ Mtu = 1500; WasFallback = $true }
             }
         }
@@ -867,6 +927,9 @@ function Get-HardwareAgeYears {
                 return [Management.ManagementDateTimeConverter]::ToDateTime($value)
             } catch { }
 
+            $cleaned = ("$value") -replace '[^\d/:.\+\-\s]', ''
+            if ($cleaned -and $cleaned -ne $value) { $value = $cleaned }
+
             $formats = @(
                 'yyyyMMddHHmmss.ffffff+000',
                 'yyyyMMddHHmmss',
@@ -904,6 +967,18 @@ function Get-HardwareAgeYears {
             try {
                 $regBios = Get-ItemProperty -Path 'HKLM:\\HARDWARE\\DESCRIPTION\\System\\BIOS' -Name 'BIOSReleaseDate' -ErrorAction Stop
                 $parsedDate = & $tryParseDate $regBios.BIOSReleaseDate
+            } catch { }
+        }
+
+        if (-not $parsedDate) {
+            try {
+                $installReg = Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion' -Name 'InstallDate' -ErrorAction Stop
+                $installValue = $installReg.InstallDate
+                if ($installValue -is [int] -or $installValue -is [long]) {
+                    $parsedDate = [DateTimeOffset]::FromUnixTimeSeconds([int64]$installValue).DateTime
+                } else {
+                    $parsedDate = & $tryParseDate $installValue
+                }
             } catch { }
         }
 
