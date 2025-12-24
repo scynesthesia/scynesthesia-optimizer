@@ -224,12 +224,27 @@ function Get-NicRegistryPaths {
         $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002bE10318}'
         $adapters = Get-EligibleNetAdapters
         $results = @()
+        $entries = @()
+        $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+        try {
+            $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
+        } catch {
+            if ($_.Exception -is [System.UnauthorizedAccessException]) {
+                $message = "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks."
+                Write-Host "  [!] $message" -ForegroundColor Yellow
+                if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
+                return @()
+            }
+
+            Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
+            return @()
+        }
 
         foreach ($adapter in $adapters) {
             try {
                 $guidString = Get-NormalizedGuid -Value $adapter.InterfaceGuid
                 if (-not $guidString) { continue }
-                $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
                 foreach ($entry in $entries) {
                     try {
                         $netCfg = (Get-ItemProperty -Path $entry.PSPath -Name 'NetCfgInstanceId' -ErrorAction SilentlyContinue).NetCfgInstanceId
