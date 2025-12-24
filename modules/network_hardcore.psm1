@@ -233,6 +233,7 @@ function Set-NetshHardcoreGlobals {
 # Parameters: None.
 # Returns: Collection of objects containing adapter references and registry paths.
 $script:NicRegistryAccessDenied = $false
+$script:NicRegistryTweaksApplied = $false
 function Get-NicRegistryPaths {
     try {
         if ($script:NicRegistryAccessDenied) {
@@ -486,6 +487,7 @@ function Set-NicRegistryHardcore {
                 } catch {
                     Invoke-ErrorHandler -Context "Resetting adapter $adapterName" -ErrorRecord $_
                 }
+                $script:NicRegistryTweaksApplied = $true
             }
         }
 
@@ -542,6 +544,9 @@ function Set-NetAdapterAdvancedPropertySafe {
 
         if ($property.DisplayValue -eq $DisplayValue) {
             Write-Host "  [i] $DisplayName already set to $DisplayValue on $AdapterName; no change needed." -ForegroundColor Gray
+            if ($DisplayName -in @('Transmit Buffers', 'Receive Buffers') -and "$DisplayValue" -eq '128') {
+                Write-Host "  [i] Value restricted by driver/hardware capacity." -ForegroundColor Gray
+            }
             return
         }
 
@@ -652,6 +657,9 @@ function Set-NetAdapterAdvancedPropertySafe {
             try {
                 Set-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -DisplayValue $value -ErrorAction Stop | Out-Null
                 Write-Host "  [+] $DisplayName set to $value on $AdapterName" -ForegroundColor Green
+                if ($DisplayName -in @('Transmit Buffers', 'Receive Buffers') -and "$value" -eq '128') {
+                    Write-Host "  [i] Value restricted by driver/hardware capacity." -ForegroundColor Gray
+                }
                 return
             } catch {
                 Write-Host "  [!] Failed to set $DisplayName to $value on $AdapterName; trying next candidate." -ForegroundColor Yellow
@@ -690,7 +698,11 @@ function Set-WakeOnLanHardcore {
     }
 
     if ($adapters.Count -eq 0) {
-        Write-Host "  [!] No adapters available for Wake-on-LAN hardening." -ForegroundColor Yellow
+        if ($script:NicRegistryTweaksApplied) {
+            Write-Host "  [i] Wake-on-LAN registry settings applied; no adapters exposed for driver UI hardening." -ForegroundColor Gray
+        } else {
+            Write-Host "  [!] No adapters available for Wake-on-LAN hardening." -ForegroundColor Yellow
+        }
         return
     }
 
@@ -872,7 +884,7 @@ function Find-OptimalMtu {
         }
 
         if (-not $baseSuccess) {
-            Write-Host "  [!] No MTU probe targets responded with DF pings; using safe MTU fallback." -ForegroundColor Yellow
+            Write-Host "  [!] ISP/Router blocks DF packets; using safe MTU fallback of 1500." -ForegroundColor Yellow
             return [pscustomobject]@{ Mtu = 1500; WasFallback = $true }
         }
 
