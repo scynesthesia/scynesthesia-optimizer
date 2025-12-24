@@ -108,7 +108,7 @@ function Invoke-AggressiveTweaks {
 
     if (Get-Confirmation "Block OneDrive from starting automatically?" 'y') {
         try {
-            taskkill /F /IM OneDrive.exe -ErrorAction SilentlyContinue
+            Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "OneDrive" -ErrorAction SilentlyContinue
             Disable-ScheduledTask -TaskPath "\\Microsoft\\OneDrive\\" -TaskName "OneDrive Standalone Update Task-S-1-5-21" -ErrorAction SilentlyContinue | Out-Null
             Write-Host "  [+] OneDrive will not auto-start"
@@ -129,8 +129,19 @@ function Invoke-AggressiveTweaks {
         try {
             foreach ($t in $tasks) {
                 try {
-                    schtasks /Change /TN $t /Disable | Out-Null
-                    Write-Host "  [+] Task $t disabled"
+                    $taskName = Split-Path $t -Leaf
+                    $taskPath = (Split-Path $t -Parent) -replace '^\\\\', '\'
+                    if (-not $taskPath.EndsWith("\")) {
+                        $taskPath += "\"
+                    }
+
+                    $scheduledTask = Get-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction SilentlyContinue
+                    if ($scheduledTask) {
+                        $scheduledTask | Disable-ScheduledTask -ErrorAction Stop | Out-Null
+                        Write-Host "  [+] Task $t disabled"
+                    } else {
+                        Write-Host "  [ ] Task $t not present." -ForegroundColor DarkGray
+                    }
                 } catch {
                     Invoke-ErrorHandler -Context "Disabling scheduled task $t" -ErrorRecord $_
                 }
@@ -165,7 +176,7 @@ function Invoke-AggressiveTweaks {
 
     if (Get-Confirmation "Disable auto-start for Microsoft Teams (personal)?" 'y') {
         try {
-            taskkill /F /IM Teams.exe -ErrorAction SilentlyContinue
+            Stop-Process -Name "Teams" -Force -ErrorAction SilentlyContinue
         } catch { }
 
         try {
@@ -182,7 +193,7 @@ function Invoke-AggressiveTweaks {
     if (Get-Confirmation "Remove OneDrive from this system?" 'n') {
         Write-Host "  [+] Attempting to uninstall OneDrive"
         try {
-            taskkill /F /IM OneDrive.exe -ErrorAction SilentlyContinue
+            Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
             $pathSys = "${env:SystemRoot}\System32\OneDriveSetup.exe"
             $pathWow = "${env:SystemRoot}\SysWOW64\OneDriveSetup.exe"
             if (Test-Path $pathWow) {
