@@ -29,6 +29,7 @@ function Add-TakeOwnershipMenu {
 
     foreach ($entry in $entries) {
         $commandPath = Join-Path -Path $entry.Path -ChildPath 'command' -ErrorAction SilentlyContinue
+        $entrySucceeded = $true
         try {
             Set-RegistryValueSafe -Path $entry.Path -Name 'MUIVerb' -Value 'Take Ownership' -Type ([Microsoft.Win32.RegistryValueKind]::String)
             Set-RegistryValueSafe -Path $entry.Path -Name 'HasLUAShield' -Value '' -Type ([Microsoft.Win32.RegistryValueKind]::String)
@@ -36,6 +37,7 @@ function Add-TakeOwnershipMenu {
 
             if ([string]::IsNullOrWhiteSpace($commandPath)) {
                 Write-Log -Message "Skipping Take Ownership command registration because the command path could not be resolved for $($entry.Path)." -Level 'Warning'
+                $entrySucceeded = $false
                 continue
             }
 
@@ -44,11 +46,14 @@ function Add-TakeOwnershipMenu {
             }
             Set-RegistryValueSafe -Path $commandPath -Name '(default)' -Value $entry.Command -Type ([Microsoft.Win32.RegistryValueKind]::String)
         } catch {
+            $entrySucceeded = $false
             Invoke-ErrorHandler -Context "Configuring Take Ownership context menu at $($entry.Path)" -ErrorRecord $_
         }
-    }
 
-    Write-Host "[+] Take Ownership menu added for files and folders." -ForegroundColor Green
+        if ($entrySucceeded) {
+            Write-Host "[+] Take Ownership menu added for files and folders." -ForegroundColor Green
+        }
+    }
     $Global:NeedsReboot = $true
 }
 

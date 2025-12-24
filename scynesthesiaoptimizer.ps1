@@ -281,8 +281,6 @@ function Show-NetworkTweaksMenu {
                 } else {
                     Write-Host "[ ] Safe Network Tweaks skipped." -ForegroundColor Gray
                 }
-                Write-Host ""
-                Read-Host "Press Enter to return to the Network Tweaks menu"
             }
             '2' {
                 & $ensureBackup
@@ -291,8 +289,6 @@ function Show-NetworkTweaksMenu {
                 } else {
                     Write-Host "[ ] Aggressive Network Tweaks skipped." -ForegroundColor Gray
                 }
-                Write-Host ""
-                Read-Host "Press Enter to return to the Network Tweaks menu"
             }
             '3' {
                 & $ensureBackup
@@ -304,13 +300,9 @@ function Show-NetworkTweaksMenu {
                 if ($Global:NeedsReboot) {
                     Write-Host "  [i] Some network/gaming changes will require a reboot. You will be prompted before exiting." -ForegroundColor Yellow
                 }
-                Write-Host ""
-                Read-Host "Press Enter to return to the Network Tweaks menu"
             }
             '4' {
                 Restore-NetworkBackupState
-                Write-Host ""
-                Read-Host "Press Enter to return to the Network Tweaks menu"
             }
             '5' {
                 if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)?" 'n') {
@@ -332,11 +324,11 @@ function Show-NetworkTweaksMenu {
                 } else {
                     Write-Host "[ ] Hardcore Network Tweaks skipped." -ForegroundColor Gray
                 }
-                Write-Host ""
-                Read-Host "Press Enter to return to the Network Tweaks menu"
             }
             '6' { return }
         }
+
+        if ($netChoice -ne '6') { Read-Host "`nPress Enter to continue..." }
     } while ($true)
 }
 
@@ -357,21 +349,17 @@ function Show-SoftwareUpdatesMenu {
         switch ($swChoice) {
             '1' {
                 Invoke-SoftwareInstaller
-                Write-Host ""
-                Read-Host "Press Enter to return to Software & Updates"
             }
             '2' {
                 Set-WindowsUpdateNotifyOnly
-                Write-Host ""
-                Read-Host "Press Enter to return to Software & Updates"
             }
             '3' {
                 Invoke-WindowsUpdateScan
-                Write-Host ""
-                Read-Host "Press Enter to return to Software & Updates"
             }
             '4' { return }
         }
+
+        if ($swChoice -ne '4') { Read-Host "`nPress Enter to continue..." }
     } while ($true)
 }
 
@@ -402,8 +390,7 @@ function Show-ExplorerTweaksMenu {
             '5' { return }
         }
 
-        Write-Host ""
-        Read-Host "Press Enter to return to UI & Explorer Tweaks"
+        if ($tweakChoice -ne '5') { Read-Host "`n[DONE] Press Enter to return to the menu..." }
     } while ($true)
 }
 
