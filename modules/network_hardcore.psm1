@@ -594,7 +594,7 @@ function Set-NetAdapterAdvancedPropertySafe {
             $validValues = $validValues | Select-Object -Unique
 
             if ($validValues.Count -gt 0) {
-                Write-Host "  [i] Using driver-advertised buffer range for $DisplayName on $AdapterName: $([string]::Join(', ', $validValues))." -ForegroundColor Cyan
+                Write-Host "  [i] Using driver-advertised buffer range for $DisplayName on ${AdapterName}: $([string]::Join(', ', $validValues))." -ForegroundColor Cyan
                 foreach ($candidate in $validValues) {
                     if (-not $valuesToTry.Contains($candidate)) { $valuesToTry.Add($candidate) | Out-Null }
                 }
