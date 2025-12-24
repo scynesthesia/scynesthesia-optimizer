@@ -368,7 +368,13 @@ function Set-NicRegistryHardcore {
             }
 
             try {
-                $interfacePath = "${'HKLM'}:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$($item.Guid)"
+                if (-not $item.Guid) {
+                    Write-Host "    [!] Missing interface GUID for $adapterName; skipping per-interface TCP parameters." -ForegroundColor Yellow
+                    continue
+                }
+
+                $guidSegment = ($item.Guid.ToString().Trim('{}'))
+                $interfacePath = Join-Path -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces' -ChildPath "{${guidSegment}}"
                 $noiseKeys = @($powerOffload.Keys) + @($interruptDelays.Keys)
                 foreach ($noiseKey in $noiseKeys | Select-Object -Unique) {
                     try {
