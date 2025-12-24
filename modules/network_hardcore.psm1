@@ -86,7 +86,7 @@ function Set-TcpIpAdvancedParameters {
 
         foreach ($entry in $values.GetEnumerator()) {
             try {
-                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
+                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
                 Write-Host "  [+] $($entry.Key) set to $($entry.Value) in TCP parameters." -ForegroundColor Green
             } catch {
                 Invoke-ErrorHandler -Context "Setting $($entry.Key) in TCP parameters" -ErrorRecord $_
@@ -106,7 +106,7 @@ function Set-NetworkThrottlingHardcore {
     try {
         $path = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
         try {
-            Set-RegistryValueSafe -Path $path -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type DWord
+            Set-RegistryValueSafe -Path $path -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
             Write-Host "  [+] NetworkThrottlingIndex set to maximum performance." -ForegroundColor Green
             $Global:NeedsReboot = $true
         } catch {
@@ -132,7 +132,7 @@ function Set-ServicePriorities {
 
         foreach ($entry in $values.GetEnumerator()) {
             try {
-                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
+                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
                 Write-Host "  [+] $($entry.Key) set to $($entry.Value) in ServiceProvider." -ForegroundColor Green
             } catch {
                 Invoke-ErrorHandler -Context "Setting $($entry.Key) service priority" -ErrorRecord $_
@@ -158,7 +158,7 @@ function Set-WinsockOptimizations {
 
         foreach ($entry in $values.GetEnumerator()) {
             try {
-                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
+                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
                 Write-Host "  [+] $($entry.Key) set to $($entry.Value) for Winsock." -ForegroundColor Green
             } catch {
                 Invoke-ErrorHandler -Context "Setting Winsock $($entry.Key)" -ErrorRecord $_
@@ -186,7 +186,7 @@ function Optimize-LanmanServer {
 
         foreach ($entry in $values.GetEnumerator()) {
             try {
-                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type DWord
+                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
                 Write-Host "  [+] $($entry.Key) set to $($entry.Value) for LanmanServer." -ForegroundColor Green
             } catch {
                 Invoke-ErrorHandler -Context "Setting LanmanServer $($entry.Key)" -ErrorRecord $_
@@ -368,7 +368,12 @@ function Set-NicRegistryHardcore {
             } catch { }
             if ($current -eq $value) { return 'Unchanged' }
             try {
-                Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type $type
+                $normalizedType = if ($type -is [Microsoft.Win32.RegistryValueKind]) {
+                    $type
+                } else {
+                    [System.Enum]::Parse([Microsoft.Win32.RegistryValueKind], [string]$type, $true)
+                }
+                Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type $normalizedType
                 return 'Changed'
             } catch {
                 return 'Failed'
@@ -744,7 +749,7 @@ function Set-WakeOnLanHardcore {
                 Write-Host "    [>] Registry WOL sweep on $adapterName" -ForegroundColor Cyan
                 foreach ($entry in $wolRegistryValues.GetEnumerator()) {
                     try {
-                        Set-RegistryValueSafe -Path $pathEntry.Path -Name $entry.Key -Value $entry.Value -Type String
+                        Set-RegistryValueSafe -Path $pathEntry.Path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String)
                         Write-Host "      [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
                     } catch {
                         Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName (WOL)" -ErrorRecord $_
