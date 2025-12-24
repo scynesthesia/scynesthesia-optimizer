@@ -230,11 +230,18 @@ function Optimize-ProcessorScheduling {
     Write-Section "Processor Scheduling (Win32Priority)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     Write-Host "Tweaks CPU allocation for active windows. Recommended for competitive gaming." -ForegroundColor Gray
-    
+    $priorityPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl"
+    $currentValue = Get-ItemPropertyValue -Path $priorityPath -Name 'Win32PrioritySeparation' -ErrorAction SilentlyContinue
+
+    if ($currentValue -eq 40) {
+        Write-Host "Processor scheduling is already optimized" -ForegroundColor DarkGray
+        return
+    }
+
     # 0x28 (40 decimal): Short intervals + Fixed Quantum.
     # Better for consistent frametimes in games; not the classic dynamic foreground "boost."
     if (Get-Confirmation "Apply Fixed Priority Separation (28 Hex) for lower input latency?" 'n') {
-        Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" "Win32PrioritySeparation" 40
+        Set-RegistryValueSafe $priorityPath "Win32PrioritySeparation" 40
         Write-Host "  [+] Processor scheduling set to 28 Hex (Fixed/Short)." -ForegroundColor Green
         if ($logger) {
             Write-Log "[Gaming] Win32PrioritySeparation set to 0x28 for fixed/short quanta."
