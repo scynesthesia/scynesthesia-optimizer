@@ -92,10 +92,11 @@ function Invoke-SysMainOptimization {
     )
 
     Write-Section "SysMain (Superfetch)"
-    $hint = if ($HardwareProfile.HasHDD -and -not $HardwareProfile.HasSSD) { 'HDD detected: SysMain can speed up launches.' } else { 'SSD detected: you can disable it to avoid extra IO.' }
+    $hasHdd = [bool]$HardwareProfile.HasHDD
+    $hint = if ($hasHdd) { 'Mechanical disk detected: keeping SysMain enabled is recommended to improve launch times.' } else { 'SSD-only system detected: you can disable SysMain to reduce unnecessary writes.' }
     Write-Host $hint -ForegroundColor Gray
 
-    $defaultChoice = if ($HardwareProfile.HasSSD -and -not $HardwareProfile.HasHDD) { 'y' } else { 'n' }
+    $defaultChoice = if ($hasHdd) { 'n' } else { 'y' }
     if (Get-Confirmation "Disable SysMain to prioritize resources?" $defaultChoice) {
         try {
             Stop-Service -Name "SysMain" -ErrorAction SilentlyContinue
@@ -103,6 +104,14 @@ function Invoke-SysMainOptimization {
             Write-Host "  [+] SysMain disabled"
         } catch {
             Invoke-ErrorHandler -Context "Disabling SysMain service" -ErrorRecord $_
+        }
+    } elseif ($hasHdd) {
+        try {
+            Set-Service -Name "SysMain" -StartupType Automatic
+            Start-Service -Name "SysMain" -ErrorAction SilentlyContinue
+            Write-Host "  [+] SysMain ensured running for HDD optimization"
+        } catch {
+            Invoke-ErrorHandler -Context "Enabling SysMain service" -ErrorRecord $_
         }
     } elseif (Get-Confirmation "Ensure SysMain is enabled and Automatic?" 'y') {
         try {
