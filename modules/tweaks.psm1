@@ -28,20 +28,14 @@ function Add-TakeOwnershipMenu {
     )
 
     foreach ($entry in $entries) {
-        $commandPath = Join-Path -Path $entry.Path -ChildPath 'command' -ErrorAction SilentlyContinue
+        $commandPath = "$($entry.Path)\\command"
         $entrySucceeded = $true
         try {
             Set-RegistryValueSafe -Path $entry.Path -Name 'MUIVerb' -Value 'Take Ownership' -Type ([Microsoft.Win32.RegistryValueKind]::String)
             Set-RegistryValueSafe -Path $entry.Path -Name 'HasLUAShield' -Value '' -Type ([Microsoft.Win32.RegistryValueKind]::String)
             Set-RegistryValueSafe -Path $entry.Path -Name 'Icon' -Value 'imageres.dll,-78' -Type ([Microsoft.Win32.RegistryValueKind]::String)
 
-            if ([string]::IsNullOrWhiteSpace($commandPath)) {
-                Write-Log -Message "Skipping Take Ownership command registration because the command path could not be resolved for $($entry.Path)." -Level 'Warning'
-                $entrySucceeded = $false
-                continue
-            }
-
-            if (-not (Test-Path $commandPath)) {
+            if (-not (Test-Path -LiteralPath $commandPath)) {
                 New-Item -Path $commandPath -Force | Out-Null
             }
             Set-RegistryValueSafe -Path $commandPath -Name '(default)' -Value $entry.Command -Type ([Microsoft.Win32.RegistryValueKind]::String)
