@@ -832,7 +832,7 @@ function Restore-NetworkBackupState {
         }
     } catch { }
 
-    Write-Host "[Backup] Configuracion de red restaurada desde backup." -ForegroundColor Cyan
+    Write-Host "[Backup] Network configuration restored from backup." -ForegroundColor Cyan
     if ($logger) { Write-Log "[Backup] Network settings restored from $file" }
 }
 
