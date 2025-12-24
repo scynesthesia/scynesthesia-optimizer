@@ -29,6 +29,7 @@ function Invoke-SystemRepair {
     Write-Host "This scans for corrupt system files and repairs them automatically." -ForegroundColor Gray
 
     if (Get-Confirmation "Start SFC /scannow?" 'n') {
+        Write-Host "The System File Checker (SFC) scan is starting. This process typically takes 10-20 minutes depending on your hardware. The progress percentage may appear to pause at certain points; please do not close the window until it completes." -ForegroundColor Cyan
         sfc /scannow
         Write-Host "[OK] SFC completed." -ForegroundColor Green
     }
