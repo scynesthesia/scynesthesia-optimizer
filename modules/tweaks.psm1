@@ -27,6 +27,10 @@ function Add-TakeOwnershipMenu {
         @{ Path = 'HKCR:\Directory\shell\TakeOwnership'; Command = 'cmd.exe /c takeown /f "%1" /r /d y && icacls "%1" /grant administrators:F /t' }
     )
 
+    if (-not (Test-Path HKCR:)) {
+        New-PSDrive -Name HKCR -PSProvider Registry -Root HKEY_CLASSES_ROOT | Out-Null
+    }
+
     foreach ($entry in $entries) {
         $commandPath = "$($entry.Path)\\command"
         $entrySucceeded = $true
