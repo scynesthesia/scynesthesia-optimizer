@@ -249,67 +249,70 @@ function Get-NicRegistryPaths {
         try {
             $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
         } catch {
-            $isUnauthorized = ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException])
-            if ($isUnauthorized) {
-                $ownershipAdjusted = $false
-                $originalOwner = $null
-                try {
-                    $adminsSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
-                    $acl = Get-Acl -Path $classPath -ErrorAction Stop
-                    $originalOwner = $acl.Owner
-                    if ($acl.Owner -ne $adminsSid.Value) {
-                        $acl.SetOwner($adminsSid)
-                    }
-                    $rule = New-Object System.Security.AccessControl.RegistryAccessRule($adminsSid, 'ReadKey', 'ContainerInherit', 'None', 'Allow')
-                    $acl.SetAccessRule($rule)
-                    Set-Acl -Path $classPath -AclObject $acl -ErrorAction Stop
-                    $ownershipAdjusted = $true
-                    Write-Host "  [i] Temporary ownership granted on $classPath for NIC discovery." -ForegroundColor Cyan
-                } catch {
+                $isUnauthorized = ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException])
+                if ($isUnauthorized) {
                     $ownershipAdjusted = $false
-                }
-
-                $entries = Get-ChildItem -Path $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^\d{4}$' }
-                if ($entries.Count -gt 0) {
-                    if ($ownershipAdjusted -and $originalOwner) {
+                    $originalOwner = $null
+                    $ownerRef = $null
+                    try {
+                        $adminsSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
+                        $acl = Get-Acl -Path $classPath -ErrorAction Stop
+                        $originalOwner = $acl.Owner
+                        if ($acl.Owner -ne $adminsSid.Value) {
+                            $acl.SetOwner($adminsSid)
+                        }
+                        $rule = New-Object System.Security.AccessControl.RegistryAccessRule($adminsSid, 'ReadKey', 'ContainerInherit', 'None', 'Allow')
+                        $acl.SetAccessRule($rule)
+                        Set-Acl -Path $classPath -AclObject $acl -ErrorAction Stop
+                        $ownershipAdjusted = $true
+                        Write-Host "  [i] Temporary ownership granted on $classPath for NIC discovery." -ForegroundColor Cyan
                         try {
-                            $acl = Get-Acl -Path $classPath -ErrorAction Stop
+                            $ownerRef = New-Object System.Security.Principal.SecurityIdentifier($originalOwner)
+                        } catch {
+                            $ownerRef = New-Object System.Security.Principal.NTAccount($originalOwner)
+                        }
+                    } catch {
+                        $ownershipAdjusted = $false
+                    }
+
+                    try {
+                        $entries = Get-ChildItem -Path $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^\d{4}$' }
+                    } finally {
+                        if ($ownershipAdjusted -and $ownerRef) {
                             try {
-                                $ownerRef = New-Object System.Security.Principal.SecurityIdentifier($originalOwner)
-                            } catch {
-                                $ownerRef = New-Object System.Security.Principal.NTAccount($originalOwner)
-                            }
-                            if ($ownerRef) {
+                                $acl = Get-Acl -Path $classPath -ErrorAction Stop
                                 $acl.SetOwner($ownerRef)
                                 Set-Acl -Path $classPath -AclObject $acl -ErrorAction Stop
                                 Write-Host "  [i] Restored original ownership on $classPath after discovery." -ForegroundColor Cyan
-                            }
-                        } catch { }
+                            } catch { }
+                        }
                     }
-                    $note = if ($ownershipAdjusted) {
-                        "Registry access tightened; temporary ownership was used to read NIC entries. Prefer driver-exposed properties when possible."
+
+                    if ($entries.Count -gt 0) {
+                        $note = if ($ownershipAdjusted) {
+                            "Registry access tightened; temporary ownership was used to read NIC entries. Prefer driver-exposed properties when possible."
+                        } else {
+                            "Partial registry access detected; proceeding with readable NIC entries only."
+                        }
+                        Write-Host "  [!] $note" -ForegroundColor Yellow
+                        if ($logger) { Write-Log "[NetworkHardcore] $note" -Level 'Warning' }
                     } else {
-                        "Partial registry access detected; proceeding with readable NIC entries only."
+                        $isAdmin = Test-IsAdminSession
+                        $message = if ($isAdmin) {
+                            "Registry protection blocked access to $classPath even in an elevated session. Prefer Set-NetAdapterAdvancedProperty where exposed, or take ownership of the key temporarily to proceed."
+                        } else {
+                            "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks or rely on driver properties instead of registry edits."
+                        }
+                        Write-Host "  [!] $message" -ForegroundColor Yellow
+                        if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
+                        $script:NicRegistryAccessDenied = $true
+                        return @()
                     }
-                    Write-Host "  [!] $note" -ForegroundColor Yellow
-                    if ($logger) { Write-Log "[NetworkHardcore] $note" -Level 'Warning' }
                 } else {
-                    $isAdmin = Test-IsAdminSession
-                    $message = if ($isAdmin) {
-                        "Registry protection blocked access to $classPath even in an elevated session. Prefer Set-NetAdapterAdvancedProperty where exposed, or take ownership of the key temporarily to proceed."
-                    } else {
-                        "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks or rely on driver properties instead of registry edits."
-                    }
-                    Write-Host "  [!] $message" -ForegroundColor Yellow
-                    if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
-                    $script:NicRegistryAccessDenied = $true
+                    Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
+                    if ($logger) { Write-Log "[NetworkHardcore] Registry class enumeration failed; adapter registry tweaks skipped." -Level 'Warning' }
                     return @()
                 }
-            } else {
-                Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
-                if ($logger) { Write-Log "[NetworkHardcore] Registry class enumeration failed; adapter registry tweaks skipped." -Level 'Warning' }
-                return @()
-            }
         }
 
         foreach ($adapter in $adapters) {
@@ -394,7 +397,6 @@ function Set-NicRegistryHardcore {
 
         foreach ($item in $nicPaths) {
             $adapterName = $item.Adapter.Name
-            Write-Host "  [>] Applying registry tweaks to $adapterName" -ForegroundColor Cyan
             $adapterChanged = $false
             try {
                 $pnPStatus = & $setValueIfDifferent $item.Path 'PnPCapabilities' 24 ([Microsoft.Win32.RegistryValueKind]::DWord)
@@ -488,7 +490,6 @@ function Set-NicRegistryHardcore {
         }
 
         $Global:NeedsReboot = $true
-        Write-Host "  [i] Some Device Manager changes may require a full reboot to reflect visually." -ForegroundColor Gray
     } catch {
         Invoke-ErrorHandler -Context 'Applying NIC-specific registry tweaks' -ErrorRecord $_
     }
@@ -531,6 +532,7 @@ function Set-NetAdapterAdvancedPropertySafe {
         } catch { }
         $linkSpeedBits = if ($adapterInfo) { Convert-LinkSpeedToBits -LinkSpeed $adapterInfo.LinkSpeed } else { $null }
         $isSubGigabit = ($linkSpeedBits -and $linkSpeedBits -lt 1e9)
+        $isHundredMbps = ($linkSpeedBits -and [math]::Abs($linkSpeedBits - 1e8) -lt 1e7)
 
         $property = Get-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -ErrorAction SilentlyContinue
         if (-not $property) {
@@ -603,6 +605,13 @@ function Set-NetAdapterAdvancedPropertySafe {
                 $validValues += & $collectValidValues $src
             }
             $validValues = $validValues | Select-Object -Unique
+            $numericValid = @()
+            foreach ($value in $validValues) {
+                $parsedNumeric = 0
+                if ([int]::TryParse("$value", [ref]$parsedNumeric)) {
+                    $numericValid += $parsedNumeric
+                }
+            }
 
             if ($validValues.Count -gt 0) {
                 Write-Host "  [i] Using driver-advertised buffer range for $DisplayName on ${AdapterName}: $([string]::Join(', ', $validValues))." -ForegroundColor Cyan
@@ -612,15 +621,15 @@ function Set-NetAdapterAdvancedPropertySafe {
             $fallbackDefault = if ($property.DefaultDisplayValue) { $property.DefaultDisplayValue } else { $property.DisplayValue }
             & $addUnique $valuesToTry $fallbackDefault
 
-            if ($isSubGigabit) {
-                $boundedCandidate = $null
-                $numericValid = @()
-                foreach ($value in $validValues) {
-                    $parsed = 0
-                    if ([int]::TryParse("$value", [ref]$parsed)) {
-                        $numericValid += $parsed
-                    }
+            if ($DisplayName -eq 'Transmit Buffers' -and $isHundredMbps) {
+                $boundedValid = @()
+                if ($numericValid.Count -gt 0) {
+                    $boundedValid = $numericValid | Where-Object { $_ -le 1024 } | Sort-Object -Descending
                 }
+                foreach ($candidate in $boundedValid) { & $addUnique $preferredBufferValues "$candidate" }
+                foreach ($fallback in @('512', '256', '128')) { & $addUnique $preferredBufferValues $fallback }
+            } elseif ($isSubGigabit) {
+                $boundedCandidate = $null
                 if ($numericValid.Count -gt 0) {
                     $boundedCandidate = ($numericValid | Where-Object { $_ -le 2048 } | Sort-Object -Descending | Select-Object -First 1)
                 }
@@ -800,54 +809,71 @@ function Find-OptimalMtu {
         [string]$Target = '1.1.1.1'
     )
     try {
+        $getDefaultGateway = {
+            try {
+                $gateways = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty NextHop -ErrorAction SilentlyContinue
+                return ($gateways | Where-Object { $_ -and $_ -ne '0.0.0.0' } | Select-Object -Unique | Select-Object -First 1)
+            } catch {
+                return $null
+            }
+        }
+
+        $getDnsTargets = {
+            try {
+                $dnsEntries = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue
+                return ($dnsEntries | ForEach-Object { $_.ServerAddresses } | Where-Object { $_ } | Select-Object -Unique)
+            } catch {
+                return @()
+            }
+        }
+
         $testBasicPing = {
             param($probeTarget)
-            $probeOutput = & cmd.exe /c "ping -n 1 -w 1200 $probeTarget" 2>&1
+            $probeOutput = & cmd.exe /c "ping -n 1 -w 1200 -f -l 1400 $probeTarget" 2>&1
             return @{
                 Success = ($LASTEXITCODE -eq 0 -and $probeOutput -match '(?i)ttl=')
+                TimedOut = ($probeOutput -match '(?i)timed out')
                 Raw     = $probeOutput
             }
         }
 
-        $selectedTarget = $Target
-        $baseCheck = & $testBasicPing $Target
-        $baseSuccess = $baseCheck.Success
+        $selectedTarget = $null
+        $gateway = & $getDefaultGateway
+        $dnsCandidates = & $getDnsTargets
+        $candidateTargets = New-Object System.Collections.Generic.List[string]
+        $addCandidate = {
+            param($value)
+            if ($null -ne $value -and "$value" -ne '') { $candidateTargets.Add("$value") | Out-Null }
+        }
+
+        & $addCandidate $Target
+        & $addCandidate $gateway
+        & $addCandidate '8.8.8.8'
+        & $addCandidate '1.1.1.1'
+        foreach ($dns in $dnsCandidates) { & $addCandidate $dns }
+        $candidateTargets = $candidateTargets | Select-Object -Unique
+
+        $baseSuccess = $false
+        foreach ($candidate in $candidateTargets) {
+            $probe = & $testBasicPing $candidate
+            if ($probe.Success) {
+                if ($candidate -ne $Target) {
+                    Write-Host "  [i] Switching MTU probe target to $candidate after connectivity probe failure." -ForegroundColor Cyan
+                }
+                $selectedTarget = $candidate
+                $baseSuccess = $true
+                break
+            }
+
+            if (-not $probe.TimedOut -and $candidate -eq $Target -and $gateway) {
+                Write-Host "  [!] Default target $Target refused MTU probe; trying gateway $gateway." -ForegroundColor Yellow
+            }
+        }
+
         if (-not $baseSuccess) {
-            $gateway = $null
-            try {
-                $defaultRoute = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
-                    Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' } |
-                    Sort-Object -Property @{ Expression = { $_.RouteMetric } }, @{ Expression = { $_.InterfaceMetric } } |
-                    Select-Object -First 1
-                if ($defaultRoute) { $gateway = $defaultRoute.NextHop }
-            } catch { }
-
-            if ($gateway) {
-                $gwCheck = & $testBasicPing $gateway
-                if ($gwCheck.Success) {
-                    Write-Host "  [i] Original target $Target unreachable; using gateway $gateway for MTU probe." -ForegroundColor Cyan
-                    $selectedTarget = $gateway
-                    $baseSuccess = $true
-                }
-            }
-
-            if (-not $baseSuccess -and $selectedTarget -eq $Target) {
-                $fallbackTargets = @('8.8.8.8', '1.1.1.1')
-                foreach ($candidate in $fallbackTargets) {
-                    $fallbackCheck = & $testBasicPing $candidate
-                    if ($fallbackCheck.Success) {
-                        Write-Host "  [i] Switching MTU probe target to $candidate after connectivity probe failure." -ForegroundColor Cyan
-                        $selectedTarget = $candidate
-                        $baseSuccess = $true
-                        break
-                    }
-                }
-            }
-
-            if (-not $baseSuccess -and $selectedTarget -eq $Target) {
-                Write-Host "  [!] Neither $Target nor a default gateway/Public DNS target responded; using safe MTU fallback." -ForegroundColor Yellow
-                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true }
-            }
+            Write-Host "  [!] No MTU probe targets responded with DF pings; using safe MTU fallback." -ForegroundColor Yellow
+            return [pscustomobject]@{ Mtu = 1500; WasFallback = $true }
         }
 
         $low = 1200
@@ -1185,18 +1211,26 @@ function Invoke-NetworkTweaksHardcore {
     }
 
     $ageYears = Get-HardwareAgeYears
+    $ageKnown = ($null -ne $ageYears -and "$ageYears" -ne '')
     $autotuneLevel = if ($ageYears -and $ageYears -gt 6) { 'highlyrestricted' } else { 'disabled' }
+    $ageLabel = if (-not $ageKnown) {
+        'Unknown'
+    } elseif ($ageYears -le 0) {
+        'Less than a year'
+    } else {
+        "$ageYears years"
+    }
+    $ageSummaryLabel = if (-not $ageKnown) { 'Unknown' } elseif ($ageYears -le 0) { 'Less than a year' } else { "~$ageYears years" }
     if ($ageYears -ne $null) {
         $reason = if ($autotuneLevel -eq 'highlyrestricted') {
-            "Older hardware (~$ageYears years) detected; using safer autotuning."
+            "Older hardware ($ageSummaryLabel) detected; using safer autotuning."
         } else {
-            "Modern hardware (~$ageYears years) detected; disabling autotuning for latency."
+            "Modern hardware ($ageSummaryLabel) detected; disabling autotuning for latency."
         }
         Write-Host "  [i] $reason" -ForegroundColor Cyan
     }
     try {
         netsh int tcp set global autotuninglevel=$autotuneLevel | Out-Null
-        $ageLabel = if ($null -ne $ageYears -and "$ageYears" -ne '') { "$ageYears years" } else { 'Unknown' }
         Write-Host "  [+] Network autotuning set to $autotuneLevel (hardware age: $ageLabel)." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] Autotuning level set to $autotuneLevel (hardware age: $ageLabel)." }
     } catch {
