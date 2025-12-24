@@ -72,6 +72,7 @@ if (Get-Confirmation "Enable session logging to a file? (Recommended for service
         Start-Transcript -Path $logFile -Append -ErrorAction Stop
         $TranscriptStarted = $true
         Write-Host "Logging started: $logFile" -ForegroundColor Gray
+        $Global:ScynesthesiaLogPath = $logFile
     } catch {
         Write-Warning "Could not start logging. Check permissions."
     }
