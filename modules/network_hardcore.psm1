@@ -223,6 +223,7 @@ $script:NicRegistryAccessDenied = $false
 function Get-NicRegistryPaths {
     try {
         if ($script:NicRegistryAccessDenied) {
+            Write-Host "  [!] NIC registry access was previously denied; skipping registry mapping." -ForegroundColor Yellow
             return @()
         }
 
@@ -467,7 +468,13 @@ function Set-WakeOnLanHardcore {
 
     $nicPaths = Get-NicRegistryPaths
     if ($nicPaths.Count -eq 0) {
-        Write-Host "  [!] Unable to map NIC registry paths; skipping WOL registry enforcement." -ForegroundColor Yellow
+        if ($script:NicRegistryAccessDenied) {
+            $message = "NIC registry tweaks skipped because registry access was denied earlier. Run PowerShell as Administrator for full coverage."
+            Write-Host "  [!] $message" -ForegroundColor Yellow
+            if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
+        } else {
+            Write-Host "  [!] Unable to map NIC registry paths; skipping WOL registry enforcement." -ForegroundColor Yellow
+        }
         return
     }
 
