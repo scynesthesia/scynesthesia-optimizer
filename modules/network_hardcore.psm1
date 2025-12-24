@@ -1,4 +1,7 @@
 ﻿# Depends on: ui.psm1 (loaded by main script)
+Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
+Import-Module (Join-Path $PSScriptRoot 'core/network_discovery.psm1') -Force -Scope Local
+
 # Description: Retrieves active physical adapters excluding virtual or VPN interfaces.
 # Parameters: None.
 # Returns: Collection of eligible adapters or empty array on failure.
@@ -235,116 +238,26 @@ function Set-NetshHardcoreGlobals {
     }
 }
 
+$script:NicRegistryAccessDenied = $false
+$script:NicRegistryTweaksApplied = $false
+
 # Description: Maps physical adapters to their registry class paths for advanced tweaks.
 # Parameters: None.
 # Returns: Collection of objects containing adapter references and registry paths.
-$script:NicRegistryAccessDenied = $false
-$script:NicRegistryTweaksApplied = $false
 function Get-NicRegistryPaths {
-    try {
-        if ($script:NicRegistryAccessDenied) {
-            Write-Host "  [!] NIC registry access was previously denied; skipping registry mapping." -ForegroundColor Yellow
-            return @()
-        }
-
-        $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}'
-        $adapters = Get-EligibleNetAdapters
-        $results = @()
-        $entries = @()
-        $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-
-        try {
-            $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
-        } catch {
-                $isUnauthorized = ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException])
-                if ($isUnauthorized) {
-                    $ownershipAdjusted = $false
-                    $originalOwner = $null
-                    $ownerRef = $null
-                    try {
-                        $adminsSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
-                        $acl = Get-Acl -Path $classPath -ErrorAction Stop
-                        $originalOwner = $acl.Owner
-                        if ($acl.Owner -ne $adminsSid.Value) {
-                            $acl.SetOwner($adminsSid)
-                        }
-                        $rule = New-Object System.Security.AccessControl.RegistryAccessRule($adminsSid, 'ReadKey', 'ContainerInherit', 'None', 'Allow')
-                        $acl.SetAccessRule($rule)
-                        Set-Acl -Path $classPath -AclObject $acl -ErrorAction Stop
-                        $ownershipAdjusted = $true
-                        Write-Host "  [i] Temporary ownership granted on $classPath for NIC discovery." -ForegroundColor Cyan
-                        try {
-                            $ownerRef = New-Object System.Security.Principal.SecurityIdentifier($originalOwner)
-                        } catch {
-                            $ownerRef = New-Object System.Security.Principal.NTAccount($originalOwner)
-                        }
-                    } catch {
-                        $ownershipAdjusted = $false
-                    }
-
-                    try {
-                        $entries = Get-ChildItem -Path $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^\d{4}$' }
-                    } finally {
-                        if ($ownershipAdjusted -and $ownerRef) {
-                            try {
-                                $acl = Get-Acl -Path $classPath -ErrorAction Stop
-                                $acl.SetOwner($ownerRef)
-                                Set-Acl -Path $classPath -AclObject $acl -ErrorAction Stop
-                                Write-Host "  [i] Restored original ownership on $classPath after discovery." -ForegroundColor Cyan
-                            } catch { }
-                        }
-                    }
-
-                    if ($entries.Count -gt 0) {
-                        $note = if ($ownershipAdjusted) {
-                            "Registry access tightened; temporary ownership was used to read NIC entries. Prefer driver-exposed properties when possible."
-                        } else {
-                            "Partial registry access detected; proceeding with readable NIC entries only."
-                        }
-                        Write-Host "  [!] $note" -ForegroundColor Yellow
-                        if ($logger) { Write-Log "[NetworkHardcore] $note" -Level 'Warning' }
-                    } else {
-                        $isAdmin = Test-IsAdminSession
-                        $message = if ($isAdmin) {
-                            "Registry protection blocked access to $classPath even in an elevated session. Prefer Set-NetAdapterAdvancedProperty where exposed, or take ownership of the key temporarily to proceed."
-                        } else {
-                            "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks or rely on driver properties instead of registry edits."
-                        }
-                        Write-Host "  [!] $message" -ForegroundColor Yellow
-                        if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
-                        $script:NicRegistryAccessDenied = $true
-                        return @()
-                    }
-                } else {
-                    Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
-                    if ($logger) { Write-Log "[NetworkHardcore] Registry class enumeration failed; adapter registry tweaks skipped." -Level 'Warning' }
-                    return @()
-                }
-        }
-
-        foreach ($adapter in $adapters) {
-            try {
-                $guidString = Get-NormalizedGuid -Value $adapter.InterfaceGuid
-                if (-not $guidString) { continue }
-                foreach ($entry in $entries) {
-                    try {
-                        $netCfg = (Get-ItemProperty -Path $entry.PSPath -Name 'NetCfgInstanceId' -ErrorAction SilentlyContinue).NetCfgInstanceId
-                        $netCfgString = Get-NormalizedGuid -Value $netCfg
-                        if ($netCfgString -and ($netCfgString -eq $guidString)) {
-                            $results += [pscustomobject]@{ Adapter = $adapter; Path = $entry.PSPath; Guid = $guidString }
-                            break
-                        }
-                    } catch { }
-                }
-            } catch {
-                Invoke-ErrorHandler -Context "Finding registry path for $($adapter.Name)" -ErrorRecord $_
-            }
-        }
-
-        return $results
-    } catch {
-        Invoke-ErrorHandler -Context 'Enumerating NIC registry paths' -ErrorRecord $_
+    if ($script:NicRegistryAccessDenied) {
+        Write-Host "  [!] NIC registry access was previously denied; skipping registry mapping." -ForegroundColor Yellow
         return @()
+    }
+
+    $map = network_discovery\Get-NicRegistryMap -AdapterResolver { Get-EligibleNetAdapters } -AllowOwnershipFallback -LoggerPrefix '[NetworkHardcore]' -AccessDeniedFlag ([ref]$script:NicRegistryAccessDenied)
+    return $map | ForEach-Object {
+        [pscustomobject]@{
+            Adapter = $_.AdapterObject
+            Path    = $_.RegistryPath
+            Guid    = $_.InterfaceGuid
+            IfIndex = $_.IfIndex
+        }
     }
 }
 

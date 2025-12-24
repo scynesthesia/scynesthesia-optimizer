@@ -17,6 +17,14 @@ $Global:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Par
 $Global:NeedsReboot = $false
 try {
     $modulesRoot = Join-Path $Global:ScriptRoot 'modules'
+    $coreModulesRoot = Join-Path $modulesRoot 'core'
+    if (Test-Path $coreModulesRoot) {
+        $coreModuleFiles = Get-ChildItem -Path $coreModulesRoot -Filter '*.psm1' -File -ErrorAction Stop
+        foreach ($coreModule in $coreModuleFiles) {
+            Import-Module $coreModule.FullName -Force -ErrorAction Stop
+            Write-Host "[OK] Core module loaded: $($coreModule.Name)" -ForegroundColor Green
+        }
+    }
     $uiModule = Join-Path $modulesRoot 'ui.psm1'
     Import-Module $uiModule -Force -ErrorAction Stop
     Write-Host "[OK] Module loaded: ui.psm1" -ForegroundColor Green
