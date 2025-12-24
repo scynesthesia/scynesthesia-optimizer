@@ -219,8 +219,14 @@ function Set-NetshHardcoreGlobals {
 # Description: Maps physical adapters to their registry class paths for advanced tweaks.
 # Parameters: None.
 # Returns: Collection of objects containing adapter references and registry paths.
+$script:NicRegistryAccessDenied = $false
 function Get-NicRegistryPaths {
     try {
+        if ($script:NicRegistryAccessDenied) {
+            Write-Host "  [!] NIC registry access was previously denied; skipping registry mapping." -ForegroundColor Yellow
+            return @()
+        }
+
         $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002bE10318}'
         $adapters = Get-EligibleNetAdapters
         $results = @()
@@ -230,14 +236,16 @@ function Get-NicRegistryPaths {
         try {
             $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
         } catch {
-            if ($_.Exception -is [System.UnauthorizedAccessException]) {
+            if ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException]) {
                 $message = "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks."
                 Write-Host "  [!] $message" -ForegroundColor Yellow
                 if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
+                $script:NicRegistryAccessDenied = $true
                 return @()
             }
 
             Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
+            if ($logger) { Write-Log "[NetworkHardcore] Registry class enumeration failed; adapter registry tweaks skipped." -Level 'Warning' }
             return @()
         }
 
