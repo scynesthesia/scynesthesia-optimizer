@@ -1,5 +1,5 @@
 # Depends on: ui.psm1 (loaded by main script)
-$script:AppRemovalConfig = $null
+Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
 
 # Description: Retrieves an app removal list from the configuration JSON using the specified key.
 # Parameters: Key - Config property to read; Path - Optional path to the apps configuration file.
@@ -12,34 +12,7 @@ function Get-AppRemovalList {
         [string] $Path
     )
 
-    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-    $configPath = if ($Path) { $Path } else { Join-Path $Global:ScriptRoot "config\apps.json" }
-
-    if (-not (Test-Path $configPath)) {
-        $message = "[Debloat] App configuration file not found: $configPath. Skipping app removal stage."
-        Write-Host $message -ForegroundColor Yellow
-        if ($logger) { Write-Log $message }
-        return @()
-    }
-
-    if (-not $script:AppRemovalConfig -or $script:AppRemovalConfigPath -ne (Resolve-Path $configPath).Path) {
-        try {
-            $script:AppRemovalConfig = Get-Content $configPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-            $script:AppRemovalConfigPath = (Resolve-Path $configPath).Path
-        } catch {
-            $errorMessage = "[Debloat] Failed to parse app configuration file ($configPath): $($_.Exception.Message)"
-            Write-Host $errorMessage -ForegroundColor Red
-            if ($logger) { Write-Log $errorMessage }
-            return @()
-        }
-    }
-
-    $list = $script:AppRemovalConfig.$Key
-    if (-not $list) {
-        return @()
-    }
-
-    return [string[]]$list
+    return (config\Get-AppRemovalList -Mode 'Debloat' -ConfigPath $Path -Key $Key)
 }
 
 # Description: Creates a system restore point for rollback safety.

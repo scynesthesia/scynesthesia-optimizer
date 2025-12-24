@@ -1,4 +1,6 @@
 # Depends on: ui.psm1 (loaded by main script)
+Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
+Import-Module (Join-Path $PSScriptRoot 'core/network_discovery.psm1') -Force -Scope Local
 # Description: Retrieves active physical network adapters excluding virtual or VPN interfaces.
 # Parameters: None.
 # Returns: Collection of adapter objects; returns empty array on failure.
@@ -20,41 +22,14 @@ function Get-PhysicalNetAdapters {
 # Parameters: None.
 # Returns: Collection of objects containing adapter references and registry paths.
 function Get-NicRegistryPaths {
-    try {
-        $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002bE10318}'
-        $adapters = Get-PhysicalNetAdapters
-        $results = @()
-        $entries = @()
-
-        try {
-            $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
-        } catch {
-            Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
+    $map = network_discovery\Get-NicRegistryMap -AdapterResolver { Get-PhysicalNetAdapters }
+    return $map | ForEach-Object {
+        [pscustomobject]@{
+            Adapter = $_.AdapterObject
+            Path    = $_.RegistryPath
+            Guid    = $_.InterfaceGuid
+            IfIndex = $_.IfIndex
         }
-
-        foreach ($adapter in $adapters) {
-            try {
-                $guidString = Get-NormalizedGuid -Value $adapter.InterfaceGuid
-                if (-not $guidString) { continue }
-                foreach ($entry in $entries) {
-                    try {
-                        $netCfg = (Get-ItemProperty -Path $entry.PSPath -Name 'NetCfgInstanceId' -ErrorAction SilentlyContinue).NetCfgInstanceId
-                        $netCfgString = Get-NormalizedGuid -Value $netCfg
-                        if ($netCfgString -and ($netCfgString -eq $guidString)) {
-                            $results += [pscustomobject]@{ Adapter = $adapter; Path = $entry.PSPath; Guid = $guidString }
-                            break
-                        }
-                    } catch { }
-                }
-            } catch {
-                Invoke-ErrorHandler -Context "Finding registry path for $($adapter.Name)" -ErrorRecord $_
-            }
-        }
-
-        return $results
-    } catch {
-        Invoke-ErrorHandler -Context 'Enumerating NIC registry paths' -ErrorRecord $_
-        return @()
     }
 }
 

@@ -1,5 +1,5 @@
 # Depends on: ui.psm1 (loaded by main script)
-$script:AppRemovalConfig = $null
+Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
 
 # Description: Retrieves a list of applications to remove based on the provided config key.
 # Parameters: Key - The JSON property name to extract from the app removal configuration.
@@ -11,37 +11,7 @@ function Get-AppRemovalListFromConfig {
         [string] $Key
     )
 
-    if (-not $script:AppRemovalConfig) {
-        $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-        $configRoot = if ($Global:ScriptRoot) { $Global:ScriptRoot } else { $PSScriptRoot }
-        if (-not $configRoot) {
-            $message = "[Debloat] Could not determine script root to locate config/apps.json. Skipping App Removal phase."
-            Write-Host $message -ForegroundColor Yellow
-            if ($logger) { Write-Log $message }
-            return @()
-        }
-
-        $configPath = Join-Path $configRoot "config/apps.json"
-        if (-not (Test-Path $configPath)) {
-            $message = "[Debloat] App configuration file not found: $configPath. Skipping App Removal phase."
-            Write-Host $message -ForegroundColor Yellow
-            if ($logger) { Write-Log $message }
-            return @()
-        }
-
-        try {
-            $script:AppRemovalConfig = Get-Content $configPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-        } catch {
-            throw "Failed to load app removal configuration from ${configPath}: $_"
-        }
-    }
-
-    $list = $script:AppRemovalConfig.$Key
-    if (-not $list) {
-        return @()
-    }
-
-    return [string[]]$list
+    return (config\Get-AppRemovalList -Mode 'Aggressive' -Key $Key)
 }
 
 # Description: Applies aggressive performance and debloat tweaks for slow PCs.
