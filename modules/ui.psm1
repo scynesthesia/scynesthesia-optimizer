@@ -143,15 +143,17 @@ function Set-RegistryValueSafe {
             $Path = $Path -replace "^HK(LM|CU|CR)\\", 'HK$1:\'
         }
 
-        if (-not (Test-Path $Path)) {
-            New-Item -Path $Path -Force | Out-Null
+        $literalPath = $Path
+
+        if (-not (Test-Path -LiteralPath $literalPath)) {
+            New-Item -Path $literalPath -Force | Out-Null
         }
 
         if ($Name -eq "(default)") {
-            Set-ItemProperty -Path $Path -Name '(default)' -Value $Value -Type $Type -Force -ErrorAction Stop | Out-Null
+            Set-ItemProperty -LiteralPath $literalPath -Name '(default)' -Value $Value -Type $Type -Force -ErrorAction Stop | Out-Null
         }
         else {
-            New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force -ErrorAction Stop | Out-Null
+            New-ItemProperty -LiteralPath $literalPath -Name $Name -Value $Value -PropertyType $Type -Force -ErrorAction Stop | Out-Null
         }
     }
     catch {
