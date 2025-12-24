@@ -252,14 +252,25 @@ function Optimize-ProcessorScheduling {
 function Set-FsoGlobalOverride {
     Write-Section "Fullscreen Optimizations (Global Override)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-
+    Write-Host "Disabling FSO reduces input lag but may cause slower or 'buggy' Alt+Tab transitions." -ForegroundColor Yellow
+    $disableFso = Get-Confirmation "Disable Fullscreen Optimizations for maximum latency reduction?" 'n'
     try {
-        Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-        Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+        if ($disableFso) {
+            Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+            Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
 
-        Write-Host "  [+] Fullscreen Optimizations disabled globally." -ForegroundColor Green
-        if ($logger) {
-            Write-Log "[Gaming] Fullscreen Optimizations globally disabled (GameDVR_FSEBehaviorMode=2, AllowGameDVR=0)."
+            Write-Host "  [+] Fullscreen Optimizations disabled globally." -ForegroundColor Green
+            if ($logger) {
+                Write-Log "[Gaming] Fullscreen Optimizations globally disabled (GameDVR_FSEBehaviorMode=2, AllowGameDVR=0)."
+            }
+        } else {
+            Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+            Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+
+            Write-Host "  [ ] Fullscreen Optimizations left at Windows defaults (restored)." -ForegroundColor DarkGray
+            if ($logger) {
+                Write-Log "[Gaming] Fullscreen Optimizations restored to defaults (GameDVR_FSEBehaviorMode=0, AllowGameDVR=1)."
+            }
         }
 
         $Global:NeedsReboot = $true
