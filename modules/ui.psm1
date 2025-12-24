@@ -1,5 +1,7 @@
 # Depends on: ui.psm1 (loaded by main script)
 $script:RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
+$script:DefaultLogDirectory = Join-Path $env:TEMP 'ScynesthesiaOptimizer'
+$script:DefaultLogPath = Join-Path $script:DefaultLogDirectory 'Scynesthesia_Runtime.log'
 
 # Description: Prints a formatted section header to the console.
 # Parameters: Text - Section title to display.
@@ -10,24 +12,56 @@ function Write-Section {
     Write-Host "========== $Text ==========" -ForegroundColor Cyan
 }
 
-# Description: Writes a timestamped log message to the console with severity coloring.
-# Parameters: Message - Text to log; Level - Severity level (Info, Warning, Error).
+# Description: Writes a timestamped log message to the console and log file with optional structured metadata.
+# Parameters: Message - Text to log; Level - Severity level (Info, Warning, Error); Data - Optional structured metadata; NoConsole - Suppresses console output when set.
 # Returns: None.
 function Write-Log {
     param(
         [Parameter(Mandatory)]
         [string]$Message,
         [ValidateSet('Info','Warning','Error')]
-        [string]$Level = 'Info'
+        [string]$Level = 'Info',
+        [hashtable]$Data,
+        [switch]$NoConsole
     )
 
     $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $logEntry = "$timestamp [$Level] $Message"
+    $entry = [ordered]@{
+        timestamp = $timestamp
+        level     = $Level
+        message   = $Message
+    }
 
-    switch ($Level) {
-        'Error'   { Write-Host $logEntry -ForegroundColor Red }
-        'Warning' { Write-Host $logEntry -ForegroundColor Yellow }
-        default   { Write-Host $logEntry -ForegroundColor Gray }
+    if ($Data) {
+        $entry.data = $Data
+    }
+
+    $logLine = ($entry | ConvertTo-Json -Depth 6 -Compress)
+
+    if (-not $NoConsole) {
+        $color = switch ($Level) {
+            'Error'   { 'Red' }
+            'Warning' { 'Yellow' }
+            default   { 'Gray' }
+        }
+        Write-Host $logLine -ForegroundColor $color
+    }
+
+    $logPath = if ($global:ScynesthesiaLogPath) { $global:ScynesthesiaLogPath } else { $script:DefaultLogPath }
+    try {
+        if (-not (Test-Path -Path $logPath)) {
+            $dir = Split-Path -Path $logPath
+            if (-not (Test-Path -Path $dir)) {
+                New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            }
+            New-Item -ItemType File -Path $logPath -Force | Out-Null
+        }
+
+        Add-Content -Path $logPath -Value $logLine
+    } catch {
+        if (-not $NoConsole) {
+            Write-Host "Logging failure: $($_.Exception.Message)" -ForegroundColor Red
+        }
     }
 }
 
@@ -190,20 +224,89 @@ function Get-NormalizedGuid {
     }
 }
 
-# Description: Logs and displays a warning message for an encountered error.
-# Parameters: Context - Operation being performed; ErrorRecord - Error details from the exception.
+# Description: Logs and displays a structured error block with remediation hints.
+# Parameters: Context - Operation being performed; ErrorRecord - Error details from the exception; Path/Key/Value/Command - Optional explicit metadata about the failing operation.
 # Returns: None.
 function Invoke-ErrorHandler {
     param(
         [Parameter(Mandatory)]
         [string]$Context,
         [Parameter(Mandatory)]
-        [System.Management.Automation.ErrorRecord]$ErrorRecord
+        [System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [string]$Path,
+        [string]$Key,
+        [object]$Value,
+        [string]$Command
     )
 
-    $message = "${Context}: $($ErrorRecord.Exception.Message)"
-    Write-Host "[!] $message" -ForegroundColor Yellow
-    Write-Log -Message $message -Level 'Warning'
+    $invocation = $ErrorRecord.InvocationInfo
+    $bound = $invocation?.BoundParameters
+
+    if (-not $Path -and $bound -and $bound.ContainsKey('Path')) { $Path = [string]$bound['Path'] }
+    if (-not $Key -and $bound -and $bound.ContainsKey('Name')) { $Key = [string]$bound['Name'] }
+    if (-not $Value -and $bound -and $bound.ContainsKey('Value')) { $Value = $bound['Value'] }
+    if (-not $Path -and $ErrorRecord.TargetObject) { $Path = [string]$ErrorRecord.TargetObject }
+    if (-not $Command -and $invocation) { $Command = $invocation.InvocationName }
+
+    $exceptionChain = @()
+    $ex = $ErrorRecord.Exception
+    while ($ex) {
+        $exceptionChain += "$($ex.GetType().Name): $($ex.Message)"
+        $ex = $ex.InnerException
+    }
+
+    $hintMessages = @()
+    $exceptionText = $exceptionChain -join ' | '
+    if ($exceptionText -match 'denied' -or $ErrorRecord.Exception -is [System.UnauthorizedAccessException]) {
+        $hintMessages += 'Try running as administrator.'
+        $hintMessages += 'Check policy restrictions (ExecutionPolicy/GPO).'
+    }
+    if ($exceptionText -match 'cannot find (path|file)' -or $ErrorRecord.CategoryInfo.Reason -eq 'ItemNotFoundException') {
+        $hintMessages += 'If running a module standalone, ensure ScriptRoot/config files exist.'
+    }
+    if (($Command -and $Command -match 'netsh') -or $exceptionText -match 'netsh') {
+        $hintMessages += 'Consider rebooting, resetting the network stack, or checking for driver issues.'
+    }
+
+    $remediation = if ($hintMessages) { $hintMessages -join ' ' } else { 'Review the log entry for details and retry.' }
+    $valueDisplay = Format-RegistryDataForLog -Data $Value
+
+    $structured = [ordered]@{
+        operation   = $Context
+        path        = if ($Path) { $Path } else { '<unknown>' }
+        key         = if ($Key) { $Key } else { '<n/a>' }
+        value       = if ($null -ne $Value) { $valueDisplay } else { '<n/a>' }
+        command     = if ($Command) { $Command } else { '<unspecified>' }
+        exception   = $exceptionChain
+        remediation = $remediation
+        script      = $invocation?.ScriptName
+        line        = $invocation?.ScriptLineNumber
+    }
+
+    Write-Log -Message "Operation failed: $Context" -Level 'Error' -Data $structured -NoConsole
+
+    $logReference = if ($global:ScynesthesiaLogPath) { $global:ScynesthesiaLogPath } else { $script:DefaultLogPath }
+    $block = @(
+        ''
+        '=== Operation Error ==='
+        "Operation : $Context"
+        "Path      : $($structured.path)"
+        "Key/Value : $($structured.key) / $($structured.value)"
+        "Command   : $($structured.command)"
+        'Exception :'
+    )
+
+    foreach ($line in $exceptionChain) {
+        $block += "  - $line"
+    }
+
+    $block += @(
+        "Remediation: $remediation"
+        "Log entry  : $logReference"
+        '========================'
+    )
+
+    foreach ($line in $block) { Write-Host $line -ForegroundColor Yellow }
 }
 
 # Description: Prompts the user for a yes/no response with default handling.
