@@ -16,6 +16,19 @@ function Get-EligibleNetAdapters {
     }
 }
 
+# Description: Determines whether the current PowerShell session is elevated.
+# Parameters: None.
+# Returns: Boolean indicating administrative context.
+function Test-IsAdminSession {
+    try {
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+        return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $false
+    }
+}
+
 # Description: Converts a link speed value to bits per second, handling string units.
 # Parameters: LinkSpeed - Raw speed value or string with units.
 # Returns: Int64 representing bits per second, or null when parsing fails.
@@ -227,7 +240,7 @@ function Get-NicRegistryPaths {
             return @()
         }
 
-        $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002bE10318}'
+        $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}'
         $adapters = Get-EligibleNetAdapters
         $results = @()
         $entries = @()
@@ -236,17 +249,30 @@ function Get-NicRegistryPaths {
         try {
             $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
         } catch {
-            if ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException]) {
-                $message = "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks."
-                Write-Host "  [!] $message" -ForegroundColor Yellow
-                if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
-                $script:NicRegistryAccessDenied = $true
+            $isUnauthorized = ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException])
+            if ($isUnauthorized) {
+                $entries = Get-ChildItem -Path $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^\d{4}$' }
+                if ($entries.Count -gt 0) {
+                    $note = "Partial registry access detected; proceeding with readable NIC entries only."
+                    Write-Host "  [!] $note" -ForegroundColor Yellow
+                    if ($logger) { Write-Log "[NetworkHardcore] $note" -Level 'Warning' }
+                } else {
+                    $isAdmin = Test-IsAdminSession
+                    $message = if ($isAdmin) {
+                        "Registry protection blocked access to $classPath even in an elevated session. Disable registry protection or rerun as SYSTEM to apply NIC registry tweaks."
+                    } else {
+                        "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks."
+                    }
+                    Write-Host "  [!] $message" -ForegroundColor Yellow
+                    if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
+                    $script:NicRegistryAccessDenied = $true
+                    return @()
+                }
+            } else {
+                Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
+                if ($logger) { Write-Log "[NetworkHardcore] Registry class enumeration failed; adapter registry tweaks skipped." -Level 'Warning' }
                 return @()
             }
-
-            Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
-            if ($logger) { Write-Log "[NetworkHardcore] Registry class enumeration failed; adapter registry tweaks skipped." -Level 'Warning' }
-            return @()
         }
 
         foreach ($adapter in $adapters) {
