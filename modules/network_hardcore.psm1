@@ -16,10 +16,23 @@ function Get-EligibleNetAdapters {
     }
 }
 
-# Description: Converts a link speed value to bytes per second, handling string units.
+# Description: Determines whether the current PowerShell session is elevated.
+# Parameters: None.
+# Returns: Boolean indicating administrative context.
+function Test-IsAdminSession {
+    try {
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+        return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $false
+    }
+}
+
+# Description: Converts a link speed value to bits per second, handling string units.
 # Parameters: LinkSpeed - Raw speed value or string with units.
-# Returns: Int64 representing bytes per second, or null when parsing fails.
-function Convert-LinkSpeedToBytes {
+# Returns: Int64 representing bits per second, or null when parsing fails.
+function Convert-LinkSpeedToBits {
     param(
         [Parameter(Mandatory)]$LinkSpeed
     )
@@ -33,8 +46,8 @@ function Convert-LinkSpeedToBytes {
                 $value = [double]$match.Groups[1].Value
                 $unit = $match.Groups[2].Value.ToLower()
                 switch ($unit) {
-                    'g' { return [int64]($value * 1GB) }
-                    'm' { return [int64]($value * 1MB) }
+                    'g' { return [int64]($value * 1e9) }
+                    'm' { return [int64]($value * 1e6) }
                     default { return [int64]$value }
                 }
             }
@@ -227,7 +240,7 @@ function Get-NicRegistryPaths {
             return @()
         }
 
-        $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002bE10318}'
+        $classPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}'
         $adapters = Get-EligibleNetAdapters
         $results = @()
         $entries = @()
@@ -236,17 +249,30 @@ function Get-NicRegistryPaths {
         try {
             $entries = Get-ChildItem -Path $classPath -ErrorAction Stop | Where-Object { $_.PSChildName -match '^\d{4}$' }
         } catch {
-            if ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException]) {
-                $message = "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks."
-                Write-Host "  [!] $message" -ForegroundColor Yellow
-                if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
-                $script:NicRegistryAccessDenied = $true
+            $isUnauthorized = ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException])
+            if ($isUnauthorized) {
+                $entries = Get-ChildItem -Path $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^\d{4}$' }
+                if ($entries.Count -gt 0) {
+                    $note = "Partial registry access detected; proceeding with readable NIC entries only."
+                    Write-Host "  [!] $note" -ForegroundColor Yellow
+                    if ($logger) { Write-Log "[NetworkHardcore] $note" -Level 'Warning' }
+                } else {
+                    $isAdmin = Test-IsAdminSession
+                    $message = if ($isAdmin) {
+                        "Registry protection blocked access to $classPath even in an elevated session. Disable registry protection or rerun as SYSTEM to apply NIC registry tweaks."
+                    } else {
+                        "Insufficient registry permissions to enumerate $classPath. Run PowerShell as Administrator to apply NIC registry tweaks."
+                    }
+                    Write-Host "  [!] $message" -ForegroundColor Yellow
+                    if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
+                    $script:NicRegistryAccessDenied = $true
+                    return @()
+                }
+            } else {
+                Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
+                if ($logger) { Write-Log "[NetworkHardcore] Registry class enumeration failed; adapter registry tweaks skipped." -Level 'Warning' }
                 return @()
             }
-
-            Invoke-ErrorHandler -Context 'Enumerating NIC registry class entries' -ErrorRecord $_
-            if ($logger) { Write-Log "[NetworkHardcore] Registry class enumeration failed; adapter registry tweaks skipped." -Level 'Warning' }
-            return @()
         }
 
         foreach ($adapter in $adapters) {
@@ -342,7 +368,13 @@ function Set-NicRegistryHardcore {
             }
 
             try {
-                $interfacePath = "${'HKLM'}:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$($item.Guid)"
+                if (-not $item.Guid) {
+                    Write-Host "    [!] Missing interface GUID for $adapterName; skipping per-interface TCP parameters." -ForegroundColor Yellow
+                    continue
+                }
+
+                $guidSegment = ($item.Guid.ToString().Trim('{}'))
+                $interfacePath = Join-Path -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces' -ChildPath "{${guidSegment}}"
                 $noiseKeys = @($powerOffload.Keys) + @($interruptDelays.Keys)
                 foreach ($noiseKey in $noiseKeys | Select-Object -Unique) {
                     try {
@@ -392,7 +424,7 @@ function Get-PrimaryNetAdapter {
         if ($adapters.Count -eq 0) { return $null }
         $sortedAdapters = $adapters |
             Sort-Object -Property @{ Expression = {
-                    $parsed = Convert-LinkSpeedToBytes -LinkSpeed $_.LinkSpeed
+                    $parsed = Convert-LinkSpeedToBits -LinkSpeed $_.LinkSpeed
                     if ($null -eq $parsed) { return 0 }
                     return $parsed
                 }
@@ -757,13 +789,16 @@ function Invoke-NetworkTweaksHardcore {
         $primaryAdapters = $adapters
     } else {
         $primaryAdapters = @($primary)
-        $parsedSpeed = Convert-LinkSpeedToBytes -LinkSpeed $primary.LinkSpeed
-        if ($null -eq $parsedSpeed) { $parsedSpeed = 0 }
-        $speedMbps = [math]::Round($parsedSpeed / 1MB, 2)
-        $speedLabel = if ($parsedSpeed -gt 0) {
-            if ($speedMbps -ge 1000) { "{0} Gbps" -f ([math]::Round($speedMbps / 1000, 2)) } else { "{0} Mbps" -f $speedMbps }
+        $parsedSpeed = Convert-LinkSpeedToBits -LinkSpeed $primary.LinkSpeed
+        if ($null -eq $parsedSpeed -or $parsedSpeed -le 0) {
+            $speedLabel = 'Unknown speed'
         } else {
-            'Unknown speed'
+            $speedMbps = [math]::Round($parsedSpeed / 1e6, 2)
+            $speedLabel = if ($speedMbps -ge 1000) {
+                "{0} Gbps" -f ([math]::Round($speedMbps / 1000, 2))
+            } else {
+                "{0} Mbps" -f $speedMbps
+            }
         }
         Write-Host "  [i] Primary adapter detected: $($primary.Name) ($speedLabel)." -ForegroundColor Cyan
     }
