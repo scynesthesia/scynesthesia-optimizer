@@ -356,12 +356,12 @@ function Set-NicRegistryHardcore {
                 $existing = Get-ItemProperty -Path $path -Name $name -ErrorAction Stop
                 $current = $existing.$name
             } catch { }
-            if ($current -eq $value) { return $false }
+            if ($current -eq $value) { return 'Unchanged' }
             try {
                 Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type $type
-                return $true
+                return 'Changed'
             } catch {
-                return $false
+                return 'Failed'
             }
         }
 
@@ -397,11 +397,12 @@ function Set-NicRegistryHardcore {
             Write-Host "  [>] Applying registry tweaks to $adapterName" -ForegroundColor Cyan
             $adapterChanged = $false
             try {
-                if (& $setValueIfDifferent $item.Path 'PnPCapabilities' 24 ([Microsoft.Win32.RegistryValueKind]::DWord)) {
+                $pnPStatus = & $setValueIfDifferent $item.Path 'PnPCapabilities' 24 ([Microsoft.Win32.RegistryValueKind]::DWord)
+                if ($pnPStatus -eq 'Changed') {
                     Write-Host "    [+] PnPCapabilities set to 24 (power management disabled)" -ForegroundColor Green
                     $adapterChanged = $true
-                } else {
-                    Write-Host "    [i] PnPCapabilities already set; skipping change." -ForegroundColor Gray
+                } elseif ($pnPStatus -eq 'Failed') {
+                    Write-Host "    [!] Failed to set PnPCapabilities on $adapterName" -ForegroundColor Yellow
                 }
             } catch {
                 Invoke-ErrorHandler -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
@@ -409,11 +410,12 @@ function Set-NicRegistryHardcore {
 
             foreach ($entry in $powerOffload.GetEnumerator()) {
                 try {
-                    if (& $setValueIfDifferent $item.Path $entry.Key $entry.Value ([Microsoft.Win32.RegistryValueKind]::String)) {
+                    $status = & $setValueIfDifferent $item.Path $entry.Key $entry.Value ([Microsoft.Win32.RegistryValueKind]::String)
+                    if ($status -eq 'Changed') {
                         Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
                         $adapterChanged = $true
-                    } else {
-                        Write-Host "    [i] $($entry.Key) already set; skipping change." -ForegroundColor Gray
+                    } elseif ($status -eq 'Failed') {
+                        Write-Host "    [!] Failed to set $($entry.Key) on $adapterName" -ForegroundColor Yellow
                     }
                 } catch {
                     Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
@@ -422,11 +424,12 @@ function Set-NicRegistryHardcore {
 
             foreach ($entry in $interruptDelays.GetEnumerator()) {
                 try {
-                    if (& $setValueIfDifferent $item.Path $entry.Key $entry.Value ([Microsoft.Win32.RegistryValueKind]::String)) {
+                    $status = & $setValueIfDifferent $item.Path $entry.Key $entry.Value ([Microsoft.Win32.RegistryValueKind]::String)
+                    if ($status -eq 'Changed') {
                         Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
                         $adapterChanged = $true
-                    } else {
-                        Write-Host "    [i] $($entry.Key) already set; skipping change." -ForegroundColor Gray
+                    } elseif ($status -eq 'Failed') {
+                        Write-Host "    [!] Failed to set $($entry.Key) on $adapterName" -ForegroundColor Yellow
                     }
                 } catch {
                     Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
@@ -453,14 +456,12 @@ function Set-NicRegistryHardcore {
                 }
 
                 $nagleChanged = $false
-                if (& $setValueIfDifferent $interfacePath 'TcpAckFrequency' 1 ([Microsoft.Win32.RegistryValueKind]::DWord)) { $nagleChanged = $true }
-                if (& $setValueIfDifferent $interfacePath 'TCPNoDelay' 1 ([Microsoft.Win32.RegistryValueKind]::DWord)) { $nagleChanged = $true }
-                if (& $setValueIfDifferent $interfacePath 'TcpDelAckTicks' 0 ([Microsoft.Win32.RegistryValueKind]::DWord)) { $nagleChanged = $true }
+                if (& $setValueIfDifferent $interfacePath 'TcpAckFrequency' 1 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
+                if (& $setValueIfDifferent $interfacePath 'TCPNoDelay' 1 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
+                if (& $setValueIfDifferent $interfacePath 'TcpDelAckTicks' 0 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
                 if ($nagleChanged) {
                     Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
                     $adapterChanged = $true
-                } else {
-                    Write-Host "    [i] Nagle parameters already aligned; skipping change." -ForegroundColor Gray
                 }
             } catch {
                 Invoke-ErrorHandler -Context "Setting Nagle parameters for $adapterName" -ErrorRecord $_
@@ -537,10 +538,72 @@ function Set-NetAdapterAdvancedPropertySafe {
             return
         }
 
-        $valuesToTry = @($DisplayValue)
+        $valuesToTry = New-Object System.Collections.Generic.List[string]
+        $valuesToTry.Add($DisplayValue) | Out-Null
+
         if ($DisplayName -in @('Transmit Buffers', 'Receive Buffers')) {
+            $collectValidValues = {
+                param($source)
+                $collected = @()
+                if (-not $source) { return $collected }
+                $possibleKeys = @('ValidDisplayValues', 'ValidRegistryValues')
+                foreach ($key in $possibleKeys) {
+                    try {
+                        if ($source.PSObject.Properties[$key]) {
+                            $raw = $source.$key
+                            if ($raw -is [System.Array]) {
+                                $collected += $raw
+                            } elseif ($null -ne $raw) {
+                                $collected += @($raw)
+                            }
+                        }
+                    } catch { }
+                }
+
+                $collected = $collected | Where-Object { $_ -ne $null -and ("$_").Trim() -ne '' }
+                if ($collected.Count -eq 0) { return @() }
+
+                $numeric = @()
+                $nonNumeric = @()
+                foreach ($item in $collected) {
+                    $valueString = ("$item").Trim()
+                    $parsed = 0
+                    if ([long]::TryParse($valueString, [ref]$parsed)) {
+                        $numeric += $parsed
+                    } else {
+                        $nonNumeric += $valueString
+                    }
+                }
+
+                $ordered = @()
+                if ($numeric.Count -gt 0) { $ordered += ($numeric | Sort-Object -Descending | ForEach-Object { "$_" }) }
+                if ($nonNumeric.Count -gt 0) { $ordered += ($nonNumeric | Select-Object -Unique) }
+                return $ordered | Select-Object -Unique
+            }
+
+            $rangeSources = @($property)
+            try {
+                $refreshed = Get-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -ErrorAction SilentlyContinue
+                if ($refreshed) { $rangeSources += $refreshed }
+            } catch { }
+
+            $validValues = @()
+            foreach ($src in $rangeSources) {
+                $validValues += & $collectValidValues $src
+            }
+            $validValues = $validValues | Select-Object -Unique
+
+            if ($validValues.Count -gt 0) {
+                Write-Host "  [i] Using driver-advertised buffer range for $DisplayName on $AdapterName: $([string]::Join(', ', $validValues))." -ForegroundColor Cyan
+                foreach ($candidate in $validValues) {
+                    if (-not $valuesToTry.Contains($candidate)) { $valuesToTry.Add($candidate) | Out-Null }
+                }
+            }
+
             $fallbackDefault = if ($property.DefaultDisplayValue) { $property.DefaultDisplayValue } else { $property.DisplayValue }
-            $valuesToTry = @('4096', '2048', '1024', '512', $fallbackDefault) | Where-Object { $_ }
+            if ($fallbackDefault -and -not $valuesToTry.Contains($fallbackDefault)) {
+                $valuesToTry.Add($fallbackDefault) | Out-Null
+            }
         }
 
         foreach ($value in $valuesToTry) {
@@ -549,11 +612,11 @@ function Set-NetAdapterAdvancedPropertySafe {
                 Write-Host "  [+] $DisplayName set to $value on $AdapterName" -ForegroundColor Green
                 return
             } catch {
-                Write-Host "  [!] Failed to set $DisplayName to $value on $AdapterName; trying fallback." -ForegroundColor Yellow
+                Write-Host "  [!] Failed to set $DisplayName to $value on $AdapterName; trying next candidate." -ForegroundColor Yellow
             }
         }
 
-        Write-Host "  [!] Unable to set $DisplayName on $AdapterName after fallbacks." -ForegroundColor Yellow
+        Write-Host "  [!] Unable to set $DisplayName on $AdapterName after evaluating available values." -ForegroundColor Yellow
     } catch {
         Invoke-ErrorHandler -Context "Setting $DisplayName on $AdapterName" -ErrorRecord $_
     }
@@ -796,25 +859,55 @@ function Invoke-MtuToAdapters {
 # Returns: Integer years when available, otherwise null.
 function Get-HardwareAgeYears {
     try {
-        $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction Stop
-        $releaseDate = $bios.ReleaseDate
-        if (-not $releaseDate) { return $null }
-        try {
-            $parsedDate = [Management.ManagementDateTimeConverter]::ToDateTime($releaseDate)
-        } catch {
-            $parsedDate = $null
-            $formats = @('yyyyMMddHHmmss', 'yyyyMMdd', 'MM/dd/yy', 'MM/dd/yyyy', 'dd/MM/yyyy', 'yyyy-MM-dd')
+        $tryParseDate = {
+            param($value)
+            if (-not $value) { return $null }
+
+            try {
+                return [Management.ManagementDateTimeConverter]::ToDateTime($value)
+            } catch { }
+
+            $formats = @(
+                'yyyyMMddHHmmss.ffffff+000',
+                'yyyyMMddHHmmss',
+                'yyyyMMdd',
+                'MM/dd/yy',
+                'MM/dd/yyyy',
+                'dd/MM/yyyy',
+                'yyyy-MM-dd'
+            )
+
             foreach ($fmt in $formats) {
                 try {
                     $candidate = $null
-                    if ([DateTime]::TryParseExact($releaseDate, $fmt, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$candidate)) {
-                        $parsedDate = $candidate
-                        break
+                    if ([DateTime]::TryParseExact($value, $fmt, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$candidate)) {
+                        return $candidate
                     }
                 } catch { }
             }
-            if (-not $parsedDate) { return $null }
+
+            try {
+                $fallback = $null
+                if ([DateTime]::TryParse($value, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeLocal, [ref]$fallback)) {
+                    return $fallback
+                }
+            } catch { }
+
+            return $null
         }
+
+        $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction Stop
+        $releaseDateRaw = $bios.ReleaseDate
+        $parsedDate = & $tryParseDate $releaseDateRaw
+
+        if (-not $parsedDate) {
+            try {
+                $regBios = Get-ItemProperty -Path 'HKLM:\\HARDWARE\\DESCRIPTION\\System\\BIOS' -Name 'BIOSReleaseDate' -ErrorAction Stop
+                $parsedDate = & $tryParseDate $regBios.BIOSReleaseDate
+            } catch { }
+        }
+
+        if (-not $parsedDate) { return $null }
         $years = ((Get-Date) - $parsedDate).TotalDays / 365
         return [int][Math]::Round($years, 0)
     } catch {
@@ -971,16 +1064,22 @@ function Invoke-NetworkTweaksHardcore {
             try {
                 $rssCapabilities = Get-NetAdapterRss -Name $adapter.Name -ErrorAction SilentlyContinue
                 if (-not $rssCapabilities) {
-                Write-Host "  [i] RSS not supported by this hardware; skipping." -ForegroundColor Gray
-                continue
-            }
+                    $linkBits = Convert-LinkSpeedToBits -LinkSpeed $adapter.LinkSpeed
+                    if ($linkBits -and $linkBits -lt 1e9) {
+                        $speedLabel = "{0} Mbps" -f ([math]::Round($linkBits / 1e6, 0))
+                        Write-Host "  [i] RSS is a Gigabit+ feature; $($adapter.Name) is running at $speedLabel. Skipping RSS quietly." -ForegroundColor Gray
+                    } else {
+                        Write-Host "  [i] RSS not exposed by this hardware; skipping." -ForegroundColor Gray
+                    }
+                    continue
+                }
 
-            Set-NetAdapterRss -Name $adapter.Name -Profile Closest -ErrorAction Stop | Out-Null
-            Write-Host "  [+] RSS profile set to Closest on $($adapter.Name)." -ForegroundColor Green
-            if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to Closest on $($adapter.Name)." }
-        } catch {
-            Invoke-ErrorHandler -Context "Configuring RSS on $($adapter.Name)" -ErrorRecord $_
-        }
+                Set-NetAdapterRss -Name $adapter.Name -Profile Closest -ErrorAction Stop | Out-Null
+                Write-Host "  [+] RSS profile set to Closest on $($adapter.Name)." -ForegroundColor Green
+                if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to Closest on $($adapter.Name)." }
+            } catch {
+                Invoke-ErrorHandler -Context "Configuring RSS on $($adapter.Name)" -ErrorRecord $_
+            }
         }
     }
 
