@@ -2,21 +2,21 @@
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white)
 ![PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)
-![Language](https://img.shields.io/badge/UI-English%20%7C%20Espa%C3%B1ol-3CB371)
+![Language](https://img.shields.io/badge/UI-English-3CB371)
 ![Status](https://img.shields.io/badge/Focus-Performance%20%7C%20Stability%20%7C%20Privacy-8A2BE2)
 
-A professional-grade, modular PowerShell 5.1 suite for Windows 10/11 that tunes performance, trims latency for gaming, and debloats safely. Scynesthesia pairs **hardware-aware logic** with **bilingual (English/Spanish) menus** so you can optimize confidently without breaking your OS.
+A professional-grade, modular PowerShell 5.1 suite for Windows 10/11 that tunes performance, trims latency for gaming, and debloats safely. Scynesthesia pairs **hardware-aware logic** with **guided menus** so you can optimize confidently without breaking your OS.
 
 ---
 
 ## Overview
-Scynesthesia Optimizer is built for power users, creators, and competitive gamers who want **lower latency, leaner services, and consistent stability** without sacrificing restore options. The toolkit is organized into specialized modules (.psm1) that can run independently or through the guided, bilingual launcher. Every change is gated by safety rails such as restore points, hardware detection, and reversible tweaks.
+Scynesthesia Optimizer is built for power users, creators, and competitive gamers who want **lower latency, leaner services, and consistent stability** without sacrificing restore options. The toolkit is organized into specialized modules (.psm1) that can run independently or through the guided launcher. Every change is gated by safety rails such as restore points, hardware detection, and reversible tweaks.
 
 ### Philosophy: Performance Without Regret
 - **Safety first**: creates restore points, uses non-destructive debloat lists, and favors reversible settings.
 - **Hardware-aware**: adapts to laptops/desktops, storage type, and device capabilities for MSI mode and power tuning.
 - **Modular by design**: focused modules let you run only what you need and extend the toolkit without editing the core.
-- **Bilingual UX**: all menus and prompts are available in **English and Spanish** to keep the experience inclusive.
+- **Focused UX**: all menus and prompts are provided in US English for clarity.
 
 ---
 
@@ -34,7 +34,7 @@ Scynesthesia Optimizer is built for power users, creators, and competitive gamer
 
 ## Key Features
 - **Modular architecture**: self-contained `.psm1` modules (performance, network, gaming, debloat, UI, repair) that can be run individually or through the main menu.
-- **Bilingual experience**: English/Spanish prompts, summaries, and confirmations throughout the CLI.
+- **Streamlined experience**: US English prompts, summaries, and confirmations throughout the CLI.
 - **Safety-first workflow**: restore point creation, optional backups, and hardware-aware branching to avoid risky tweaks on laptops or legacy drivers.
 - **"Unbreakable" logic**: prefers reversible registry edits, non-destructive app lists, and explicit user confirmations for hardcore or experimental lanes.
 - **Latency-aware defaults**: profiles optimized for consistent frametimes, predictable input response, and low network jitter.
@@ -55,7 +55,7 @@ start powershell -ArgumentList '-NoExit -Command "[Net.ServicePointManager]::Sec
  git clone https://github.com/scynesthesia/scynesthesia-optimizer.git
  cd scynesthesia-optimizer
 
-# Launch bilingual menu
+# Launch the menu
  Set-ExecutionPolicy Bypass -Scope Process
  ./scynesthesiaoptimizer.ps1
 ```
@@ -67,11 +67,10 @@ start powershell -ArgumentList '-NoExit -Command "[Net.ServicePointManager]::Sec
 
 ---
 
-## Guided Experience (Bilingual)
-1. Choose **language** (English/Español).
-2. Select a **profile**: Safe, Aggressive, Gaming, Network/Hardcore, or Repair.
-3. Confirm optional modules (e.g., hardcore network lane, MSI mode, debloat depth).
-4. Review summary prompts (in your chosen language) before applying changes.
+## Guided Experience
+1. Select a **profile**: Safe, Aggressive, Gaming, Network/Hardcore, or Repair.
+2. Confirm optional modules (e.g., hardcore network lane, MSI mode, debloat depth).
+3. Review summary prompts before applying changes.
 
 ---
 
@@ -98,14 +97,14 @@ start powershell -ArgumentList '-NoExit -Command "[Net.ServicePointManager]::Sec
 
 ## Quick Module Map
 - `setup.ps1`: remote installer and bootstrapper.
-- `scynesthesiaoptimizer.ps1`: bilingual entry point and menu router.
+- `scynesthesiaoptimizer.ps1`: entry point and menu router.
 - `modules/`: specialized `.psm1` modules (performance, network, gaming, debloat, privacy, UI, repair, aggressive profiles).
 - `config/`: editable configs such as `apps.json` for debloat scope.
 
 ---
 
 ## Contributing
-Contributions are welcome in both **English and Spanish**. Please:
+Contributions are welcome in **English**. Please:
 1. Fork and work on a feature branch.
 2. Keep new tweaks modular within `modules/` and respect the safety/restore workflow.
 3. Document new flags or app list changes in comments or the README.
@@ -120,4 +119,4 @@ Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ## Support
 - Open an issue for bugs or feature requests; include PowerShell version, Windows build, and which modules you ran.
-- PR discussions are welcome in English or Spanish.
+- PR discussions are welcome in English.

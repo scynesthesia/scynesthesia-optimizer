@@ -28,19 +28,18 @@ function Test-WingetAvailable {
 }
 
 function Invoke-SoftwareInstaller {
-    Write-Section "Software Installer / Instalador de Software"
+    Write-Section "Software Installer"
 
     if (-not (Test-WingetAvailable)) {
         Write-Host "[X] Winget (App Installer) is not available. Please install it from the Microsoft Store: https://aka.ms/GetTheAppInstaller" -ForegroundColor Red
-        Write-Host "[X] Winget (App Installer) no está disponible. Instálalo desde Microsoft Store: https://aka.ms/GetTheAppInstaller" -ForegroundColor Red
         return
     }
 
     $apps = @(
-        @{ Name = 'Microsoft Visual C++ Runtimes (x64)'; Id = 'Microsoft.VCRedist.2015+.x64'; Category = 'Runtimes / Runtimes'; Default = 'y' },
-        @{ Name = 'Brave Browser'; Id = 'Brave.Brave'; Category = 'Browsers / Navegadores'; Default = 'n' },
-        @{ Name = 'Steam (Valve)'; Id = 'Valve.Steam'; Category = 'Gaming / Juegos'; Default = 'n' },
-        @{ Name = 'Discord'; Id = 'Discord.Discord'; Category = 'Social / Social'; Default = 'n' }
+        @{ Name = 'Microsoft Visual C++ Runtimes (x64)'; Id = 'Microsoft.VCRedist.2015+.x64'; Category = 'Runtimes'; Default = 'y' },
+        @{ Name = 'Brave Browser'; Id = 'Brave.Brave'; Category = 'Browsers'; Default = 'n' },
+        @{ Name = 'Steam (Valve)'; Id = 'Valve.Steam'; Category = 'Gaming'; Default = 'n' },
+        @{ Name = 'Discord'; Id = 'Discord.Discord'; Category = 'Social'; Default = 'n' }
     )
 
     $currentCategory = ''
@@ -51,9 +50,9 @@ function Invoke-SoftwareInstaller {
             Write-Host "== $($app.Category) ==" -ForegroundColor Cyan
         }
 
-        $question = "Install $($app.Name)? / ¿Instalar $($app.Name)?"
+        $question = "Install $($app.Name)?"
         if (Get-Confirmation -Question $question -Default $app.Default) {
-            Write-Host "  [>] Installing $($app.Name)... / Instalando $($app.Name)..." -ForegroundColor Gray
+            Write-Host "  [>] Installing $($app.Name)..." -ForegroundColor Gray
             try {
                 $wingetArgs = @(
                     'install', '--id', $app.Id,
@@ -64,13 +63,13 @@ function Invoke-SoftwareInstaller {
 
                 switch ($process.ExitCode) {
                     0 {
-                        Write-Host "  [+] $($app.Name) installed. / $($app.Name) instalado." -ForegroundColor Green
+                        Write-Host "  [+] $($app.Name) installed." -ForegroundColor Green
                     }
                     0x8A150029 {
-                        Write-Host "  [ ] $($app.Name) already installed. / $($app.Name) ya estaba instalado." -ForegroundColor DarkGray
+                        Write-Host "  [ ] $($app.Name) already installed." -ForegroundColor DarkGray
                     }
                     default {
-                        $message = "  [X] $($app.Name) could not be installed (exit code $($process.ExitCode)). / $($app.Name) no pudo instalarse (codigo de salida $($process.ExitCode))."
+                        $message = "  [X] $($app.Name) could not be installed (exit code $($process.ExitCode))."
                         Write-Host $message -ForegroundColor Yellow
                         Write-Log -Message "Winget install for $($app.Id) exited with code $($process.ExitCode)." -Level 'Warning'
                     }
@@ -79,7 +78,7 @@ function Invoke-SoftwareInstaller {
                 Invoke-ErrorHandler -Context "Installing $($app.Name) via winget" -ErrorRecord $_
             }
         } else {
-            Write-Host "  [ ] Skipped $($app.Name). / Omitido $($app.Name)." -ForegroundColor DarkGray
+            Write-Host "  [ ] Skipped $($app.Name)." -ForegroundColor DarkGray
         }
     }
 }
@@ -89,25 +88,25 @@ function Set-WindowsUpdateNotifyOnly {
     $name = "AUOptions"
     $value = 2
 
-    Write-Host "[i] Setting Windows Update to Notify for download and auto install. / Configurando Windows Update en Notificar para descargar e instalar automaticamente." -ForegroundColor Gray
+    Write-Host "[i] Setting Windows Update to Notify for download and auto install." -ForegroundColor Gray
     Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
 
     $Global:NeedsReboot = $true
-    Write-Host "[+] Windows Update set to Notify Only. A reboot is recommended. / Windows Update configurado en Solo Notificar. Se recomienda reiniciar." -ForegroundColor Yellow
+    Write-Host "[+] Windows Update set to Notify Only. A reboot is recommended." -ForegroundColor Yellow
 }
 
 function Invoke-WindowsUpdateScan {
-    Write-Host "[i] Triggering Windows Update scan... / Iniciando escaneo de Windows Update..." -ForegroundColor Gray
+    Write-Host "[i] Triggering Windows Update scan..." -ForegroundColor Gray
 
     $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) {
-        Write-Host "[X] Administrative privileges are required to start the scan. / Se requieren privilegios de administrador para iniciar el escaneo." -ForegroundColor Yellow
+        Write-Host "[X] Administrative privileges are required to start the scan." -ForegroundColor Yellow
         return
     }
 
     try {
         Start-Process -FilePath "usoclient" -ArgumentList "StartInteractiveScan" -WindowStyle Hidden -ErrorAction Stop | Out-Null
-        Write-Host "[+] Scan started in the background. / Escaneo iniciado en segundo plano." -ForegroundColor Green
+        Write-Host "[+] Scan started in the background." -ForegroundColor Green
     } catch {
         Invoke-ErrorHandler -Context "Starting Windows Update interactive scan" -ErrorRecord $_
     }
