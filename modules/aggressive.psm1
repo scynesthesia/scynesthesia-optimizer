@@ -13,8 +13,15 @@ function Get-AppRemovalListFromConfig {
 
     if (-not $script:AppRemovalConfig) {
         $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-        $baseRoot = if ($Global:ScriptRoot) { $Global:ScriptRoot } elseif ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-        $configPath = Join-Path $baseRoot "config/apps.json"
+        $configRoot = if ($Global:ScriptRoot) { $Global:ScriptRoot } else { $PSScriptRoot }
+        if (-not $configRoot) {
+            $message = "[Debloat] Could not determine script root to locate config/apps.json. Skipping App Removal phase."
+            Write-Host $message -ForegroundColor Yellow
+            if ($logger) { Write-Log $message }
+            return @()
+        }
+
+        $configPath = Join-Path $configRoot "config/apps.json"
         if (-not (Test-Path $configPath)) {
             $message = "[Debloat] App configuration file not found: $configPath. Skipping App Removal phase."
             Write-Host $message -ForegroundColor Yellow
