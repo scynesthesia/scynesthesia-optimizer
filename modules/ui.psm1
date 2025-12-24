@@ -126,6 +126,10 @@ function Set-RegistryValueSafe {
         [Microsoft.Win32.RegistryValueKind]$Type = [Microsoft.Win32.RegistryValueKind]::DWord
     )
 
+    if ($Path -like "HKCR:*" -and -not (Test-Path HKCR:)) {
+        New-PSDrive -Name HKCR -PSProvider Registry -Root HKEY_CLASSES_ROOT | Out-Null
+    }
+
     if ([string]::IsNullOrWhiteSpace($Name) -and $Name -ne "(default)") {
         $warning = "[!] Attempted to set a registry value with an empty name at path $Path. Skipping."
         Write-Host $warning -ForegroundColor Yellow
@@ -134,9 +138,9 @@ function Set-RegistryValueSafe {
     }
 
     try {
-        # Auto-fix: HKLM\ / HKCU\ -> HKLM:\ / HKCU:\
-        if ($Path -match "^HK(LM|CU)\\" -and $Path -notmatch "^HK(LM|CU):\\") {
-            $Path = $Path -replace "^HK(LM|CU)\\", 'HK$1:\'
+        # Auto-fix: HKLM\ / HKCU\ / HKCR\ -> HKLM:\ / HKCU:\ / HKCR:\
+        if ($Path -match "^HK(LM|CU|CR)\\" -and $Path -notmatch "^HK(LM|CU|CR):\\") {
+            $Path = $Path -replace "^HK(LM|CU|CR)\\", 'HK$1:\'
         }
 
         if (-not (Test-Path $Path)) {

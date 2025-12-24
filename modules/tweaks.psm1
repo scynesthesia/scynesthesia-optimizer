@@ -11,7 +11,7 @@ function Set-ClassicContextMenus {
         }
 
         Set-RegistryValueSafe -Path $path -Name '(default)' -Value '' -Type ([Microsoft.Win32.RegistryValueKind]::String)
-        Write-Host "[+] Classic context menu enabled / Menús contextuales clásicos habilitados" -ForegroundColor Green
+        Write-Host "[+] Classic context menu enabled." -ForegroundColor Green
         $Global:NeedsReboot = $true
     } catch {
         Invoke-ErrorHandler -Context "Enabling classic context menus" -ErrorRecord $_
@@ -28,11 +28,16 @@ function Add-TakeOwnershipMenu {
     )
 
     foreach ($entry in $entries) {
-        $commandPath = Join-Path $entry.Path 'command'
+        $commandPath = Join-Path -Path $entry.Path -ChildPath 'command' -ErrorAction SilentlyContinue
         try {
-            Set-RegistryValueSafe -Path $entry.Path -Name 'MUIVerb' -Value 'Take Ownership / Tomar propiedad' -Type ([Microsoft.Win32.RegistryValueKind]::String)
+            Set-RegistryValueSafe -Path $entry.Path -Name 'MUIVerb' -Value 'Take Ownership' -Type ([Microsoft.Win32.RegistryValueKind]::String)
             Set-RegistryValueSafe -Path $entry.Path -Name 'HasLUAShield' -Value '' -Type ([Microsoft.Win32.RegistryValueKind]::String)
             Set-RegistryValueSafe -Path $entry.Path -Name 'Icon' -Value 'imageres.dll,-78' -Type ([Microsoft.Win32.RegistryValueKind]::String)
+
+            if ([string]::IsNullOrWhiteSpace($commandPath)) {
+                Write-Log -Message "Skipping Take Ownership command registration because the command path could not be resolved for $($entry.Path)." -Level 'Warning'
+                continue
+            }
 
             if (-not (Test-Path $commandPath)) {
                 New-Item -Path $commandPath -Force | Out-Null
@@ -43,7 +48,7 @@ function Add-TakeOwnershipMenu {
         }
     }
 
-    Write-Host "[+] Take Ownership menu added for files/folders / Menú 'Tomar Propiedad' agregado para archivos/carpetas" -ForegroundColor Green
+    Write-Host "[+] Take Ownership menu added for files and folders." -ForegroundColor Green
     $Global:NeedsReboot = $true
 }
 
@@ -55,7 +60,7 @@ function Set-ExplorerProSettings {
     try {
         Set-RegistryValueSafe -Path $path -Name 'HideFileExt' -Value 0
         Set-RegistryValueSafe -Path $path -Name 'Hidden' -Value 1
-        Write-Host "[+] Explorer visibility tweaks applied / Ajustes de visibilidad en Explorer aplicados" -ForegroundColor Green
+        Write-Host "[+] Explorer visibility tweaks applied." -ForegroundColor Green
         $Global:NeedsReboot = $true
     } catch {
         Invoke-ErrorHandler -Context "Configuring Explorer visibility preferences" -ErrorRecord $_
