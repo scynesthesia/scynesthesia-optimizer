@@ -483,11 +483,6 @@ function Set-WakeOnLanHardcore {
         WolShutdownLinkSpeed "2" keeps the link in "Not Speed Down" to avoid low-power renegotiation that re-enables WOL paths.
     #>
     Write-Host "  [>] Applying Wake-on-LAN hardening (registry + driver UI)" -ForegroundColor Cyan
-    $adapters = Get-EligibleNetAdapters
-    if ($adapters.Count -eq 0) {
-        Write-Host "  [!] No adapters available for Wake-on-LAN hardening." -ForegroundColor Yellow
-        return
-    }
 
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
@@ -499,6 +494,16 @@ function Set-WakeOnLanHardcore {
     }
 
     $nicPaths = Get-NicRegistryPaths
+    $adapters = Get-EligibleNetAdapters
+    if ($adapters.Count -eq 0 -and $nicPaths.Count -gt 0) {
+        $adapters = $nicPaths | ForEach-Object { $_.Adapter } | Where-Object { $_ } | Sort-Object -Property ifIndex -Unique
+    }
+
+    if ($adapters.Count -eq 0) {
+        Write-Host "  [!] No adapters available for Wake-on-LAN hardening." -ForegroundColor Yellow
+        return
+    }
+
     if ($nicPaths.Count -eq 0) {
         if ($script:NicRegistryAccessDenied) {
             $message = "NIC registry tweaks skipped because registry access was denied earlier. Run PowerShell as Administrator for full coverage."
