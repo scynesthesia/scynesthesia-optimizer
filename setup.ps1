@@ -1,7 +1,7 @@
 # Scynesthesia Windows Optimizer - Remote Installer
 # This script downloads the full repository to handle modular dependencies.
 
-# Enforce TLS 1.2 without removing existing flags / Forzar TLS 1.2 sin quitar opciones existentes
+# Enforce TLS 1.2 without removing existing flags
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
 $repoUrls = @(
@@ -80,14 +80,14 @@ function Invoke-RepositoryDownload {
     while (-not $downloaded -and $attempt -lt $MaxAttempts) {
         $attempt++
         foreach ($uri in $Uris) {
-            Write-Host "[*] Attempt $attempt/$MaxAttempts from $uri ... / Intento $attempt/$MaxAttempts desde $uri ..." -ForegroundColor Cyan
+            Write-Host "[*] Attempt $attempt/$MaxAttempts from $uri ..." -ForegroundColor Cyan
             try {
                 Invoke-DownloadHelper -Uri $uri -Destination $Destination -UserAgent $UserAgent
                 $downloaded = $true
                 break
             } catch {
                 $errorMsg = $_.Exception.Message
-                Write-Warning "[!] Download from $uri failed: $errorMsg / Descarga desde $uri falló: $errorMsg"
+                Write-Warning "[!] Download from $uri failed: $errorMsg"
             }
         }
 
@@ -95,13 +95,13 @@ function Invoke-RepositoryDownload {
             $backoff = [Math]::Pow(2, $attempt)
             $jitter = $rand.Next(0, 1000) / 1000
             $sleepSeconds = [Math]::Min(30, $backoff + $jitter)
-            Write-Host "[*] Retrying in $([Math]::Round($sleepSeconds, 2)) seconds... ($($MaxAttempts - $attempt) left) / Reintentando en $([Math]::Round($sleepSeconds, 2)) segundos... (quedan $($MaxAttempts - $attempt))" -ForegroundColor DarkGray
+            Write-Host "[*] Retrying in $([Math]::Round($sleepSeconds, 2)) seconds... ($($MaxAttempts - $attempt) left)" -ForegroundColor DarkGray
             Start-Sleep -Seconds $sleepSeconds
         }
     }
 
     if (-not $downloaded) {
-        throw "Failed to download repository after $MaxAttempts attempts. / No se pudo descargar el repositorio tras $MaxAttempts intentos."
+        throw "Failed to download repository after $MaxAttempts attempts."
     }
 }
 
@@ -113,10 +113,10 @@ if (Test-Path $tempDir) {
         if ($fullTemp.StartsWith($fullEnvTemp, [System.StringComparison]::OrdinalIgnoreCase)) {
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction Stop
         } else {
-            Write-Warning "[!] Skipping cleanup because path validation failed: $tempDir / Omitiendo limpieza porque falló la validación de ruta: $tempDir"
+            Write-Warning "[!] Skipping cleanup because path validation failed: $tempDir"
         }
     } catch {
-        Write-Warning "[!] Could not clean previous download at $tempDir. Continuing with existing files may cause issues. / No se pudo limpiar la descarga previa en $tempDir. Continuar con archivos existentes puede causar problemas."
+        Write-Warning "[!] Could not clean previous download at $tempDir. Continuing with existing files may cause issues."
     }
 }
 
@@ -125,25 +125,25 @@ if (-not (Test-Path $tempDir)) {
     try {
         New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
     } catch {
-        Write-Error "[X] Cannot create temporary directory at $tempDir. / No se puede crear el directorio temporal en $tempDir."
+        Write-Error "[X] Cannot create temporary directory at $tempDir."
         exit 1
     }
 }
 
-Write-Host "[*] Downloading Scynesthesia Windows Optimizer components... / Descargando componentes de Scynesthesia Windows Optimizer..." -ForegroundColor Cyan
+Write-Host "[*] Downloading Scynesthesia Windows Optimizer components..." -ForegroundColor Cyan
 try {
     Invoke-RepositoryDownload -Uris $repoUrls -Destination $zipFile -UserAgent $userAgent -MaxAttempts $maxAttempts
 } catch {
-    Write-Error "[X] Download failed: $($_.Exception.Message) / Descarga falló: $($_.Exception.Message)"
-    Read-Host "Press Enter to exit / Presiona Enter para salir"
+    Write-Error "[X] Download failed: $($_.Exception.Message)"
+    Read-Host "Press Enter to exit"
     exit 1
 }
 
-Write-Host "[*] Extracting files... / Extrayendo archivos..." -ForegroundColor Cyan
+Write-Host "[*] Extracting files..." -ForegroundColor Cyan
 try {
     Expand-Archive -Path $zipFile -DestinationPath $tempDir -Force -ErrorAction Stop
 } catch {
-    Write-Error "[X] Failed to extract files. Ensure no other instances are running. / No se pudieron extraer los archivos. Asegúrese de que no haya otras instancias en ejecución."
+    Write-Error "[X] Failed to extract files. Ensure no other instances are running."
     exit 1
 }
 
@@ -151,7 +151,7 @@ try {
 $mainScript = Get-ChildItem -Path $tempDir -Filter 'scynesthesiaoptimizer.ps1' -Recurse -File | Select-Object -First 1
 
 if (-not $mainScript) {
-    Write-Error "[X] Could not find the main orchestrator (scynesthesiaoptimizer.ps1). / No se pudo encontrar el orquestador principal (scynesthesiaoptimizer.ps1)."
+    Write-Error "[X] Could not find the main orchestrator (scynesthesiaoptimizer.ps1)."
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     if ($logger) { Write-Log "[Setup] scynesthesiaoptimizer.ps1 not found after extraction in $tempDir" }
     exit 1
@@ -160,6 +160,6 @@ if (-not $mainScript) {
 $scriptRoot = $mainScript.Directory.FullName
 $launchPath = Join-Path $scriptRoot 'scynesthesiaoptimizer.ps1'
 
-Write-Host "[+] Launching Optimizer... / Iniciando Optimizer..." -ForegroundColor Green
+Write-Host "[+] Launching Optimizer..." -ForegroundColor Green
 Set-Location $scriptRoot
 & $launchPath
