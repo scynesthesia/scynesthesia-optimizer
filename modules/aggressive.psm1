@@ -1,5 +1,7 @@
 # Depends on: ui.psm1 (loaded by main script)
-Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
+if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
+}
 
 # Description: Retrieves a list of applications to remove based on the provided config key.
 # Parameters: Key - The JSON property name to extract from the app removal configuration.

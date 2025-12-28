@@ -16,47 +16,34 @@ $Global:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Par
 # ---------- 2. MODULE IMPORTS (Moved up to ensure dependencies load early.) ----------
 try {
     $modulesRoot = Join-Path $Global:ScriptRoot 'modules'
-    $coreModulesRoot = Join-Path $modulesRoot 'core'
-    if (Test-Path $coreModulesRoot) {
-        $contextModule = Join-Path $coreModulesRoot 'context.psm1'
-        if (Test-Path $contextModule) {
-            Import-Module $contextModule -Force -ErrorAction Stop
-            Write-Host "[OK] Core module loaded: context.psm1" -ForegroundColor Green
-        }
-        $coreModuleFiles = Get-ChildItem -Path $coreModulesRoot -Filter '*.psm1' -File -ErrorAction Stop
-        foreach ($coreModule in $coreModuleFiles) {
-            if ($coreModule.Name -eq 'context.psm1') { continue }
-            Import-Module $coreModule.FullName -Force -ErrorAction Stop
-            Write-Host "[OK] Core module loaded: $($coreModule.Name)" -ForegroundColor Green
-        }
+    $moduleMapPath = Join-Path $modulesRoot 'modules.map.psd1'
+
+    if (-not (Test-Path $moduleMapPath)) {
+        throw "Module map not found: $moduleMapPath"
     }
-    $uiModule = Join-Path $modulesRoot 'ui.psm1'
-    Import-Module $uiModule -Force -ErrorAction Stop
-    Write-Host "[OK] Module loaded: ui.psm1" -ForegroundColor Green
 
-    $servicesModule = Join-Path $modulesRoot 'services.psm1'
-    Import-Module $servicesModule -Force -ErrorAction Stop
-    Write-Host "[OK] Module loaded: services.psm1" -ForegroundColor Green
+    $moduleMap = Import-PowerShellDataFile -Path $moduleMapPath -ErrorAction Stop
+    $orderedModules = @()
 
-    $softwareModule = Join-Path $modulesRoot 'software.psm1'
-    Import-Module $softwareModule -Force -ErrorAction Stop
-    Write-Host "[OK] Module loaded: software.psm1" -ForegroundColor Green
+    if ($moduleMap.Core) { $orderedModules += $moduleMap.Core }
+    if ($moduleMap.Features) { $orderedModules += $moduleMap.Features }
 
-    $tweaksModule = Join-Path $modulesRoot 'tweaks.psm1'
-    Import-Module $tweaksModule -Force -ErrorAction Stop
-    Write-Host "[OK] Module loaded: tweaks.psm1" -ForegroundColor Green
+    foreach ($modulePath in $orderedModules) {
+        if (-not $modulePath) { continue }
 
-    $moduleFiles = Get-ChildItem -Path $modulesRoot -Filter '*.psm1' -File -ErrorAction Stop
-
-    foreach ($module in $moduleFiles) {
-        if ($module.Name -in @('ui.psm1','services.psm1','software.psm1','tweaks.psm1')) { continue }
-        try {
-            Import-Module $module.FullName -Force -ErrorAction Stop
-            Write-Host "[OK] Module loaded: $($module.Name)" -ForegroundColor Green
-        } catch {
-            Write-Warning "Could not load module: $($module.Name). $($_.Exception.Message)"
-            throw
+        $resolvedPath = if ([System.IO.Path]::IsPathRooted($modulePath)) {
+            $modulePath
+        } else {
+            Join-Path $Global:ScriptRoot $modulePath
         }
+
+        if (-not (Test-Path $resolvedPath)) {
+            throw "Module file not found: $resolvedPath"
+        }
+
+        $moduleFileName = [System.IO.Path]::GetFileName($resolvedPath)
+        Import-Module $resolvedPath -Force -ErrorAction Stop
+        Write-Host "[OK] Module loaded: $moduleFileName" -ForegroundColor Green
     }
 
     Write-Host "Modules loaded successfully." -ForegroundColor Green

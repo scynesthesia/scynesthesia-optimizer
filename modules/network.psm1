@@ -1,6 +1,10 @@
 # Depends on: ui.psm1 (loaded by main script)
-Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
-Import-Module (Join-Path $PSScriptRoot 'core/network_discovery.psm1') -Force -Scope Local
+if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
+}
+if (-not (Get-Module -Name 'network_discovery' -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $PSScriptRoot 'core/network_discovery.psm1') -Force -Scope Local
+}
 # Description: Retrieves active physical network adapters excluding virtual or VPN interfaces.
 # Parameters: None.
 # Returns: Collection of adapter objects; returns empty array on failure.
