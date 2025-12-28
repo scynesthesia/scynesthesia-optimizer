@@ -134,10 +134,14 @@ function Invoke-NicPowerRegistryTweaks {
             } catch { }
 
             if ($currentPnP -ne $PnPCapabilitiesValue) {
-                Set-RegistryValueSafe -Path $item.Path -Name 'PnPCapabilities' -Value $PnPCapabilitiesValue -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $context
-                Write-Host "    [+] PnPCapabilities set to $PnPCapabilitiesValue (power management disabled)" -ForegroundColor Green
-                if ($logger) { Write-Log "$LoggerPrefix $adapterName PnPCapabilities set to $PnPCapabilitiesValue." }
-                $adapterChanged = $true
+                $pnPResult = Set-RegistryValueSafe -Path $item.Path -Name 'PnPCapabilities' -Value $PnPCapabilitiesValue -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $context -Critical -ReturnResult -OperationLabel "$LoggerPrefix $adapterName PnPCapabilities"
+                if ($pnPResult -and $pnPResult.Success) {
+                    Write-Host "    [+] PnPCapabilities set to $PnPCapabilitiesValue (power management disabled)" -ForegroundColor Green
+                    if ($logger) { Write-Log "$LoggerPrefix $adapterName PnPCapabilities set to $PnPCapabilitiesValue." }
+                    $adapterChanged = $true
+                } else {
+                    Write-Host "    [!] Failed to set PnPCapabilities for $adapterName (permission issue?)." -ForegroundColor Yellow
+                }
             }
         } catch {
             Invoke-ErrorHandler -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
@@ -151,10 +155,14 @@ function Invoke-NicPowerRegistryTweaks {
                 } catch { }
 
                 if ($currentValue -ne $entry.Value) {
-                    Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $context
-                    Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
-                    if ($logger) { Write-Log "$LoggerPrefix $adapterName $($entry.Key) set to $($entry.Value)." }
-                    $adapterChanged = $true
+                    $valueResult = Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $context -Critical -ReturnResult -OperationLabel "$LoggerPrefix $adapterName $($entry.Key)"
+                    if ($valueResult -and $valueResult.Success) {
+                        Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
+                        if ($logger) { Write-Log "$LoggerPrefix $adapterName $($entry.Key) set to $($entry.Value)." }
+                        $adapterChanged = $true
+                    } else {
+                        Write-Host "    [!] Failed to set $($entry.Key) for $adapterName (permission issue?)." -ForegroundColor Yellow
+                    }
                 }
             } catch {
                 Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
