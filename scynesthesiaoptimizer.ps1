@@ -466,6 +466,7 @@ do {
         '2' { Run-PCSlowPreset }
         '3' {
             Write-Section "Gaming Mode / FPS Boost"
+            New-RestorePointSafe
             Invoke-GamingOptimizations -Context $script:Context
             $msiResult = Invoke-MsiModeOnce -Context $script:Context -Targets @('GPU','STORAGE') -PromptMessage "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.)" -InvokeOnceId 'MSI:GPU+STORAGE' -DefaultResponse 'y'
             if ($script:Logger -and $msiResult -and $msiResult.Touched -gt 0) {
