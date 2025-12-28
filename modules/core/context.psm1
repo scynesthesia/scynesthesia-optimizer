@@ -1,5 +1,7 @@
 # Description: Provides a per-run context object and helpers to track execution state.
 
+$script:NeedsRebootFallback = $false
+
 # Creates a new run context with defaults suitable for a single execution.
 # Returns: PSCustomObject with ScriptRoot, NeedsReboot, RollbackActions, LogPath.
 function New-RunContext {
@@ -38,6 +40,42 @@ function Get-RunContext {
     return New-RunContext
 }
 
+# Marks that a reboot is required. Mirrors to context when provided, otherwise uses module-scoped fallback.
+# Parameters: Context - Optional run context to update.
+function Set-RebootRequired {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Context
+    )
+
+    if ($Context) {
+        $Context.NeedsReboot = $true
+        return $Context
+    }
+
+    $script:NeedsRebootFallback = $true
+    return $true
+}
+
+# Retrieves the reboot-required flag from context or the module-scoped fallback when no context is supplied.
+# Parameters: Context - Optional run context to inspect.
+function Get-RebootRequired {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Context
+    )
+
+    if ($Context) {
+        if (-not $Context.NeedsReboot -and $script:NeedsRebootFallback) {
+            $Context.NeedsReboot = $true
+        }
+
+        return $Context.NeedsReboot
+    }
+
+    return [bool]$script:NeedsRebootFallback
+}
+
 # Marks the supplied context as requiring a reboot.
 # Parameters: Context - The run context to update.
 function Set-NeedsReboot {
@@ -47,9 +85,7 @@ function Set-NeedsReboot {
         [pscustomobject]$Context
     )
 
-    $Context.NeedsReboot = $true
-    try { Set-Variable -Name NeedsReboot -Scope Global -Value $true -Force } catch {}
-    return $Context
+    return Set-RebootRequired -Context $Context
 }
 
 # Retrieves the reboot flag from the supplied context.
@@ -61,17 +97,10 @@ function Get-NeedsReboot {
         [pscustomobject]$Context
     )
 
-    $globalReboot = $false
-    try { $globalReboot = [bool](Get-Variable -Name NeedsReboot -Scope Global -ValueOnly -ErrorAction SilentlyContinue) } catch {}
-
-    if ($globalReboot -and -not $Context.NeedsReboot) {
-        $Context.NeedsReboot = $true
-    }
-
-    return $Context.NeedsReboot
+    return Get-RebootRequired -Context $Context
 }
 
-# Resets the reboot flag on the supplied context and mirrors it to the legacy global flag.
+# Resets the reboot flag on the supplied context and clears the module fallback mirror.
 # Parameters: Context - The run context to update.
 function Reset-NeedsReboot {
     [CmdletBinding()]
@@ -81,8 +110,8 @@ function Reset-NeedsReboot {
     )
 
     $Context.NeedsReboot = $false
-    try { Set-Variable -Name NeedsReboot -Scope Global -Value $false -Force } catch {}
+    $script:NeedsRebootFallback = $false
     return $Context
 }
 
-Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot
+Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired

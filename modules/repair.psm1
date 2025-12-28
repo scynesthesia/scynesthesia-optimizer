@@ -16,7 +16,7 @@ function Invoke-NetworkSoftReset {
         if (Get-Confirmation "Also run 'netsh winsock reset'? (Requires reboot)" 'n') {
             netsh winsock reset | Out-Null
             Write-Host "[OK] Winsock reset. Reboot to apply changes." -ForegroundColor Yellow
-            $Global:NeedsReboot = $true
+            Set-RebootRequired | Out-Null
         }
     }
 }

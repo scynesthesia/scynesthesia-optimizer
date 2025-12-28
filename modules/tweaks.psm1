@@ -12,7 +12,7 @@ function Set-ClassicContextMenus {
 
         Set-RegistryValueSafe -Path $path -Name '(default)' -Value '' -Type ([Microsoft.Win32.RegistryValueKind]::String)
         Write-Host "[+] Classic context menu enabled." -ForegroundColor Green
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
     } catch {
         Invoke-ErrorHandler -Context "Enabling classic context menus" -ErrorRecord $_
     }
@@ -52,7 +52,7 @@ function Add-TakeOwnershipMenu {
             Write-Host "[+] Take Ownership menu added for files and folders." -ForegroundColor Green
         }
     }
-    $Global:NeedsReboot = $true
+    Set-RebootRequired | Out-Null
 }
 
 # Description: Enables advanced Explorer visibility settings for file extensions and hidden items.
@@ -64,7 +64,7 @@ function Set-ExplorerProSettings {
         Set-RegistryValueSafe -Path $path -Name 'HideFileExt' -Value 0
         Set-RegistryValueSafe -Path $path -Name 'Hidden' -Value 1
         Write-Host "[+] Explorer visibility tweaks applied." -ForegroundColor Green
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
     } catch {
         Invoke-ErrorHandler -Context "Configuring Explorer visibility preferences" -ErrorRecord $_
     }

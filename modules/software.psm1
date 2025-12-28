@@ -91,7 +91,7 @@ function Set-WindowsUpdateNotifyOnly {
     Write-Host "[i] Setting Windows Update to Notify for download and auto install." -ForegroundColor Gray
     Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
 
-    $Global:NeedsReboot = $true
+    Set-RebootRequired | Out-Null
     Write-Host "[+] Windows Update set to Notify Only. A reboot is recommended." -ForegroundColor Yellow
 }
 

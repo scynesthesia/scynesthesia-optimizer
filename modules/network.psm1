@@ -54,7 +54,7 @@ function Invoke-NetworkFullReset {
     try {
         netsh winsock reset | Out-Null
         Write-Host "      Reset complete. A reboot is recommended." -ForegroundColor Yellow
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
         if ($logger) {
             Write-Log "[Network] Executed 'netsh winsock reset'."
         }
@@ -119,7 +119,7 @@ function Set-IPvPreferenceIPv4First {
     Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6)" -ForegroundColor Gray
     try {
         Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" "DisabledComponents" 0x20
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
         Write-Host "      [>] Preference recorded. Reboot recommended." -ForegroundColor Yellow
         if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
             Write-Log "[Network] IPv4 preference set (DisabledComponents=0x20)."
@@ -330,7 +330,7 @@ function Set-NagleState {
     }
 
     if ($changesMade) {
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
     }
 }
 
