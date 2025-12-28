@@ -19,8 +19,14 @@ try {
     $modulesRoot = Join-Path $Global:ScriptRoot 'modules'
     $coreModulesRoot = Join-Path $modulesRoot 'core'
     if (Test-Path $coreModulesRoot) {
+        $contextModule = Join-Path $coreModulesRoot 'context.psm1'
+        if (Test-Path $contextModule) {
+            Import-Module $contextModule -Force -ErrorAction Stop
+            Write-Host "[OK] Core module loaded: context.psm1" -ForegroundColor Green
+        }
         $coreModuleFiles = Get-ChildItem -Path $coreModulesRoot -Filter '*.psm1' -File -ErrorAction Stop
         foreach ($coreModule in $coreModuleFiles) {
+            if ($coreModule.Name -eq 'context.psm1') { continue }
             Import-Module $coreModule.FullName -Force -ErrorAction Stop
             Write-Host "[OK] Core module loaded: $($coreModule.Name)" -ForegroundColor Green
         }
