@@ -3,6 +3,7 @@
         'modules/core/config.psm1'
         'modules/core/context.psm1'
         'modules/core/network_discovery.psm1'
+        'modules/core/network_shared.psm1'
     )
     Features = @(
         'modules/ui.psm1'

@@ -26,15 +26,7 @@ function Get-PhysicalNetAdapters {
 # Parameters: None.
 # Returns: Collection of objects containing adapter references and registry paths.
 function Get-NicRegistryPaths {
-    $map = network_discovery\Get-NicRegistryMap -AdapterResolver { Get-PhysicalNetAdapters }
-    return $map | ForEach-Object {
-        [pscustomobject]@{
-            Adapter = $_.AdapterObject
-            Path    = $_.RegistryPath
-            Guid    = $_.InterfaceGuid
-            IfIndex = $_.IfIndex
-        }
-    }
+    return Get-SharedNicRegistryPaths -AdapterResolver { Get-PhysicalNetAdapters }
 }
 
 # Description: Flushes the DNS cache to clear resolver entries.
@@ -313,70 +305,11 @@ function Set-NagleState {
         [pscustomobject]$Context
     )
 
-    $nagleContext = $Context
-
-    $nagleAlreadyApplied = $false
-    if ($nagleContext -and $nagleContext.PSObject.Properties.Name -contains 'AppliedTweaks') {
-        $nagleAlreadyApplied = $nagleContext.AppliedTweaks.Keys | Where-Object { $_ -like 'Nagle*' } | Select-Object -First 1
-    }
-    if ($nagleAlreadyApplied) {
-        Write-Host "  [ ] Hardcore Nagle already applied" -ForegroundColor Gray
-        return
-    }
-
-    $nagleAllowed = Invoke-Once -Context $nagleContext -Id 'Nagle' -Action { $true }
-    if (-not $nagleAllowed) {
-        Write-Host "  [ ] Nagle adjustments already applied; skipping." -ForegroundColor Gray
-        return
-    }
-
+    $context = Get-RunContext -Context $Context
     $adapters = Get-PhysicalNetAdapters
-    if ($adapters.Count -eq 0) {
-        Write-Host "  [!] No eligible adapters found for Nagle adjustments." -ForegroundColor Yellow
-        return
-    }
-
-    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-    $changesMade = $false
-
-    foreach ($adapter in $adapters) {
-        $guid = $adapter.InterfaceGuid
-        if (-not $guid) { continue }
-
-        $path = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{$guid}"
-        try {
-            $existing = @{}
-            foreach ($name in 'TcpAckFrequency','TCPNoDelay','TcpDelAckTicks') {
-                try {
-                    $existing[$name] = (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name
-                } catch { $existing[$name] = $null }
-            }
-
-            New-Item -Path $path -Force -ErrorAction Stop | Out-Null
-
-            $newValues = @{
-                TcpAckFrequency = 1
-                TCPNoDelay      = 1
-                TcpDelAckTicks  = 0
-            }
-
-            foreach ($entry in $newValues.GetEnumerator()) {
-                New-ItemProperty -Path $path -Name $entry.Key -Value $entry.Value -PropertyType DWord -Force | Out-Null
-                if ($logger) {
-                    Write-Log "[Nagle] Interface '$($adapter.Name)' $($entry.Key): $($existing[$entry.Key]) -> $($entry.Value)"
-                }
-                if ($existing[$entry.Key] -ne $entry.Value) {
-                    $changesMade = $true
-                }
-            }
-            Write-Host "  [+] Nagle-related parameters optimized for $($adapter.Name)." -ForegroundColor Green
-        } catch {
-            Invoke-ErrorHandler -Context "Setting Nagle parameters on $($adapter.Name)" -ErrorRecord $_
-        }
-    }
-
-    if ($changesMade) {
-        Set-RebootRequired -Context $nagleContext | Out-Null
+    $result = Invoke-NagleRegistryUpdate -Context $context -Adapters $adapters -LoggerPrefix '[Nagle]' -InvokeOnceId 'Nagle:Tcp'
+    if ($result -and $result.Changed) {
+        Set-RebootRequired -Context $context | Out-Null
     }
 }
 
@@ -433,6 +366,10 @@ function Set-EnergyEfficientEthernet {
 # Parameters: None.
 # Returns: None.
 function Set-NicPowerManagementGaming {
+    param(
+        [pscustomobject]$Context
+    )
+
     Write-Host "  [>] Applying NIC power management overrides" -ForegroundColor Cyan
     $nicPaths = Get-NicRegistryPaths
     if ($nicPaths.Count -eq 0) {
@@ -440,7 +377,6 @@ function Set-NicPowerManagementGaming {
         return
     }
 
-    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     $powerFlags = @{
         '*WakeOnMagicPacket'  = '0'
         '*WakeOnPattern'      = '0'
@@ -453,39 +389,7 @@ function Set-NicPowerManagementGaming {
         'EnableGreenEthernet' = '0'
     }
 
-    foreach ($item in $nicPaths) {
-        $adapterName = $item.Adapter.Name
-        Write-Host "  [>] Optimizing $adapterName power profile" -ForegroundColor Cyan
-        try {
-            Set-RegistryValueSafe -Path $item.Path -Name 'PnPCapabilities' -Value 24 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-            Write-Host "    [+] PnPCapabilities set to 24 (power management disabled)" -ForegroundColor Green
-            if ($logger) { Write-Log "[Network] $adapterName PnPCapabilities set to 24 for gaming profile." }
-        } catch {
-            Invoke-ErrorHandler -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
-        }
-
-        foreach ($entry in $powerFlags.GetEnumerator()) {
-            try {
-                Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String)
-                Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
-                if ($logger) { Write-Log "[Network] $adapterName $($entry.Key) set to $($entry.Value) for gaming power." }
-            } catch {
-                Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
-            }
-        }
-
-        try {
-            $interfacePath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$($item.Guid)"
-            $cleanupKeys = @($powerFlags.Keys) + @('PnPCapabilities')
-            foreach ($noiseKey in $cleanupKeys | Select-Object -Unique) {
-                try {
-                    Remove-ItemProperty -Path $interfacePath -Name $noiseKey -ErrorAction SilentlyContinue
-                } catch { }
-            }
-        } catch {
-            Invoke-ErrorHandler -Context "Cleaning interface overrides for $adapterName" -ErrorRecord $_
-        }
-    }
+    Invoke-NicPowerRegistryTweaks -Context (Get-RunContext -Context $Context) -NicPaths $nicPaths -Values $powerFlags -LoggerPrefix '[Network]' -InvokeOnceId 'NicPower:Shared' -CleanupInterfaceNoise | Out-Null
 }
 
 # Description: Enables Receive Side Scaling (RSS) on supported adapters without a restart.
@@ -617,7 +521,7 @@ function Invoke-NetworkTweaksGaming {
 
     Write-Section "Network tweaks (Gaming profile)"
     Write-Host "  [i] Applying hardware power optimizations..." -ForegroundColor Gray
-    Set-NicPowerManagementGaming
+    Set-NicPowerManagementGaming -Context $Context
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     Set-NetworkThrottling
     Set-NagleState -Context $Context
@@ -630,15 +534,11 @@ function Invoke-NetworkTweaksGaming {
         Write-Host "  [ ] Interrupt moderation left unchanged." -ForegroundColor Gray
     }
 
-    if (Get-Confirmation "Enable MSI Mode for your NIC? Recommended on modern hardware. If you already applied MSI Mode elsewhere, you can skip this." 'n') {
-        $msiResult = Enable-MsiModeSafe -Target 'NIC' -Context $Context
-        if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {
-            Write-Log "[Network] MSI Mode enabled for NIC via gaming profile."
-        } elseif ($logger) {
-            Write-Log "[Network] MSI Mode for NIC already enabled or not applicable." -Level 'Info'
-        }
-    } else {
-        Write-Host "  [ ] MSI Mode for NIC skipped." -ForegroundColor Gray
+    $msiResult = Invoke-MsiModeOnce -Context $Context -Targets @('NIC') -PromptMessage "Enable MSI Mode for your NIC? Recommended on modern hardware. If you already applied MSI Mode elsewhere, you can skip this." -InvokeOnceId 'MSI:NIC' -DefaultResponse 'n'
+    if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {
+        Write-Log "[Network] MSI Mode enabled for NIC via gaming profile."
+    } elseif ($logger -and $msiResult) {
+        Write-Log "[Network] MSI Mode for NIC already enabled or not applicable." -Level 'Info'
     }
 
     if (Get-Confirmation "Apply advanced TCP tweaks (Chimney Offload / DCA)? These are experimental and may be unstable on older hardware or uncommon drivers." 'n') {
