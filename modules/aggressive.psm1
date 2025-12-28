@@ -25,9 +25,11 @@ function Invoke-AggressiveTweaks {
         $HardwareProfile,
         [Parameter(Mandatory)]
         [ref]$FailedPackages,
-        $OemServices
+        $OemServices,
+        [pscustomobject]$Context
     )
 
+    $context = Get-RunContext -Context $Context
     Write-Section "Additional tweaks for slow PCs (more aggressive)"
 
     $hibernationWarning = "WARNING: Disabling hibernation on laptops will disable Fast Startup and may prevent the system from saving state if the battery dies."
@@ -54,7 +56,10 @@ function Invoke-AggressiveTweaks {
     }
 
     Write-Host "  [+] Blocking background apps"
-    Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsRunInBackground" 2
+    $backgroundAppsResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsRunInBackground" 2 -Context $context -Critical -ReturnResult -OperationLabel 'Block background apps'
+    if (-not ($backgroundAppsResult -and $backgroundAppsResult.Success)) {
+        Write-Host "  [!] Unable to block background apps (permission issue?)." -ForegroundColor Yellow
+    }
 
     Write-Host "  [+] Additional debloat for slow PCs"
     $extra = Get-AppRemovalListFromConfig -Key "AggressiveTweaksRemove"

@@ -24,6 +24,7 @@ function New-RunContext {
         RollbackActions = @()
         LogPath         = $null
         AppliedTweaks   = @{}
+        RegistryPermissionFailures = @()
     }
 }
 

@@ -141,9 +141,11 @@ function Invoke-PerformanceBaseline {
 
     $prefetchPath = "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters"
     $prefetchValue = if ($HardwareProfile.HasSSD -and -not $HardwareProfile.HasHDD) { 1 } else { 3 }
-    Set-RegistryValueSafe $prefetchPath "EnablePrefetcher" $prefetchValue -Context $Context
-    Set-RegistryValueSafe $prefetchPath "EnableSuperfetch" $prefetchValue -Context $Context
-    Set-RebootRequired -Context $Context | Out-Null
+    $prefetcherResult = Set-RegistryValueSafe $prefetchPath "EnablePrefetcher" $prefetchValue -Context $Context -Critical -ReturnResult -OperationLabel 'Configure prefetcher policy'
+    $superfetchResult = Set-RegistryValueSafe $prefetchPath "EnableSuperfetch" $prefetchValue -Context $Context -Critical -ReturnResult -OperationLabel 'Configure superfetch policy'
+    if (($prefetcherResult -and $prefetcherResult.Success) -or ($superfetchResult -and $superfetchResult.Success)) {
+        Set-RebootRequired -Context $Context | Out-Null
+    }
 
     if ($HardwareProfile.MemoryCategory -eq 'Low') {
         Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" "VisualFXSetting" 2 -Context $Context
@@ -371,9 +373,13 @@ function Invoke-MpoVisualFixDisable {
     $path = "HKLM:\SOFTWARE\Microsoft\Windows\Dwm"
     $name = "OverlayTestMode"
 
-    Set-RegistryValueSafe -Path $path -Name $name -Value 5 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
-    Set-RebootRequired -Context $Context | Out-Null
-    Write-Host "  [+] MPO disabled for stability." -ForegroundColor Gray
+    $result = Set-RegistryValueSafe -Path $path -Name $name -Value 5 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable MPO overlay test mode'
+    if ($result -and $result.Success) {
+        Set-RebootRequired -Context $Context | Out-Null
+        Write-Host "  [+] MPO disabled for stability." -ForegroundColor Gray
+    } else {
+        Write-Host "  [!] Failed to disable MPO (permissions required?)." -ForegroundColor Yellow
+    }
 }
 
 # Description: Enables Hardware-accelerated GPU scheduling (HAGS) for supported GPUs.
@@ -389,9 +395,13 @@ function Invoke-HagsPerformanceEnablement {
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
     $name = "HwSchMode"
 
-    Set-RegistryValueSafe -Path $path -Name $name -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
-    Set-RebootRequired -Context $Context | Out-Null
-    Write-Host "  [+] HAGS enabled for performance." -ForegroundColor Gray
+    $result = Set-RegistryValueSafe -Path $path -Name $name -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Enable HAGS'
+    if ($result -and $result.Success) {
+        Set-RebootRequired -Context $Context | Out-Null
+        Write-Host "  [+] HAGS enabled for performance." -ForegroundColor Gray
+    } else {
+        Write-Host "  [!] Failed to enable HAGS (permission denied?)." -ForegroundColor Yellow
+    }
 }
 
 # Description: Disables global power throttling to maintain consistent CPU performance.
@@ -407,9 +417,13 @@ function Invoke-PowerThrottlingDisablement {
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"
     $name = "PowerThrottlingOff"
 
-    Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
-    Set-RebootRequired -Context $Context | Out-Null
-    Write-Host "  [+] Global power throttling disabled." -ForegroundColor Gray
+    $result = Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable power throttling'
+    if ($result -and $result.Success) {
+        Set-RebootRequired -Context $Context | Out-Null
+        Write-Host "  [+] Global power throttling disabled." -ForegroundColor Gray
+    } else {
+        Write-Host "  [!] Failed to disable power throttling (permission denied?)." -ForegroundColor Yellow
+    }
 }
 
 # Description: Keeps the Windows kernel and drivers resident in physical memory.
@@ -425,9 +439,13 @@ function Invoke-PagingExecutivePerformance {
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
     $name = "DisablePagingExecutive"
 
-    Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
-    Set-RebootRequired -Context $Context | Out-Null
-    Write-Host "  [+] Kernel paging disabled (kept in RAM)." -ForegroundColor Gray
+    $result = Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable kernel paging'
+    if ($result -and $result.Success) {
+        Set-RebootRequired -Context $Context | Out-Null
+        Write-Host "  [+] Kernel paging disabled (kept in RAM)." -ForegroundColor Gray
+    } else {
+        Write-Host "  [!] Failed to disable kernel paging (permission denied?)." -ForegroundColor Yellow
+    }
 }
 
 # Description: Disables Windows memory compression when sufficient RAM is available.

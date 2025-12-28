@@ -14,14 +14,18 @@ function Optimize-GamingScheduler {
     if (Get-Confirmation "Prioritize GPU/CPU for foreground games?" 'y') {
         $gamesPath = "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
 
-        Set-RegistryValueSafe $gamesPath "GPU Priority" 8 -Context $Context
-        Set-RegistryValueSafe $gamesPath "Priority" 6 -Context $Context
-        Set-RegistryValueSafe $gamesPath "Scheduling Category" "High" ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context
-        Set-RegistryValueSafe $gamesPath "SFIO Priority" "High" ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context
+        $gpuPriority = Set-RegistryValueSafe $gamesPath "GPU Priority" 8 -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler GPU priority'
+        $priority = Set-RegistryValueSafe $gamesPath "Priority" 6 -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler priority'
+        $schedCategory = Set-RegistryValueSafe $gamesPath "Scheduling Category" "High" ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler category'
+        $sfioPriority = Set-RegistryValueSafe $gamesPath "SFIO Priority" "High" ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler SFIO priority'
 
-        Write-Host "  [+] Scheduler optimized for games." -ForegroundColor Green
-        if ($logger) {
-            Write-Log "[Gaming] Foreground game priorities set (GPU Priority=8, Priority=6, Scheduling/SFIO=High)."
+        if (($gpuPriority -and $gpuPriority.Success) -and ($priority -and $priority.Success) -and ($schedCategory -and $schedCategory.Success) -and ($sfioPriority -and $sfioPriority.Success)) {
+            Write-Host "  [+] Scheduler optimized for games." -ForegroundColor Green
+            if ($logger) {
+                Write-Log "[Gaming] Foreground game priorities set (GPU Priority=8, Priority=6, Scheduling/SFIO=High)."
+            }
+        } else {
+            Write-Host "  [!] Scheduler priorities could not be fully applied (permission issue?)." -ForegroundColor Yellow
         }
 
         Set-RebootRequired -Context $Context | Out-Null
@@ -233,13 +237,17 @@ function Set-UsbPowerManagementHardcore {
 
     foreach ($hub in $hubs) {
         try {
-            Set-RegistryValueSafe -Path $hub.Path -Name 'PnPCapabilities' -Value 24 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
-            Write-Host "  [+] USB hub '$($hub.Name)' power disable applied." -ForegroundColor Green
-            if ($logger) {
-                Write-Log "[Gaming] USB hub '$($hub.Name)' PnPCapabilities set to 24."
-            }
+            $result = Set-RegistryValueSafe -Path $hub.Path -Name 'PnPCapabilities' -Value 24 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "USB hub power override: $($hub.Name)"
+            if ($result -and $result.Success) {
+                Write-Host "  [+] USB hub '$($hub.Name)' power disable applied." -ForegroundColor Green
+                if ($logger) {
+                    Write-Log "[Gaming] USB hub '$($hub.Name)' PnPCapabilities set to 24."
+                }
 
-            Set-RebootRequired -Context $Context | Out-Null
+                Set-RebootRequired -Context $Context | Out-Null
+            } else {
+                Write-Host "  [!] Failed to adjust USB hub '$($hub.Name)' power flags." -ForegroundColor Yellow
+            }
         } catch {
             Invoke-ErrorHandler -Context "Setting USB power flags on $($hub.Name)" -ErrorRecord $_
         }
@@ -267,9 +275,13 @@ function Optimize-HidLatency {
 
     foreach ($entry in $hidPaths) {
         try {
-            Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value 100 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
-            Write-Host "  [+] $($entry.Name) set to 100." -ForegroundColor Green
-            if ($logger) { Write-Log "[Gaming] $($entry.Name) set to 100 for HID latency optimization." }
+            $result = Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value 100 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set $($entry.Name) to 100"
+            if ($result -and $result.Success) {
+                Write-Host "  [+] $($entry.Name) set to 100." -ForegroundColor Green
+                if ($logger) { Write-Log "[Gaming] $($entry.Name) set to 100 for HID latency optimization." }
+            } else {
+                Write-Host "  [!] Failed to set $($entry.Name) (permission issue?)." -ForegroundColor Yellow
+            }
         } catch {
             Invoke-ErrorHandler -Context "Setting $($entry.Name) for HID latency" -ErrorRecord $_
         }
@@ -300,13 +312,17 @@ function Optimize-ProcessorScheduling {
     # 0x28 (40 decimal): Short intervals + Fixed Quantum.
     # Better for consistent frametimes in games; not the classic dynamic foreground "boost."
     if (Get-Confirmation "Apply Fixed Priority Separation (28 Hex) for lower input latency?" 'n') {
-        Set-RegistryValueSafe $priorityPath "Win32PrioritySeparation" 40 -Context $Context
-        Write-Host "  [+] Processor scheduling set to 28 Hex (Fixed/Short)." -ForegroundColor Green
-        if ($logger) {
-            Write-Log "[Gaming] Win32PrioritySeparation set to 0x28 for fixed/short quanta."
-        }
+        $result = Set-RegistryValueSafe $priorityPath "Win32PrioritySeparation" 40 -Context $Context -Critical -ReturnResult -OperationLabel 'Set Win32PrioritySeparation to 0x28'
+        if ($result -and $result.Success) {
+            Write-Host "  [+] Processor scheduling set to 28 Hex (Fixed/Short)." -ForegroundColor Green
+            if ($logger) {
+                Write-Log "[Gaming] Win32PrioritySeparation set to 0x28 for fixed/short quanta."
+            }
 
-        Set-RebootRequired -Context $Context | Out-Null
+            Set-RebootRequired -Context $Context | Out-Null
+        } else {
+            Write-Host "  [!] Processor scheduling tweak could not be applied." -ForegroundColor Yellow
+        }
     } else {
         Write-Host "  [ ] Processor scheduling left unchanged." -ForegroundColor DarkGray
     }
@@ -327,20 +343,28 @@ function Set-FsoGlobalOverride {
     $disableFso = Get-Confirmation "Disable Fullscreen Optimizations for maximum latency reduction?" 'n'
     try {
         if ($disableFso) {
-            Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
-            Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
+            $fseBehavior = Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Set GameDVR_FSEBehaviorMode to 2'
+            $allowGameDvr = Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable GameDVR policy'
 
-            Write-Host "  [+] Fullscreen Optimizations disabled globally." -ForegroundColor Green
-            if ($logger) {
-                Write-Log "[Gaming] Fullscreen Optimizations globally disabled (GameDVR_FSEBehaviorMode=2, AllowGameDVR=0)."
+            if (($fseBehavior -and $fseBehavior.Success) -and ($allowGameDvr -and $allowGameDvr.Success)) {
+                Write-Host "  [+] Fullscreen Optimizations disabled globally." -ForegroundColor Green
+                if ($logger) {
+                    Write-Log "[Gaming] Fullscreen Optimizations globally disabled (GameDVR_FSEBehaviorMode=2, AllowGameDVR=0)."
+                }
+            } else {
+                Write-Host "  [!] Fullscreen Optimization changes could not be fully applied." -ForegroundColor Yellow
             }
         } else {
-            Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
-            Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
+            $fseBehavior = Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Restore GameDVR_FSEBehaviorMode'
+            $allowGameDvr = Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Restore GameDVR policy'
 
-            Write-Host "  [ ] Fullscreen Optimizations left at Windows defaults (restored)." -ForegroundColor DarkGray
-            if ($logger) {
-                Write-Log "[Gaming] Fullscreen Optimizations restored to defaults (GameDVR_FSEBehaviorMode=0, AllowGameDVR=1)."
+            if (($fseBehavior -and $fseBehavior.Success) -and ($allowGameDvr -and $allowGameDvr.Success)) {
+                Write-Host "  [ ] Fullscreen Optimizations left at Windows defaults (restored)." -ForegroundColor DarkGray
+                if ($logger) {
+                    Write-Log "[Gaming] Fullscreen Optimizations restored to defaults (GameDVR_FSEBehaviorMode=0, AllowGameDVR=1)."
+                }
+            } else {
+                Write-Host "  [!] Fullscreen Optimizations could not be restored completely." -ForegroundColor Yellow
             }
         }
 

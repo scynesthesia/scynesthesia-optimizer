@@ -94,7 +94,11 @@ function Set-WindowsUpdateNotifyOnly {
     $value = 2
 
     Write-Host "[i] Setting Windows Update to Notify for download and auto install." -ForegroundColor Gray
-    Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
+    $result = Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set Windows Update to notify only'
+    if (-not ($result -and $result.Success)) {
+        Write-Host "[!] Failed to update Windows Update notification policy (permission issue?)." -ForegroundColor Yellow
+        return
+    }
 
     Set-RebootRequired -Context $Context | Out-Null
     Write-Host "[+] Windows Update set to Notify Only. A reboot is recommended." -ForegroundColor Yellow

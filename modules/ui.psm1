@@ -354,6 +354,39 @@ function Read-MenuChoice {
     }
 }
 
+# Description: Adds a permission failure entry to the run context for later reporting.
+# Parameters: Context - Run context that stores permission failures; Result - Result object produced by Set-RegistryValueSafe; Operation - Friendly label for the attempted operation.
+# Returns: Boolean indicating whether a failure was recorded.
+function Add-RegistryPermissionFailure {
+    param(
+        [pscustomobject]$Context,
+        [pscustomobject]$Result,
+        [string]$Operation
+    )
+
+    if (-not $Context) { return $false }
+    if (-not $Result -or $Result.Success -or $Result.ErrorCategory -ne 'PermissionDenied') { return $false }
+
+    if (-not $Context.PSObject.Properties.Name.Contains('RegistryPermissionFailures')) {
+        $Context | Add-Member -Name RegistryPermissionFailures -MemberType NoteProperty -Value @()
+    }
+
+    $operationLabel = if (-not [string]::IsNullOrWhiteSpace($Operation)) {
+        $Operation
+    } elseif ($Result.PSObject.Properties.Name -contains 'Operation' -and -not [string]::IsNullOrWhiteSpace($Result.Operation)) {
+        $Result.Operation
+    } else {
+        "$($Result.Path) -> $($Result.Name)"
+    }
+
+    $Context.RegistryPermissionFailures += [pscustomobject]@{
+        Operation = $operationLabel
+        Path      = $Result.Path
+        Name      = $Result.Name
+    }
+    return $true
+}
+
 # Description: Safely creates or updates a registry value with validation, logging, rollback capture, and optional result reporting.
 # Parameters: Path - Registry path; Name - Value name; Value - Data to set; Type - Registry value type; Critical - Stop on error when specified; Context - optional run context that can hold RegistryRollbackActions; ReturnResult - emits a result object with Success/WasCreated/ErrorCategory.
 # Returns: Nothing by default; when -ReturnResult is passed, returns a PSCustomObject with Success, WasCreated, ErrorCategory, Path, and Name.
@@ -366,7 +399,8 @@ function Set-RegistryValueSafe {
         [Microsoft.Win32.RegistryValueKind]$Type = [Microsoft.Win32.RegistryValueKind]::DWord,
         [switch]$Critical,
         [object]$Context,
-        [switch]$ReturnResult
+        [switch]$ReturnResult,
+        [string]$OperationLabel
     )
 
     if ([string]::IsNullOrWhiteSpace($Name) -and $Name -ne '(default)') {
@@ -392,6 +426,7 @@ function Set-RegistryValueSafe {
         ErrorCategory = $null
         Path          = $Path
         Name          = $displayName
+        Operation     = if (-not [string]::IsNullOrWhiteSpace($OperationLabel)) { $OperationLabel } else { "$Path -> $displayName" }
     }
     $shouldThrowOnFailure = $Critical -and -not $ReturnResult
 
@@ -474,6 +509,7 @@ function Set-RegistryValueSafe {
         $level = if ($Critical) { 'Error' } else { 'Warning' }
         Write-Log -Message $message -Level $level
         $result.ErrorCategory = 'PermissionDenied'
+        Add-RegistryPermissionFailure -Context $Context -Result $result -Operation $OperationLabel | Out-Null
         if ($shouldThrowOnFailure) { throw }
     }
     catch [System.Security.SecurityException] {
@@ -481,6 +517,7 @@ function Set-RegistryValueSafe {
         $level = if ($Critical) { 'Error' } else { 'Warning' }
         Write-Log -Message $message -Level $level
         $result.ErrorCategory = 'PermissionDenied'
+        Add-RegistryPermissionFailure -Context $Context -Result $result -Operation $OperationLabel | Out-Null
         if ($shouldThrowOnFailure) { throw }
     }
     catch [System.ArgumentException] {
@@ -573,6 +610,23 @@ function Write-OutcomeSummary {
         Write-Host "[+] All targeted packages removed" -ForegroundColor Green
     }
 
+    $permissionFailures = @()
+    if ($Status -and $Status.ContainsKey('RegistryPermissionFailures')) {
+        $permissionFailures = @($Status.RegistryPermissionFailures)
+    }
+
+    if ($permissionFailures.Count -gt 0) {
+        Write-Host "[!] Some tweaks could not be applied due to permission issues:" -ForegroundColor Yellow
+        foreach ($failure in ($permissionFailures | Where-Object { $_ } | Select-Object -Unique)) {
+            $label = if ($failure.PSObject.Properties.Name -contains 'Operation' -and -not [string]::IsNullOrWhiteSpace($failure.Operation)) {
+                $failure.Operation
+            } else {
+                "$($failure.Path) -> $($failure.Name)"
+            }
+            Write-Host "    - $label" -ForegroundColor Yellow
+        }
+    }
+
     if ($Status.RebootRequired) {
         Write-Host "[!] Reboot required" -ForegroundColor Yellow
     } else {
@@ -580,4 +634,4 @@ function Write-OutcomeSummary {
     }
 }
 
-Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary, New-RegistryFailureTracker, Register-RegistryResult, Write-RegistryFailureSummary
+Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary, New-RegistryFailureTracker, Register-RegistryResult, Write-RegistryFailureSummary, Add-RegistryPermissionFailure

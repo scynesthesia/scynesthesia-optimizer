@@ -68,12 +68,16 @@ function Enable-MsiModeSafe {
 
                 $currentVal = Get-ItemProperty -Path $regPath -Name "MSISupported" -ErrorAction SilentlyContinue
                 if ($null -eq $currentVal -or $currentVal.MSISupported -ne 1) {
-                    Set-RegistryValueSafe $regPath "MSISupported" 1 -Context $Context
-                    Write-Host "  [+] MSI enabled for: $($dev.FriendlyName)" -ForegroundColor Green
-                    if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-                        Write-Log "[MSI] Enabled for $($dev.InstanceId)" -Level 'Info'
+                    $result = Set-RegistryValueSafe $regPath "MSISupported" 1 -Context $Context -Critical -ReturnResult -OperationLabel "Enable MSI for $($dev.FriendlyName)"
+                    if ($result -and $result.Success) {
+                        Write-Host "  [+] MSI enabled for: $($dev.FriendlyName)" -ForegroundColor Green
+                        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+                            Write-Log "[MSI] Enabled for $($dev.InstanceId)" -Level 'Info'
+                        }
+                        $touched++
+                    } else {
+                        Write-Host "  [!] Failed to enable MSI for: $($dev.FriendlyName)" -ForegroundColor Yellow
                     }
-                    $touched++
                 } else {
                     Write-Host "  [=] MSI already active for: $($dev.FriendlyName)" -ForegroundColor DarkGray
                 }

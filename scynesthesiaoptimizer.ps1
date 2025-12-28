@@ -178,15 +178,28 @@ function Ensure-PowerPlan {
 function Invoke-SafeOptionalPrompts {
     Write-Section "Additional options for Safe preset"
     $options = @(
-        @{ Key = '1'; Description = 'Disable Cortana in search'; Action = { Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCortana" 0 } },
-        @{ Key = '2'; Description = 'Disable Store suggestions in Start'; Action = { Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" "SilentInstalledAppsEnabled" 0 } },
-        @{ Key = '3'; Description = 'Enable compact view in File Explorer'; Action = { Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "UseCompactMode" 1 } }
+        @{ Key = '1'; Description = 'Disable Cortana in search'; Action = {
+            $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCortana" 0 -Context $script:Context -Critical -ReturnResult -OperationLabel 'Disable Cortana policy'
+            return ($result -and $result.Success)
+        } },
+        @{ Key = '2'; Description = 'Disable Store suggestions in Start'; Action = {
+            $result = Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" "SilentInstalledAppsEnabled" 0 -Context $script:Context -ReturnResult -OperationLabel 'Disable Store suggestions'
+            return ($result -and $result.Success)
+        } },
+        @{ Key = '3'; Description = 'Enable compact view in File Explorer'; Action = {
+            $result = Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "UseCompactMode" 1 -Context $script:Context -ReturnResult -OperationLabel 'Enable compact view'
+            return ($result -and $result.Success)
+        } }
     )
     foreach ($opt in $options) {
         $label = "$($opt.Key) $($opt.Description)"
         if (Get-Confirmation $label -Default 'n') {
-            & $opt.Action
-            Write-Host "[OK] $($opt.Description) applied." -ForegroundColor Green
+            $applied = & $opt.Action
+            if ($applied) {
+                Write-Host "[OK] $($opt.Description) applied." -ForegroundColor Green
+            } else {
+                Write-Host "[!] $($opt.Description) could not be applied (check permissions)." -ForegroundColor Yellow
+            }
         } else {
             Write-Host "Skipped: $($opt.Description)." -ForegroundColor DarkGray
         }
@@ -238,6 +251,11 @@ function Handle-RebootIfNeeded {
 # Returns: None. Updates global reboot flag as needed.
 function Run-SafePreset {
     $Status = @{ PackagesFailed = @(); RebootRequired = $false }
+    if (-not $script:Context.PSObject.Properties.Name.Contains('RegistryPermissionFailures')) {
+        $script:Context | Add-Member -Name RegistryPermissionFailures -MemberType NoteProperty -Value @()
+    } else {
+        $script:Context.RegistryPermissionFailures = @()
+    }
     $HWProfile = Get-HardwareProfile
 
     Write-Section "Starting Preset 1: Safe"
@@ -245,11 +263,11 @@ function Run-SafePreset {
     Clear-TempFiles
 
     # Safe Debloat (Standard list)
-    Invoke-PrivacyTelemetrySafe
+    Invoke-PrivacyTelemetrySafe -Context $script:Context
     $debloatResult = Invoke-DebloatSafe # Uses the default list defined in the module
     $Status.PackagesFailed += $debloatResult.Failed
 
-    Invoke-PreferencesSafe
+    Invoke-PreferencesSafe -Context $script:Context
     Invoke-SafeOptionalPrompts
     Invoke-SysMainOptimization -HardwareProfile $HWProfile
     Invoke-PerformanceBaseline -HardwareProfile $HWProfile -Context $script:Context
@@ -257,6 +275,7 @@ function Run-SafePreset {
     Ensure-PowerPlan -Mode 'HighPerformance'
 
     $Status.RebootRequired = Get-NeedsReboot -Context $script:Context
+    $Status.RegistryPermissionFailures = @($script:Context.RegistryPermissionFailures)
     Write-OutcomeSummary -Status $Status
     Write-Host "[+] Safe preset applied. Restart when convenient to finalize settings." -ForegroundColor Green
 }
@@ -266,6 +285,11 @@ function Run-SafePreset {
 # Returns: None. Updates global reboot flag and failed package list.
 function Run-PCSlowPreset {
     $Status = @{ PackagesFailed = @(); RebootRequired = $false }
+    if (-not $script:Context.PSObject.Properties.Name.Contains('RegistryPermissionFailures')) {
+        $script:Context | Add-Member -Name RegistryPermissionFailures -MemberType NoteProperty -Value @()
+    } else {
+        $script:Context.RegistryPermissionFailures = @()
+    }
     $HWProfile = Get-HardwareProfile
     $OemServices = Get-OEMServiceInfo
 
@@ -273,22 +297,23 @@ function Run-PCSlowPreset {
     New-RestorePointSafe
     Clear-TempFiles
 
-    Invoke-PrivacyTelemetrySafe
+    Invoke-PrivacyTelemetrySafe -Context $script:Context
 
     # Deep cleaning using Aggressive Debloat profile.
     # Using updated function from debloat.psm1.
     $debloatResult = Invoke-DebloatAggressive
     $Status.PackagesFailed += $debloatResult.Failed
 
-    Invoke-PreferencesSafe
+    Invoke-PreferencesSafe -Context $script:Context
     Invoke-PerformanceBaseline -HardwareProfile $HWProfile -Context $script:Context
     Ensure-PowerPlan -Mode 'HighPerformance'
 
     # Additional tweaks specific to slow PCs
     Invoke-AggressivePerformanceTweaks -OemServices $OemServices -Context $script:Context
-    Invoke-AggressiveTweaks -HardwareProfile $HWProfile -FailedPackages ([ref]$Status.PackagesFailed) -OemServices $OemServices
+    Invoke-AggressiveTweaks -HardwareProfile $HWProfile -FailedPackages ([ref]$Status.PackagesFailed) -OemServices $OemServices -Context $script:Context
 
     $Status.RebootRequired = Get-NeedsReboot -Context $script:Context
+    $Status.RegistryPermissionFailures = @($script:Context.RegistryPermissionFailures)
     Write-OutcomeSummary -Status $Status
     Write-Host "[+] Slow PC / Aggressive preset applied. Please restart." -ForegroundColor Green
 }
@@ -352,7 +377,7 @@ function Show-NetworkTweaksMenu {
             '2' {
                 if (-not (& $requireNetworkBackup 'Aggressive')) { break }
                 if (Get-Confirmation "Apply Aggressive Network Tweaks?" 'n') {
-                    Invoke-NetworkTweaksAggressive
+                    Invoke-NetworkTweaksAggressive -Context $script:Context
                 } else {
                     Write-Host "[ ] Aggressive Network Tweaks skipped." -ForegroundColor Gray
                 }

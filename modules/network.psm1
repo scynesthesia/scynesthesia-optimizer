@@ -125,7 +125,7 @@ function Set-IPvPreferenceIPv4First {
 
     Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6)" -ForegroundColor Gray
     try {
-        $result = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" "DisabledComponents" 0x20 -Critical -ReturnResult
+        $result = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" "DisabledComponents" 0x20 -Critical -ReturnResult -Context $Context -OperationLabel 'Prefer IPv4 over IPv6'
         $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
         if ($result -and $result.Success) {
             Set-RebootRequired -Context $Context | Out-Null
@@ -149,10 +149,19 @@ function Set-IPvPreferenceIPv4First {
 # Parameters: None.
 # Returns: None.
 function Disable-LLMNR {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
     Write-Host "  [+] Disabling LLMNR" -ForegroundColor Gray
-    Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "EnableMulticast" 0
-    if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-        Write-Log "[Network] Disabled LLMNR (EnableMulticast=0 under DNSClient policy)."
+    $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "EnableMulticast" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable LLMNR'
+    if ($result -and $result.Success) {
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "[Network] Disabled LLMNR (EnableMulticast=0 under DNSClient policy)."
+        }
+    } else {
+        Write-Host "  [!] Failed to disable LLMNR (permission issue?)." -ForegroundColor Yellow
     }
 }
 
@@ -191,12 +200,21 @@ function Disable-NetBIOS {
 # Parameters: None.
 # Returns: None.
 function Disable-NetworkTelemetry {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
     Write-Host "  [+] Disabling network telemetry services" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     try {
-        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry" 0
-        if ($logger) {
-            Write-Log "[Network] Telemetry collection disabled (AllowTelemetry=0)."
+        $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable network telemetry'
+        if ($result -and $result.Success) {
+            if ($logger) {
+                Write-Log "[Network] Telemetry collection disabled (AllowTelemetry=0)."
+            }
+        } else {
+            Write-Host "  [!] Failed to disable telemetry collection (permission issue?)." -ForegroundColor Yellow
         }
         foreach ($svc in 'DiagTrack','dmwappushservice') {
             try {
@@ -219,12 +237,21 @@ function Disable-NetworkTelemetry {
 # Parameters: None.
 # Returns: None.
 function Disable-DeliveryOptimization {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
     Write-Host "  [+] Disabling Delivery Optimization (WUDO)" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     try {
-        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode" 0
-        if ($logger) {
-            Write-Log "[Network] Delivery Optimization disabled (DODownloadMode=0)."
+        $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable Delivery Optimization'
+        if ($result -and $result.Success) {
+            if ($logger) {
+                Write-Log "[Network] Delivery Optimization disabled (DODownloadMode=0)."
+            }
+        } else {
+            Write-Host "  [!] Failed to disable Delivery Optimization (permission issue?)." -ForegroundColor Yellow
         }
 
         try {
@@ -246,10 +273,19 @@ function Disable-DeliveryOptimization {
 # Parameters: None.
 # Returns: None.
 function Set-ReservableBandwidth {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
     Write-Host "  [+] Setting reservable bandwidth limit to 0%" -ForegroundColor Gray
-    Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Psched" "NonBestEffortLimit" 0
-    if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-        Write-Log "[Network] Reservable bandwidth limit set to 0% (NonBestEffortLimit=0)."
+    $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Psched" "NonBestEffortLimit" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Set reservable bandwidth to 0%'
+    if ($result -and $result.Success) {
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "[Network] Reservable bandwidth limit set to 0% (NonBestEffortLimit=0)."
+        }
+    } else {
+        Write-Host "  [!] Failed to set reservable bandwidth (permission issue?)." -ForegroundColor Yellow
     }
 }
 
@@ -257,12 +293,21 @@ function Set-ReservableBandwidth {
 # Parameters: None.
 # Returns: None.
 function Disable-RemoteAssistance {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
     Write-Host "  [+] Disabling Remote Assistance" -ForegroundColor Gray
     try {
-        Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\Remote Assistance" "fAllowToGetHelp" 0
-        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "fAllowToGetHelp" 0
-        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-            Write-Log "[Network] Remote Assistance disabled (fAllowToGetHelp=0)."
+        $raResult = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\Remote Assistance" "fAllowToGetHelp" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable Remote Assistance (Control)'
+        $tsResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "fAllowToGetHelp" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable Remote Assistance (Policy)'
+        if ($raResult -and $raResult.Success -and $tsResult -and $tsResult.Success) {
+            if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+                Write-Log "[Network] Remote Assistance disabled (fAllowToGetHelp=0)."
+            }
+        } else {
+            Write-Host "  [!] Remote Assistance keys could not be fully updated." -ForegroundColor Yellow
         }
     } catch {
         Invoke-ErrorHandler -Context 'Disabling Remote Assistance' -ErrorRecord $_
@@ -289,10 +334,19 @@ function Disable-NetworkDiscovery {
 # Parameters: None.
 # Returns: None.
 function Set-NetworkThrottling {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
     Write-Host "  [+] Disabling network throttling" -ForegroundColor Gray
-    Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "NetworkThrottlingIndex" 0xFFFFFFFF
-    if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-        Write-Log "[Network] NetworkThrottlingIndex set to 0xFFFFFFFF."
+    $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "NetworkThrottlingIndex" 0xFFFFFFFF -Context $context -Critical -ReturnResult -OperationLabel 'Disable network throttling index'
+    if ($result -and $result.Success) {
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "[Network] NetworkThrottlingIndex set to 0xFFFFFFFF."
+        }
+    } else {
+        Write-Host "  [!] Failed to disable network throttling (permission issue?)." -ForegroundColor Yellow
     }
 }
 
@@ -481,12 +535,17 @@ function Invoke-NetworkTweaksSafe {
 }
 
 # Description: Applies aggressive network tweaks including autotuning and disabled discovery.
-# Parameters: None.
+# Parameters: Context - Optional run context for permission tracking.
 # Returns: None. May prompt for backup before changes.
 function Invoke-NetworkTweaksAggressive {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
     Write-Section "Network tweaks (Aggressive profile)"
-    Disable-LLMNR
-    Disable-DeliveryOptimization
+    Disable-LLMNR -Context $context
+    Disable-DeliveryOptimization -Context $context
 
     if (Get-Confirmation "Disable NetBIOS over TCP/IP? This may break legacy LAN shares and printers." 'n') {
         Disable-NetBIOS
@@ -494,11 +553,11 @@ function Invoke-NetworkTweaksAggressive {
         Write-Host "  [ ] NetBIOS left enabled." -ForegroundColor Gray
     }
 
-    Disable-NetworkTelemetry
-    Set-ReservableBandwidth
+    Disable-NetworkTelemetry -Context $context
+    Set-ReservableBandwidth -Context $context
 
     if (Get-Confirmation "Disable Remote Assistance?" 'y') {
-        Disable-RemoteAssistance
+        Disable-RemoteAssistance -Context $context
     } else {
         Write-Host "  [ ] Remote Assistance left enabled." -ForegroundColor Gray
     }
@@ -523,7 +582,7 @@ function Invoke-NetworkTweaksGaming {
     Write-Host "  [i] Applying hardware power optimizations..." -ForegroundColor Gray
     Set-NicPowerManagementGaming -Context $Context
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-    Set-NetworkThrottling
+    Set-NetworkThrottling -Context $Context
     Set-NagleState -Context $Context
     Set-EnergyEfficientEthernet
     Enable-RSS

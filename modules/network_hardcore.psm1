@@ -137,8 +137,12 @@ function Set-NetworkThrottlingHardcore {
     try {
         $path = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
         try {
-            Set-RegistryValueSafe -Path $path -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-            Write-Host "  [+] NetworkThrottlingIndex set to maximum performance." -ForegroundColor Green
+            $result = Set-RegistryValueSafe -Path $path -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Critical -ReturnResult -OperationLabel 'Hardcore network throttling index'
+            if ($result -and $result.Success) {
+                Write-Host "  [+] NetworkThrottlingIndex set to maximum performance." -ForegroundColor Green
+            } else {
+                Write-Host "  [!] NetworkThrottlingIndex could not be set (permission issue?)." -ForegroundColor Yellow
+            }
             if ($null -eq $Context) {
                 $Context = New-RunContext
             }
@@ -255,6 +259,7 @@ function Optimize-LanmanServer {
         [object]$Context
     )
     try {
+        $runContext = Get-RunContext -Context $Context
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters'
         $values = @{
             autodisconnect = 0
@@ -265,17 +270,21 @@ function Optimize-LanmanServer {
 
         foreach ($entry in $values.GetEnumerator()) {
             try {
-                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-                Write-Host "  [+] $($entry.Key) set to $($entry.Value) for LanmanServer." -ForegroundColor Green
+                $result = Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $runContext -Critical -ReturnResult -OperationLabel "LanmanServer: $($entry.Key)"
+                if ($result -and $result.Success) {
+                    Write-Host "  [+] $($entry.Key) set to $($entry.Value) for LanmanServer." -ForegroundColor Green
+                } else {
+                    Write-Host "  [!] Failed to set $($entry.Key) for LanmanServer." -ForegroundColor Yellow
+                }
             } catch {
                 Invoke-ErrorHandler -Context "Setting LanmanServer $($entry.Key)" -ErrorRecord $_
             }
         }
 
-        if ($null -eq $Context) {
-            $Context = New-RunContext
+        if ($null -eq $runContext) {
+            $runContext = New-RunContext
         }
-        Set-NeedsReboot -Context $Context | Out-Null
+        Set-NeedsReboot -Context $runContext | Out-Null
     } catch {
         Invoke-ErrorHandler -Context 'Optimizing LanmanServer parameters' -ErrorRecord $_
     }
@@ -346,6 +355,7 @@ function Set-NicRegistryHardcore {
         [object]$Context
     )
     try {
+        $runContext = Get-RunContext -Context $Context
         $nicPaths = Get-NicRegistryPaths
         if ($nicPaths.Count -eq 0) {
             Write-Host "  [!] No NIC registry paths found for tweaks." -ForegroundColor Yellow
@@ -359,19 +369,22 @@ function Set-NicRegistryHardcore {
                 $existing = Get-ItemProperty -Path $path -Name $name -ErrorAction Stop
                 $current = $existing.$name
             } catch { }
-            if ($current -eq $value) { return 'Unchanged' }
-            try {
-                $normalizedType = if ($type -is [Microsoft.Win32.RegistryValueKind]) {
-                    $type
-                } else {
-                    [System.Enum]::Parse([Microsoft.Win32.RegistryValueKind], [string]$type, $true)
+                if ($current -eq $value) { return 'Unchanged' }
+                try {
+                    $normalizedType = if ($type -is [Microsoft.Win32.RegistryValueKind]) {
+                        $type
+                    } else {
+                        [System.Enum]::Parse([Microsoft.Win32.RegistryValueKind], [string]$type, $true)
+                    }
+                    $result = Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type $normalizedType -Context $runContext -Critical -ReturnResult -OperationLabel "NIC hardcore: $name"
+                    if ($result -and $result.Success) {
+                        return 'Changed'
+                    }
+                    return 'Failed'
+                } catch {
+                    return 'Failed'
                 }
-                Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type $normalizedType
-                return 'Changed'
-            } catch {
-                return 'Failed'
             }
-        }
 
         $sharedPowerFlags = @{
             '*EEE'                 = '0'
@@ -386,7 +399,7 @@ function Set-NicRegistryHardcore {
             'WolShutdownLinkSpeed' = '0'
         }
 
-        $sharedPowerResult = Invoke-NicPowerRegistryTweaks -Context (Get-RunContext -Context $Context) -NicPaths $nicPaths -Values $sharedPowerFlags -LoggerPrefix '[NetworkHardcore]' -InvokeOnceId 'NicPower:Shared' -CleanupInterfaceNoise
+        $sharedPowerResult = Invoke-NicPowerRegistryTweaks -Context $runContext -NicPaths $nicPaths -Values $sharedPowerFlags -LoggerPrefix '[NetworkHardcore]' -InvokeOnceId 'NicPower:Shared' -CleanupInterfaceNoise
 
         $powerOffload = @{
             '*EEE'                 = '0'
@@ -689,9 +702,12 @@ function Set-NetAdapterAdvancedPropertySafe {
 }
 
 # Description: Hardens Wake-on-LAN settings through registry and adapter UI properties.
-# Parameters: None.
+# Parameters: Context - Optional run context for permission tracking.
 # Returns: None. Sets global reboot flag after changes.
 function Set-WakeOnLanHardcore {
+    param(
+        [object]$Context
+    )
     <#
         Wake-on-LAN needs both registry and UI alignment because many drivers honor multiple flags at once.
         WolShutdownLinkSpeed "2" keeps the link in "Not Speed Down" to avoid low-power renegotiation that re-enables WOL paths.
@@ -699,6 +715,7 @@ function Set-WakeOnLanHardcore {
     Write-Host "  [>] Applying Wake-on-LAN hardening (registry + driver UI)" -ForegroundColor Cyan
 
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $runContext = Get-RunContext -Context $Context
 
     if ($script:NicRegistryAccessDenied) {
         $message = "NIC registry tweaks skipped because registry access was denied earlier. Run PowerShell as Administrator for full coverage."
@@ -754,8 +771,12 @@ function Set-WakeOnLanHardcore {
                 Write-Host "    [>] Registry WOL sweep on $adapterName" -ForegroundColor Cyan
                 foreach ($entry in $wolRegistryValues.GetEnumerator()) {
                     try {
-                        Set-RegistryValueSafe -Path $pathEntry.Path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String)
-                        Write-Host "      [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
+                        $result = Set-RegistryValueSafe -Path $pathEntry.Path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $runContext -Critical -ReturnResult -OperationLabel "WOL hardening: $($entry.Key)"
+                        if ($result -and $result.Success) {
+                            Write-Host "      [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
+                        } else {
+                            Write-Host "      [!] Failed to set $($entry.Key) to $($entry.Value)." -ForegroundColor Yellow
+                        }
                     } catch {
                         Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName (WOL)" -ErrorRecord $_
                     }
@@ -1213,7 +1234,7 @@ function Invoke-NetworkTweaksHardcore {
     }
 
     Set-NicRegistryHardcore -Context $Context
-    Set-WakeOnLanHardcore
+    Set-WakeOnLanHardcore -Context $Context
 
     foreach ($adapter in $adapters) {
         try {
