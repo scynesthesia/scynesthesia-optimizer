@@ -354,9 +354,9 @@ function Read-MenuChoice {
     }
 }
 
-# Description: Safely creates or updates a registry value with validation, logging, and rollback capture.
-# Parameters: Path - Registry path; Name - Value name; Value - Data to set; Type - Registry value type; Critical - Stop on error when specified; Context - optional run context that can hold RegistryRollbackActions.
-# Returns: None.
+# Description: Safely creates or updates a registry value with validation, logging, rollback capture, and optional result reporting.
+# Parameters: Path - Registry path; Name - Value name; Value - Data to set; Type - Registry value type; Critical - Stop on error when specified; Context - optional run context that can hold RegistryRollbackActions; ReturnResult - emits a result object with Success/WasCreated/ErrorCategory.
+# Returns: Nothing by default; when -ReturnResult is passed, returns a PSCustomObject with Success, WasCreated, ErrorCategory, Path, and Name.
 function Set-RegistryValueSafe {
     [CmdletBinding()]
     param(
@@ -365,25 +365,45 @@ function Set-RegistryValueSafe {
         [Parameter()][object]$Value,
         [Microsoft.Win32.RegistryValueKind]$Type = [Microsoft.Win32.RegistryValueKind]::DWord,
         [switch]$Critical,
-        [object]$Context
+        [object]$Context,
+        [switch]$ReturnResult
     )
 
     if ([string]::IsNullOrWhiteSpace($Name) -and $Name -ne '(default)') {
         $warning = "[!] Attempted to set a registry value with an empty name at path $Path. Skipping."
         Write-Host $warning -ForegroundColor Yellow
         Write-Log -Message $warning -Level 'Warning'
+        $emptyNameResult = [pscustomobject]@{
+            Success       = $false
+            WasCreated    = $false
+            ErrorCategory = 'MissingValueName'
+            Path          = $Path
+            Name          = '(unspecified)'
+        }
+        if ($ReturnResult) { return $emptyNameResult }
         return
     }
 
     $displayName = if ([string]::IsNullOrWhiteSpace($Name) -or $Name -eq '(default)') { '(default)' } else { $Name }
     $valueName = if ($displayName -eq '(default)') { '' } else { $Name }
+    $result = [pscustomobject]@{
+        Success       = $false
+        WasCreated    = $false
+        ErrorCategory = $null
+        Path          = $Path
+        Name          = $displayName
+    }
+    $shouldThrowOnFailure = $Critical -and -not $ReturnResult
 
     try {
         $target = Resolve-RegistryPathComponents -Path $Path
+        $result.Path = $target.FullPath
     } catch {
         $message = "Failed to resolve registry path for $Path -> $displayName (Type: $Type, Data: $(Format-RegistryDataForLog $Value)). Category: Missing hive or key. Error: $(Get-RegistryExceptionDetails $_.Exception)"
+        $result.ErrorCategory = 'PathResolution'
         Write-Log -Message $message -Level 'Error'
-        if ($Critical) { throw }
+        if ($shouldThrowOnFailure) { throw }
+        if ($ReturnResult) { return $result }
         return
     }
 
@@ -445,32 +465,84 @@ function Set-RegistryValueSafe {
 
         $successMessage = "Set registry value at $($target.FullPath) -> $displayName (Type: $Type, Data: $(Format-RegistryDataForLog $convertedValue)). Rollback guidance recorded."
         Write-Log -Message $successMessage -Level 'Info'
+        $result.Success = $true
+        $result.WasCreated = -not $valueExisted
+        $result.ErrorCategory = $null
     }
     catch [System.UnauthorizedAccessException] {
         $message = "Failed to set registry value at $($target.FullPath) -> $displayName (Type: $Type, Data: $(Format-RegistryDataForLog $Value)). Category: Permission denied. Error: $(Get-RegistryExceptionDetails $_.Exception)"
         $level = if ($Critical) { 'Error' } else { 'Warning' }
         Write-Log -Message $message -Level $level
-        if ($Critical) { throw }
+        $result.ErrorCategory = 'PermissionDenied'
+        if ($shouldThrowOnFailure) { throw }
     }
     catch [System.Security.SecurityException] {
         $message = "Failed to set registry value at $($target.FullPath) -> $displayName (Type: $Type, Data: $(Format-RegistryDataForLog $Value)). Category: Permission denied. Error: $(Get-RegistryExceptionDetails $_.Exception)"
         $level = if ($Critical) { 'Error' } else { 'Warning' }
         Write-Log -Message $message -Level $level
-        if ($Critical) { throw }
+        $result.ErrorCategory = 'PermissionDenied'
+        if ($shouldThrowOnFailure) { throw }
     }
     catch [System.ArgumentException] {
         $message = "Failed to set registry value at $($target.FullPath) -> $displayName (Type: $Type, Data: $(Format-RegistryDataForLog $Value)). Category: Invalid type or value. Error: $(Get-RegistryExceptionDetails $_.Exception)"
         Write-Log -Message $message -Level 'Error'
-        if ($Critical) { throw }
+        $result.ErrorCategory = 'InvalidData'
+        if ($shouldThrowOnFailure) { throw }
     }
     catch {
         $message = "Failed to set registry value at $($target.FullPath) -> $displayName (Type: $Type, Data: $(Format-RegistryDataForLog $Value)). Category: Registry access failure. Error: $(Get-RegistryExceptionDetails $_.Exception)"
         Write-Log -Message $message -Level 'Error'
-        if ($Critical) { throw }
+        $result.ErrorCategory = 'RegistryAccessFailure'
+        if ($shouldThrowOnFailure) { throw }
     }
     finally {
         if ($subKey) { $subKey.Dispose() }
         if ($baseKey) { $baseKey.Dispose() }
+    }
+
+    if ($ReturnResult) { return $result }
+}
+
+# Description: Initializes a tracker for counting critical registry write failures within a module.
+# Parameters: Name - Module or feature label for reporting.
+# Returns: PSCustomObject with Name, CriticalFailures, and Abort flag.
+function New-RegistryFailureTracker {
+    param([Parameter(Mandatory)][string]$Name)
+
+    [pscustomobject]@{
+        Name             = $Name
+        CriticalFailures = 0
+        Abort            = $false
+    }
+}
+
+# Description: Registers the outcome of a registry write and marks the tracker for aborting when a critical failure occurs.
+# Parameters: Tracker - Tracker object created by New-RegistryFailureTracker; Result - Result object returned by Set-RegistryValueSafe; Critical - Treat failure as abort-worthy.
+# Returns: Boolean indicating whether the module should abort further actions.
+function Register-RegistryResult {
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Tracker,
+        [Parameter(Mandatory)][pscustomobject]$Result,
+        [switch]$Critical
+    )
+
+    if (-not $Tracker) { return $false }
+    if (-not $Critical) { return $false }
+    if (-not $Result -or $Result.Success) { return $false }
+
+    $Tracker.CriticalFailures++
+    $Tracker.Abort = $true
+    return $true
+}
+
+# Description: Emits a single summary line when critical registry failures were encountered in a module.
+# Parameters: Tracker - Tracker object created by New-RegistryFailureTracker.
+# Returns: None.
+function Write-RegistryFailureSummary {
+    param([pscustomobject]$Tracker)
+
+    if ($Tracker -and $Tracker.CriticalFailures -gt 0) {
+        Write-Host "Module $($Tracker.Name) completed with $($Tracker.CriticalFailures) critical failures; aborting further actions." -ForegroundColor Red
     }
 }
 
@@ -508,4 +580,4 @@ function Write-OutcomeSummary {
     }
 }
 
-Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary
+Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary, New-RegistryFailureTracker, Register-RegistryResult, Write-RegistryFailureSummary

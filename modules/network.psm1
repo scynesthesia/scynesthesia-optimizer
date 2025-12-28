@@ -117,16 +117,27 @@ function Set-TcpAutotuningNormal {
 }
 
 # Description: Prefers IPv4 addressing without disabling IPv6.
-# Parameters: None.
+# Parameters: FailureTracker - Optional tracker used for aggregating critical registry failures.
 # Returns: None. Sets global reboot flag after registry update.
 function Set-IPvPreferenceIPv4First {
+    param([pscustomobject]$FailureTracker)
+
     Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6)" -ForegroundColor Gray
     try {
-        Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" "DisabledComponents" 0x20
-        Set-RebootRequired | Out-Null
-        Write-Host "      [>] Preference recorded. Reboot recommended." -ForegroundColor Yellow
-        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-            Write-Log "[Network] IPv4 preference set (DisabledComponents=0x20)."
+        $result = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" "DisabledComponents" 0x20 -Critical -ReturnResult
+        $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
+        if ($result -and $result.Success) {
+            Set-RebootRequired | Out-Null
+            Write-Host "      [>] Preference recorded. Reboot recommended." -ForegroundColor Yellow
+            if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+                Write-Log "[Network] IPv4 preference set (DisabledComponents=0x20)."
+            }
+        } else {
+            Write-Host "      [!] Failed to record IPv4 preference in the registry." -ForegroundColor Yellow
+        }
+        if ($abort) {
+            Write-RegistryFailureSummary -Tracker $FailureTracker
+            return
         }
     } catch {
         Invoke-ErrorHandler -Context 'Setting IPv4 preference' -ErrorRecord $_
@@ -505,6 +516,7 @@ function Set-InterruptModeration {
 # Returns: None.
 function Invoke-NetworkTweaksSafe {
     Write-Section "Network tweaks (Safe profile)"
+    $tracker = New-RegistryFailureTracker -Name 'Network'
     Invoke-NetworkFlush
 
     if (Get-Confirmation "Reset Winsock (requires reboot)?" 'n') {
@@ -520,7 +532,12 @@ function Invoke-NetworkTweaksSafe {
     }
 
     Set-TcpAutotuningNormal
-    Set-IPvPreferenceIPv4First
+    Set-IPvPreferenceIPv4First -FailureTracker $tracker
+    if ($tracker.Abort) {
+        Write-RegistryFailureSummary -Tracker $tracker
+        return
+    }
+    Write-RegistryFailureSummary -Tracker $tracker
 }
 
 # Description: Applies aggressive network tweaks including autotuning and disabled discovery.

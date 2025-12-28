@@ -71,11 +71,12 @@ function Convert-LinkSpeedToBits {
 }
 
 # Description: Applies advanced TCP/IP registry parameters for performance tuning.
-# Parameters: Context - Optional run context for reboot tracking.
+# Parameters: Context - Optional run context for reboot tracking; FailureTracker - Optional tracker for critical registry failures.
 # Returns: None. Sets reboot flag after changes.
 function Set-TcpIpAdvancedParameters {
     param(
-        [object]$Context
+        [object]$Context,
+        [pscustomobject]$FailureTracker
     )
     try {
         $buildNumber = [Environment]::OSVersion.Version.Build
@@ -94,19 +95,33 @@ function Set-TcpIpAdvancedParameters {
             Write-Host "  [!] SackOpts skipped for build $buildNumber to maintain compatibility." -ForegroundColor Yellow
         }
 
+        $anySuccess = $false
         foreach ($entry in $values.GetEnumerator()) {
             try {
-                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-                Write-Host "  [+] $($entry.Key) set to $($entry.Value) in TCP parameters." -ForegroundColor Green
+                $result = Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Critical -ReturnResult
+                $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
+                if ($result -and $result.Success) {
+                    Write-Host "  [+] $($entry.Key) set to $($entry.Value) in TCP parameters." -ForegroundColor Green
+                    $anySuccess = $true
+                } else {
+                    Write-Host "  [!] Failed to set $($entry.Key) to $($entry.Value) in TCP parameters." -ForegroundColor Yellow
+                }
+                if ($abort) { break }
             } catch {
                 Invoke-ErrorHandler -Context "Setting $($entry.Key) in TCP parameters" -ErrorRecord $_
             }
         }
 
+        if ($FailureTracker -and $FailureTracker.Abort) {
+            return
+        }
+
         if ($null -eq $Context) {
             $Context = New-RunContext
         }
-        Set-NeedsReboot -Context $Context | Out-Null
+        if ($anySuccess) {
+            Set-NeedsReboot -Context $Context | Out-Null
+        }
     } catch {
         Invoke-ErrorHandler -Context 'Configuring advanced TCP/IP parameters' -ErrorRecord $_
     }
@@ -137,11 +152,12 @@ function Set-NetworkThrottlingHardcore {
 }
 
 # Description: Configures TCP/IP service provider priorities for resolution order.
-# Parameters: Context - Optional run context for reboot tracking.
+# Parameters: Context - Optional run context for reboot tracking; FailureTracker - Optional tracker for critical registry failures.
 # Returns: None. Sets reboot flag after applying values.
 function Set-ServicePriorities {
     param(
-        [object]$Context
+        [object]$Context,
+        [pscustomobject]$FailureTracker
     )
     try {
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\ServiceProvider'
@@ -152,30 +168,45 @@ function Set-ServicePriorities {
             NetbtPriority  = 7
         }
 
+        $anySuccess = $false
         foreach ($entry in $values.GetEnumerator()) {
             try {
-                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-                Write-Host "  [+] $($entry.Key) set to $($entry.Value) in ServiceProvider." -ForegroundColor Green
+                $result = Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Critical -ReturnResult
+                $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
+                if ($result -and $result.Success) {
+                    Write-Host "  [+] $($entry.Key) set to $($entry.Value) in ServiceProvider." -ForegroundColor Green
+                    $anySuccess = $true
+                } else {
+                    Write-Host "  [!] Failed to set $($entry.Key) in ServiceProvider." -ForegroundColor Yellow
+                }
+                if ($abort) { break }
             } catch {
                 Invoke-ErrorHandler -Context "Setting $($entry.Key) service priority" -ErrorRecord $_
             }
         }
 
+        if ($FailureTracker -and $FailureTracker.Abort) {
+            return
+        }
+
         if ($null -eq $Context) {
             $Context = New-RunContext
         }
-        Set-NeedsReboot -Context $Context | Out-Null
+        if ($anySuccess) {
+            Set-NeedsReboot -Context $Context | Out-Null
+        }
     } catch {
         Invoke-ErrorHandler -Context 'Configuring ServiceProvider priorities' -ErrorRecord $_
     }
 }
 
 # Description: Applies Winsock parameter adjustments to align socket behavior.
-# Parameters: Context - Optional run context for reboot tracking.
+# Parameters: Context - Optional run context for reboot tracking; FailureTracker - Optional tracker for critical registry failures.
 # Returns: None. Sets reboot flag when updates are made.
 function Set-WinsockOptimizations {
     param(
-        [object]$Context
+        [object]$Context,
+        [pscustomobject]$FailureTracker
     )
     try {
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters'
@@ -184,19 +215,33 @@ function Set-WinsockOptimizations {
             MaxSockAddrLength = 16
         }
 
+        $anySuccess = $false
         foreach ($entry in $values.GetEnumerator()) {
             try {
-                Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-                Write-Host "  [+] $($entry.Key) set to $($entry.Value) for Winsock." -ForegroundColor Green
+                $result = Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Critical -ReturnResult
+                $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
+                if ($result -and $result.Success) {
+                    Write-Host "  [+] $($entry.Key) set to $($entry.Value) for Winsock." -ForegroundColor Green
+                    $anySuccess = $true
+                } else {
+                    Write-Host "  [!] Failed to set $($entry.Key) for Winsock." -ForegroundColor Yellow
+                }
+                if ($abort) { break }
             } catch {
                 Invoke-ErrorHandler -Context "Setting Winsock $($entry.Key)" -ErrorRecord $_
             }
         }
 
+        if ($FailureTracker -and $FailureTracker.Abort) {
+            return
+        }
+
         if ($null -eq $Context) {
             $Context = New-RunContext
         }
-        Set-NeedsReboot -Context $Context | Out-Null
+        if ($anySuccess) {
+            Set-NeedsReboot -Context $Context | Out-Null
+        }
     } catch {
         Invoke-ErrorHandler -Context 'Applying Winsock optimizations' -ErrorRecord $_
     }
@@ -1090,10 +1135,15 @@ function Invoke-NetworkTweaksHardcore {
         $Context = New-RunContext
     }
 
-    Set-TcpIpAdvancedParameters -Context $Context
+    $failureTracker = New-RegistryFailureTracker -Name 'Network (Hardcore)'
+
+    Set-TcpIpAdvancedParameters -Context $Context -FailureTracker $failureTracker
+    if ($failureTracker.Abort) { Write-RegistryFailureSummary -Tracker $failureTracker; return }
     Set-NetworkThrottlingHardcore -Context $Context
-    Set-ServicePriorities -Context $Context
-    Set-WinsockOptimizations -Context $Context
+    Set-ServicePriorities -Context $Context -FailureTracker $failureTracker
+    if ($failureTracker.Abort) { Write-RegistryFailureSummary -Tracker $failureTracker; return }
+    Set-WinsockOptimizations -Context $Context -FailureTracker $failureTracker
+    if ($failureTracker.Abort) { Write-RegistryFailureSummary -Tracker $failureTracker; return }
     Optimize-LanmanServer -Context $Context
     Set-NetshHardcoreGlobals -Context $Context
 
@@ -1235,6 +1285,9 @@ function Invoke-NetworkTweaksHardcore {
     }
 
     Set-TcpCongestionProvider
+
+    Write-RegistryFailureSummary -Tracker $failureTracker
+    if ($failureTracker -and $failureTracker.Abort) { return }
 
     Write-Host "  [+] Hardcore network tweaks complete." -ForegroundColor Green
     Set-NeedsReboot -Context $Context | Out-Null
