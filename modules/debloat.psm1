@@ -124,20 +124,23 @@ function Invoke-DebloatSafe {
 
     Write-Section "Safe debloat (removes common bloatware, keeps Store and essentials)"
 
+    $installedPackages = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+    $targets = $installedPackages | Where-Object { $AppList -contains $_.Name }
+    $missing = $AppList | Where-Object { -not ($installedPackages.Name -contains $_) }
+
+    foreach ($name in $missing) {
+        Write-Host "  [ ] $name is not installed."
+    }
+
     $failed = @()
-    foreach ($a in $AppList) {
-        $pkg = Get-AppxPackage -AllUsers -Name $a -ErrorAction SilentlyContinue
-        if ($pkg) {
-            Write-Host "  [+] Removing $a"
-            try {
-                Get-AppxPackage -AllUsers -Name $a | Remove-AppxPackage -ErrorAction SilentlyContinue
-            } catch {
-                $failed += $a
-                Write-Host "  [SKIPPED] $a" -ForegroundColor DarkGray
-                Write-Log -Message "Skipped protected app: $a" -Level 'Info'
-            }
-        } else {
-            Write-Host "  [ ] $a is not installed."
+    $targets | ForEach-Object {
+        Write-Host "  [+] Removing $($_.Name)"
+        try {
+            $_ | Remove-AppxPackage -ErrorAction SilentlyContinue
+        } catch {
+            $failed += $_.Name
+            Write-Host "  [SKIPPED] $($_.Name)" -ForegroundColor DarkGray
+            Write-Log -Message "Skipped protected app: $($_.Name)" -Level 'Info'
         }
     }
 
@@ -160,20 +163,23 @@ function Invoke-DebloatAggressive {
 
     Write-Section "Aggressive debloat (includes optional removal of provisioned packages)"
 
+    $installedPackages = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+    $targets = $installedPackages | Where-Object { $AppList -contains $_.Name }
+    $missing = $AppList | Where-Object { -not ($installedPackages.Name -contains $_) }
+
+    foreach ($name in $missing) {
+        Write-Host "  [ ] $name is not installed."
+    }
+
     $failed = @()
-    foreach ($a in $AppList) {
-        $pkg = Get-AppxPackage -AllUsers -Name $a -ErrorAction SilentlyContinue
-        if ($pkg) {
-            Write-Host "  [+] Removing $a"
-            try {
-                Get-AppxPackage -AllUsers -Name $a | Remove-AppxPackage -ErrorAction SilentlyContinue
-            } catch {
-                $failed += $a
-                Write-Host "  [SKIPPED] $a" -ForegroundColor DarkGray
-                Write-Log -Message "Skipped protected app: $a" -Level 'Info'
-            }
-        } else {
-            Write-Host "  [ ] $a is not installed."
+    $targets | ForEach-Object {
+        Write-Host "  [+] Removing $($_.Name)"
+        try {
+            $_ | Remove-AppxPackage -ErrorAction SilentlyContinue
+        } catch {
+            $failed += $_.Name
+            Write-Host "  [SKIPPED] $($_.Name)" -ForegroundColor DarkGray
+            Write-Log -Message "Skipped protected app: $($_.Name)" -Level 'Info'
         }
     }
 
