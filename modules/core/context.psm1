@@ -10,6 +10,8 @@ function New-RunContext {
         [string]$ScriptRoot
     )
 
+    $script:NeedsRebootFallback = $false
+
     $resolvedRoot = if ($ScriptRoot) {
         $ScriptRoot
     } elseif (Get-Command -Name Get-ScriptRoot -ErrorAction SilentlyContinue) {
@@ -54,6 +56,7 @@ function Set-RebootRequired {
     }
 
     $script:NeedsRebootFallback = $true
+    Write-Warning "Set-RebootRequired invoked without a run context; using module-scoped fallback flag."
     return $true
 }
 
@@ -66,11 +69,7 @@ function Get-RebootRequired {
     )
 
     if ($Context) {
-        if (-not $Context.NeedsReboot -and $script:NeedsRebootFallback) {
-            $Context.NeedsReboot = $true
-        }
-
-        return $Context.NeedsReboot
+        return [bool]($Context.NeedsReboot -or $script:NeedsRebootFallback)
     }
 
     return [bool]$script:NeedsRebootFallback
