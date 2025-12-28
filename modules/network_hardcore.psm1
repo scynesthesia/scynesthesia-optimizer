@@ -335,15 +335,7 @@ function Get-NicRegistryPaths {
         return @()
     }
 
-    $map = network_discovery\Get-NicRegistryMap -AdapterResolver { Get-EligibleNetAdapters } -AllowOwnershipFallback -LoggerPrefix '[NetworkHardcore]' -AccessDeniedFlag ([ref]$script:NicRegistryAccessDenied)
-    return $map | ForEach-Object {
-        [pscustomobject]@{
-            Adapter = $_.AdapterObject
-            Path    = $_.RegistryPath
-            Guid    = $_.InterfaceGuid
-            IfIndex = $_.IfIndex
-        }
-    }
+    return Get-SharedNicRegistryPaths -AdapterResolver { Get-EligibleNetAdapters } -AllowOwnershipFallback -LoggerPrefix '[NetworkHardcore]' -AccessDeniedFlag ([ref]$script:NicRegistryAccessDenied)
 }
 
 # Description: Applies hardcore NIC registry tweaks for power, wake, and latency behaviors.
@@ -381,6 +373,21 @@ function Set-NicRegistryHardcore {
             }
         }
 
+        $sharedPowerFlags = @{
+            '*EEE'                 = '0'
+            '*WakeOnMagicPacket'   = '0'
+            '*WakeOnPattern'       = '0'
+            'AllowIdleIrp'         = '0'
+            'DeepSleepMode'        = '0'
+            'EEE'                  = '0'
+            'EnableGreenEthernet'  = '0'
+            'WakeOnMagicPacket'    = '0'
+            'WakeOnPatternMatch'   = '0'
+            'WolShutdownLinkSpeed' = '0'
+        }
+
+        $sharedPowerResult = Invoke-NicPowerRegistryTweaks -Context (Get-RunContext -Context $Context) -NicPaths $nicPaths -Values $sharedPowerFlags -LoggerPrefix '[NetworkHardcore]' -InvokeOnceId 'NicPower:Shared' -CleanupInterfaceNoise
+
         $powerOffload = @{
             '*EEE'                 = '0'
             '*WakeOnMagicPacket'   = '0'
@@ -408,32 +415,20 @@ function Set-NicRegistryHardcore {
             'RxAbsIntDelay'= '0'
         }
 
-        $nagleContext = $Context
-        if (-not $nagleContext) {
-            try { $nagleContext = (Get-Variable -Name Context -Scope Global -ErrorAction Stop).Value } catch { }
+        $powerOffloadRemaining = @{}
+        foreach ($entry in $powerOffload.GetEnumerator()) {
+            if (-not $sharedPowerFlags.ContainsKey($entry.Key) -or $sharedPowerFlags[$entry.Key] -ne $entry.Value) {
+                $powerOffloadRemaining[$entry.Key] = $entry.Value
+            }
         }
-        if (-not $nagleContext) {
-            $nagleContext = New-RunContext
-        }
-        $nagleAllowed = Invoke-Once -Context $nagleContext -Id 'Nagle:Hardcore' -Action { $true }
-        $nagleSkipNotified = $false
+
+        $nagleResult = Invoke-NagleRegistryUpdate -Context (Get-RunContext -Context $Context) -Adapters ($nicPaths | ForEach-Object { $_.Adapter }) -LoggerPrefix '[NetworkHardcore]' -InvokeOnceId 'Nagle:Tcp'
 
         foreach ($item in $nicPaths) {
             $adapterName = $item.Adapter.Name
-            $adapterChanged = $false
-            try {
-                $pnPStatus = & $setValueIfDifferent $item.Path 'PnPCapabilities' 24 ([Microsoft.Win32.RegistryValueKind]::DWord)
-                if ($pnPStatus -eq 'Changed') {
-                    Write-Host "    [+] PnPCapabilities set to 24 (power management disabled)" -ForegroundColor Green
-                    $adapterChanged = $true
-                } elseif ($pnPStatus -eq 'Failed') {
-                    Write-Host "    [!] Failed to set PnPCapabilities on $adapterName" -ForegroundColor Yellow
-                }
-            } catch {
-                Invoke-ErrorHandler -Context "Setting PnPCapabilities on $adapterName" -ErrorRecord $_
-            }
+            $adapterChanged = ($sharedPowerResult -and $sharedPowerResult.ChangedAdapters -contains $adapterName)
 
-            foreach ($entry in $powerOffload.GetEnumerator()) {
+            foreach ($entry in $powerOffloadRemaining.GetEnumerator()) {
                 try {
                     $status = & $setValueIfDifferent $item.Path $entry.Key $entry.Value ([Microsoft.Win32.RegistryValueKind]::String)
                     if ($status -eq 'Changed') {
@@ -480,18 +475,9 @@ function Set-NicRegistryHardcore {
                     } catch { }
                 }
 
-                if ($nagleAllowed) {
-                    $nagleChanged = $false
-                    if (& $setValueIfDifferent $interfacePath 'TcpAckFrequency' 1 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
-                    if (& $setValueIfDifferent $interfacePath 'TCPNoDelay' 1 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
-                    if (& $setValueIfDifferent $interfacePath 'TcpDelAckTicks' 0 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
-                    if ($nagleChanged) {
-                        Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
-                        $adapterChanged = $true
-                    }
-                } elseif (-not $nagleSkipNotified) {
-                    Write-Host "    [ ] Nagle parameters already applied; skipping." -ForegroundColor Gray
-                    $nagleSkipNotified = $true
+                if ($nagleResult -and $nagleResult.ChangedAdapters -contains $adapterName) {
+                    Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
+                    $adapterChanged = $true
                 }
             } catch {
                 Invoke-ErrorHandler -Context "Setting Nagle parameters for $adapterName" -ErrorRecord $_

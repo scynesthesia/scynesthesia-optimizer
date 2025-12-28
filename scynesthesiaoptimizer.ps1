@@ -467,15 +467,11 @@ do {
         '3' {
             Write-Section "Gaming Mode / FPS Boost"
             Invoke-GamingOptimizations -Context $script:Context
-            if (Get-Confirmation "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.)" 'y') {
-                $msiResult = Enable-MsiModeSafe -Target @('GPU','STORAGE') -Context $script:Context
-                if ($script:Logger -and $msiResult -and $msiResult.Touched -gt 0) {
-                    Write-Log "[Gaming] MSI Mode enabled for GPU and storage controllers from main Gaming Mode."
-                } elseif ($script:Logger) {
-                    Write-Log "[Gaming] MSI Mode for GPU/storage already enabled or not applicable." -Level 'Info'
-                }
-            } else {
-                Write-Host "  [ ] MSI Mode skipped." -ForegroundColor DarkGray
+            $msiResult = Invoke-MsiModeOnce -Context $script:Context -Targets @('GPU','STORAGE') -PromptMessage "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.)" -InvokeOnceId 'MSI:GPU+STORAGE' -DefaultResponse 'y'
+            if ($script:Logger -and $msiResult -and $msiResult.Touched -gt 0) {
+                Write-Log "[Gaming] MSI Mode enabled for GPU and storage controllers from main Gaming Mode."
+            } elseif ($script:Logger -and $msiResult) {
+                Write-Log "[Gaming] MSI Mode for GPU/storage already enabled or not applicable." -Level 'Info'
             }
             Write-Host "[+] Gaming tweaks applied." -ForegroundColor Magenta
 
