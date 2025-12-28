@@ -1180,6 +1180,15 @@ function Invoke-NetworkTweaksHardcore {
         $primaryAdapters = $adapters
     } else {
         $primaryAdapters = @($primary)
+        $isPrimaryWifi = $false
+        try {
+            $medium = $primary | Select-Object -ExpandProperty NdisPhysicalMedium -ErrorAction SilentlyContinue
+            if ($medium -and $medium -match '(?i)802\\.11|wireless') {
+                $isPrimaryWifi = $true
+            } elseif ($primary.InterfaceDescription -match '(?i)(wi-?fi|wireless|802\\.11)') {
+                $isPrimaryWifi = $true
+            }
+        } catch { }
         $parsedSpeed = Convert-LinkSpeedToBits -LinkSpeed $primary.LinkSpeed
         if ($null -eq $parsedSpeed -or $parsedSpeed -le 0) {
             $speedLabel = 'Unknown speed'
@@ -1192,6 +1201,15 @@ function Invoke-NetworkTweaksHardcore {
             }
         }
         Write-Host "  [i] Primary adapter detected: $($primary.Name) ($speedLabel)." -ForegroundColor Cyan
+        if ($isPrimaryWifi) {
+            $wifiWarning = "Primary adapter '$($primary.Name)' appears to be wireless; disabling offloads can destabilize some Wi-Fi drivers."
+            Write-Host "  [!] $wifiWarning" -ForegroundColor Yellow
+            if ($logger) { Write-Log "[NetworkHardcore] $wifiWarning" -Level 'Warning' }
+            if (-not (Get-Confirmation "Continue with hardcore network tweaks on a Wi-Fi adapter?" 'n')) {
+                Write-Host "  [ ] Hardcore network tweaks canceled for Wi-Fi adapter safety." -ForegroundColor DarkGray
+                return
+            }
+        }
     }
 
     Set-NicRegistryHardcore -Context $Context
