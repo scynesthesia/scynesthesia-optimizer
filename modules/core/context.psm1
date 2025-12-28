@@ -27,7 +27,40 @@ function New-RunContext {
         NeedsReboot     = $false
         RollbackActions = @()
         LogPath         = $null
+        AppliedTweaks   = @{}
     }
+}
+
+# Ensures an action runs only once per identifier within the provided context.
+# Parameters:
+#   Context - Run context tracking applied tweaks.
+#   Id      - Unique identifier for the action.
+#   Action  - Script block to execute when not previously applied.
+function Invoke-Once {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context,
+
+        [Parameter(Mandatory)]
+        [string]$Id,
+
+        [Parameter(Mandatory)]
+        [scriptblock]$Action
+    )
+
+    if (-not $Context.PSObject.Properties.Name.Contains('AppliedTweaks')) {
+        $Context | Add-Member -Name AppliedTweaks -MemberType NoteProperty -Value @{}
+    }
+
+    if ($Context.AppliedTweaks.ContainsKey($Id)) {
+        Write-Host "Skipped $Id (already applied)"
+        return $false
+    }
+
+    & $Action
+    $Context.AppliedTweaks[$Id] = $true
+    return $true
 }
 
 # Returns the provided context or creates a new one when none is supplied.
@@ -113,4 +146,4 @@ function Reset-NeedsReboot {
     return $Context
 }
 
-Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired
+Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once
