@@ -373,11 +373,11 @@ function Show-NetworkTweaksMenu {
 
                     Write-Host "  [!] Warning: MTU discovery will run and may cause brief network disconnects." -ForegroundColor Yellow
                     try {
-                    Invoke-NetworkTweaksHardcore
-                    Set-NeedsReboot -Context $script:Context | Out-Null
-                } catch {
-                    Invoke-ErrorHandler -Context "Applying Hardcore Network Tweaks from Network Tweaks menu" -ErrorRecord $_
-                }
+                        Invoke-NetworkTweaksHardcore -Context $script:Context
+                        Set-NeedsReboot -Context $script:Context | Out-Null
+                    } catch {
+                        Invoke-ErrorHandler -Context "Applying Hardcore Network Tweaks from Network Tweaks menu" -ErrorRecord $_
+                    }
                 } else {
                     Write-Host "[ ] Hardcore Network Tweaks skipped." -ForegroundColor Gray
                 }
@@ -503,7 +503,7 @@ do {
 
                 Write-Host "  [!] Warning: MTU discovery will run and may cause brief network disconnects." -ForegroundColor Yellow
                 try {
-                    Invoke-NetworkTweaksHardcore
+                    Invoke-NetworkTweaksHardcore -Context $script:Context
                     Set-NeedsReboot -Context $script:Context | Out-Null
                 } catch {
                     Invoke-ErrorHandler -Context "Applying Hardcore Network Tweaks from Gaming preset" -ErrorRecord $_
