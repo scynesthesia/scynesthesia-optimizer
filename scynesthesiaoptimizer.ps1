@@ -310,17 +310,39 @@ function Show-NetworkTweaksMenu {
         $netChoice = Read-MenuChoice "Select a network option" @('1','2','3','4','5','6')
         $backupFile = "C:\ProgramData\Scynesthesia\network_backup.json"
 
-        $ensureBackup = {
-            if (-not (Test-Path $backupFile)) {
-                if (Get-Confirmation "Save a backup of your current network configuration before applying tweaks (recommended)?" 'y') {
-                    Save-NetworkBackupState
-                }
+        $requireNetworkBackup = {
+            param([string]$ProfileName)
+
+            if (-not (Get-Command Save-NetworkBackupState -ErrorAction SilentlyContinue)) {
+                Write-Host "  [!] Unable to create network backup; $ProfileName network tweaks aborted." -ForegroundColor Yellow
+                return $false
             }
+
+            if (-not (Get-Confirmation "$ProfileName network tweaks require a backup. Create/refresh it now?" 'y')) {
+                Write-Host "  [!] $ProfileName network tweaks aborted because the required backup was declined." -ForegroundColor Yellow
+                return $false
+            }
+
+            $backupResult = $null
+            try {
+                Write-Host "  [i] Creating mandatory network backup at $backupFile..." -ForegroundColor Gray
+                $backupResult = Save-NetworkBackupState
+            } catch {
+                Invoke-ErrorHandler -Context "Saving network backup before $ProfileName network tweaks (Network Tweaks menu)" -ErrorRecord $_
+            }
+
+            $backupSuccess = ($backupResult -and $backupResult.PSObject.Properties['Success'] -and $backupResult.Success)
+            if (-not $backupSuccess) {
+                Write-Host "  [!] $ProfileName network tweaks aborted because the network backup did not complete successfully." -ForegroundColor Yellow
+                return $false
+            }
+
+            return $true
         }
 
         switch ($netChoice) {
             '1' {
-                & $ensureBackup
+                if (-not (& $requireNetworkBackup 'Safe')) { break }
                 if (Get-Confirmation "Apply Safe Network Tweaks?" 'n') {
                     Invoke-NetworkTweaksSafe -Context $script:Context
                 } else {
@@ -328,7 +350,7 @@ function Show-NetworkTweaksMenu {
                 }
             }
             '2' {
-                & $ensureBackup
+                if (-not (& $requireNetworkBackup 'Aggressive')) { break }
                 if (Get-Confirmation "Apply Aggressive Network Tweaks?" 'n') {
                     Invoke-NetworkTweaksAggressive
                 } else {
@@ -336,7 +358,7 @@ function Show-NetworkTweaksMenu {
                 }
             }
             '3' {
-                & $ensureBackup
+                if (-not (& $requireNetworkBackup 'Gaming')) { break }
                 if (Get-Confirmation "Apply Gaming Network Tweaks?" 'n') {
                     Invoke-NetworkTweaksGaming -Context $script:Context
                 } else {
