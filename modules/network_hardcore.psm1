@@ -67,9 +67,12 @@ function Convert-LinkSpeedToBits {
 }
 
 # Description: Applies advanced TCP/IP registry parameters for performance tuning.
-# Parameters: None.
-# Returns: None. Sets global reboot flag after changes.
+# Parameters: Context - Optional run context for reboot tracking.
+# Returns: None. Sets reboot flag after changes.
 function Set-TcpIpAdvancedParameters {
+    param(
+        [object]$Context
+    )
     try {
         $buildNumber = [Environment]::OSVersion.Version.Build
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
@@ -96,22 +99,31 @@ function Set-TcpIpAdvancedParameters {
             }
         }
 
-        $Global:NeedsReboot = $true
+        if ($null -eq $Context) {
+            $Context = New-RunContext
+        }
+        Set-NeedsReboot -Context $Context | Out-Null
     } catch {
         Invoke-ErrorHandler -Context 'Configuring advanced TCP/IP parameters' -ErrorRecord $_
     }
 }
 
 # Description: Disables network throttling via registry for maximum throughput.
-# Parameters: None.
-# Returns: None. Sets global reboot flag on success.
+# Parameters: Context - Optional run context for reboot tracking.
+# Returns: None. Sets reboot flag on success.
 function Set-NetworkThrottlingHardcore {
+    param(
+        [object]$Context
+    )
     try {
         $path = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
         try {
             Set-RegistryValueSafe -Path $path -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
             Write-Host "  [+] NetworkThrottlingIndex set to maximum performance." -ForegroundColor Green
-            $Global:NeedsReboot = $true
+            if ($null -eq $Context) {
+                $Context = New-RunContext
+            }
+            Set-NeedsReboot -Context $Context | Out-Null
         } catch {
             Invoke-ErrorHandler -Context 'Setting NetworkThrottlingIndex' -ErrorRecord $_
         }
@@ -121,9 +133,12 @@ function Set-NetworkThrottlingHardcore {
 }
 
 # Description: Configures TCP/IP service provider priorities for resolution order.
-# Parameters: None.
-# Returns: None. Sets global reboot flag after applying values.
+# Parameters: Context - Optional run context for reboot tracking.
+# Returns: None. Sets reboot flag after applying values.
 function Set-ServicePriorities {
+    param(
+        [object]$Context
+    )
     try {
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\ServiceProvider'
         $values = @{
@@ -142,16 +157,22 @@ function Set-ServicePriorities {
             }
         }
 
-        $Global:NeedsReboot = $true
+        if ($null -eq $Context) {
+            $Context = New-RunContext
+        }
+        Set-NeedsReboot -Context $Context | Out-Null
     } catch {
         Invoke-ErrorHandler -Context 'Configuring ServiceProvider priorities' -ErrorRecord $_
     }
 }
 
 # Description: Applies Winsock parameter adjustments to align socket behavior.
-# Parameters: None.
-# Returns: None. Sets global reboot flag when updates are made.
+# Parameters: Context - Optional run context for reboot tracking.
+# Returns: None. Sets reboot flag when updates are made.
 function Set-WinsockOptimizations {
+    param(
+        [object]$Context
+    )
     try {
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters'
         $values = @{
@@ -168,16 +189,22 @@ function Set-WinsockOptimizations {
             }
         }
 
-        $Global:NeedsReboot = $true
+        if ($null -eq $Context) {
+            $Context = New-RunContext
+        }
+        Set-NeedsReboot -Context $Context | Out-Null
     } catch {
         Invoke-ErrorHandler -Context 'Applying Winsock optimizations' -ErrorRecord $_
     }
 }
 
 # Description: Tunes LanmanServer parameters for reduced latency and connection stability.
-# Parameters: None.
-# Returns: None. Sets global reboot flag when registry changes occur.
+# Parameters: Context - Optional run context for reboot tracking.
+# Returns: None. Sets reboot flag when registry changes occur.
 function Optimize-LanmanServer {
+    param(
+        [object]$Context
+    )
     try {
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters'
         $values = @{
@@ -196,16 +223,22 @@ function Optimize-LanmanServer {
             }
         }
 
-        $Global:NeedsReboot = $true
+        if ($null -eq $Context) {
+            $Context = New-RunContext
+        }
+        Set-NeedsReboot -Context $Context | Out-Null
     } catch {
         Invoke-ErrorHandler -Context 'Optimizing LanmanServer parameters' -ErrorRecord $_
     }
 }
 
 # Description: Runs netsh commands to set advanced TCP/IP global options for performance.
-# Parameters: None.
-# Returns: None. Sets global reboot flag following configuration.
+# Parameters: Context - Optional run context for reboot tracking.
+# Returns: None. Sets reboot flag following configuration.
 function Set-NetshHardcoreGlobals {
+    param(
+        [object]$Context
+    )
     try {
         $commands = @(
             @{ Cmd = 'netsh int tcp set global dca=enabled'; Description = 'DCA enabled' },
@@ -232,7 +265,10 @@ function Set-NetshHardcoreGlobals {
             Pop-Location -ErrorAction SilentlyContinue
         }
 
-        $Global:NeedsReboot = $true
+        if ($null -eq $Context) {
+            $Context = New-RunContext
+        }
+        Set-NeedsReboot -Context $Context | Out-Null
     } catch {
         Invoke-ErrorHandler -Context 'Applying hardcore netsh globals' -ErrorRecord $_
     }
@@ -262,9 +298,12 @@ function Get-NicRegistryPaths {
 }
 
 # Description: Applies hardcore NIC registry tweaks for power, wake, and latency behaviors.
-# Parameters: None.
-# Returns: None. Sets global reboot flag after applying changes.
+# Parameters: Context - Optional run context for reboot tracking.
+# Returns: None. Sets reboot flag after applying changes.
 function Set-NicRegistryHardcore {
+    param(
+        [object]$Context
+    )
     try {
         $nicPaths = Get-NicRegistryPaths
         if ($nicPaths.Count -eq 0) {
@@ -415,7 +454,10 @@ function Set-NicRegistryHardcore {
             }
         }
 
-        $Global:NeedsReboot = $true
+        if ($null -eq $Context) {
+            $Context = New-RunContext
+        }
+        Set-NeedsReboot -Context $Context | Out-Null
     } catch {
         Invoke-ErrorHandler -Context 'Applying NIC-specific registry tweaks' -ErrorRecord $_
     }
@@ -1015,9 +1057,12 @@ function Set-TcpCongestionProvider {
 }
 
 # Description: Applies advanced network optimizations including registry, driver, MTU, and congestion tweaks.
-# Parameters: None.
-# Returns: None. Sets global reboot flag due to extensive changes.
+# Parameters: Context - Optional run context for reboot tracking.
+# Returns: None. Sets reboot flag due to extensive changes.
 function Invoke-NetworkTweaksHardcore {
+    param(
+        [object]$Context
+    )
     Write-Section "Network Tweaks: Hardcore (Competitive Gaming)"
     Write-Host "  [!] Warning: MTU discovery will send test packets and adapters may reset, causing temporary disconnects." -ForegroundColor Yellow
     $backupFile = "C:\\ProgramData\\Scynesthesia\\network_backup.json"
@@ -1037,12 +1082,16 @@ function Invoke-NetworkTweaksHardcore {
     }
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
-    Set-TcpIpAdvancedParameters
-    Set-NetworkThrottlingHardcore
-    Set-ServicePriorities
-    Set-WinsockOptimizations
-    Optimize-LanmanServer
-    Set-NetshHardcoreGlobals
+    if ($null -eq $Context) {
+        $Context = New-RunContext
+    }
+
+    Set-TcpIpAdvancedParameters -Context $Context
+    Set-NetworkThrottlingHardcore -Context $Context
+    Set-ServicePriorities -Context $Context
+    Set-WinsockOptimizations -Context $Context
+    Optimize-LanmanServer -Context $Context
+    Set-NetshHardcoreGlobals -Context $Context
 
     $adapters = Get-EligibleNetAdapters
     if ($adapters.Count -eq 0) {
@@ -1070,7 +1119,7 @@ function Invoke-NetworkTweaksHardcore {
         Write-Host "  [i] Primary adapter detected: $($primary.Name) ($speedLabel)." -ForegroundColor Cyan
     }
 
-    Set-NicRegistryHardcore
+    Set-NicRegistryHardcore -Context $Context
     Set-WakeOnLanHardcore
 
     foreach ($adapter in $adapters) {
@@ -1184,7 +1233,7 @@ function Invoke-NetworkTweaksHardcore {
     Set-TcpCongestionProvider
 
     Write-Host "  [+] Hardcore network tweaks complete." -ForegroundColor Green
-    $Global:NeedsReboot = $true
+    Set-NeedsReboot -Context $Context | Out-Null
 }
 
 Export-ModuleMember -Function Invoke-NetworkTweaksHardcore
