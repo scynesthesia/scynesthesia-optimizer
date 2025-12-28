@@ -1,10 +1,12 @@
 # Depends on: ui.psm1 (loaded by main script)
 # Description: Enables MSI Mode for supported device classes to reduce DPC latency.
-# Parameters: Target - Array of device categories (GPU, NIC, STORAGE) to evaluate.
-# Returns: PSCustomObject with count of devices updated; sets global reboot flag when changes occur.
+# Parameters: Target - Array of device categories (GPU, NIC, STORAGE) to evaluate; Context - Run context for reboot tracking.
+# Returns: PSCustomObject with count of devices updated; sets reboot flag on the provided context when changes occur.
 function Enable-MsiModeSafe {
     param(
-        [string[]]$Target = 'GPU'
+        [string[]]$Target = 'GPU',
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
     )
 
     Write-Section "MSI Mode (Message Signaled Interrupts)"
@@ -66,7 +68,7 @@ function Enable-MsiModeSafe {
 
                 $currentVal = Get-ItemProperty -Path $regPath -Name "MSISupported" -ErrorAction SilentlyContinue
                 if ($null -eq $currentVal -or $currentVal.MSISupported -ne 1) {
-                    Set-RegistryValueSafe $regPath "MSISupported" 1
+                    Set-RegistryValueSafe $regPath "MSISupported" 1 -Context $Context
                     Write-Host "  [+] MSI enabled for: $($dev.FriendlyName)" -ForegroundColor Green
                     if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
                         Write-Log "[MSI] Enabled for $($dev.InstanceId)" -Level 'Info'
@@ -84,7 +86,7 @@ function Enable-MsiModeSafe {
     }
 
     if ($touched -gt 0) {
-        Set-RebootRequired | Out-Null
+        Set-RebootRequired -Context $Context | Out-Null
         Write-Host ""
         Write-Host "  [!] A REBOOT is required to apply MSI Mode changes." -ForegroundColor Magenta
     } else {

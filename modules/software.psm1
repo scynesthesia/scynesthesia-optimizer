@@ -84,14 +84,19 @@ function Invoke-SoftwareInstaller {
 }
 
 function Set-WindowsUpdateNotifyOnly {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     $path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
     $name = "AUOptions"
     $value = 2
 
     Write-Host "[i] Setting Windows Update to Notify for download and auto install." -ForegroundColor Gray
-    Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+    Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
 
-    Set-RebootRequired | Out-Null
+    Set-RebootRequired -Context $Context | Out-Null
     Write-Host "[+] Windows Update set to Notify Only. A reboot is recommended." -ForegroundColor Yellow
 }
 
