@@ -85,6 +85,30 @@ function Get-OrCreate-GamingPlan {
     return $gamingPlan
 }
 
+# Description: Determines whether the system is currently running on battery power.
+# Parameters: None.
+# Returns: Boolean indicating active battery usage.
+function Test-IsOnBatteryPower {
+    try {
+        $battery = Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
+    } catch {
+        $battery = $null
+    }
+
+    if (-not $battery) { return $false }
+
+    try {
+        $status = $battery.BatteryStatus
+        if ($null -ne $status) {
+            $statusCode = [int]$status
+            $dischargingStates = @(1, 4, 5, 11)
+            return $dischargingStates -contains $statusCode
+        }
+    } catch { }
+
+    return $false
+}
+
 # Description: Applies high-performance power settings tailored for gaming scenarios.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Activates or updates the gaming power plan.
@@ -101,6 +125,16 @@ function Invoke-CustomGamingPowerSettings {
     if ($isLaptop) {
         Write-Host "  [!] Laptop detected: these settings increase power draw and temperatures." -ForegroundColor Yellow
         Write-Host "      Recommended only while plugged into AC power." -ForegroundColor Yellow
+    }
+
+    $onBatteryPower = Test-IsOnBatteryPower
+    if ($onBatteryPower) {
+        Write-Host "  [!] System is currently running on battery power." -ForegroundColor Yellow
+        Write-Host "      Aggressive tweaks disable USB/PCIe power management and assume stable AC power." -ForegroundColor Yellow
+        if (-not (Get-Confirmation "Confirm you are plugged into AC before applying hardcore power tweaks." 'n')) {
+            Write-Host "  [ ] Hardcore power tweaks skipped while on battery." -ForegroundColor DarkGray
+            return
+        }
     }
 
     Write-Host "Applying adjustments to the 'Scynesthesia Gaming Mode' plan." -ForegroundColor DarkGray
