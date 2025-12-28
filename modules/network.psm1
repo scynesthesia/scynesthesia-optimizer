@@ -662,14 +662,55 @@ function Invoke-NetworkTweaksGaming {
 
 # Description: Saves current network-related registry and firewall settings to a JSON backup.
 # Parameters: None.
-# Returns: None. Writes backup file to ProgramData when possible.
+# Returns: PSCustomObject with Success flag, file path, and optional registry rollback snippet. Writes backup file to ProgramData when possible.
 function Save-NetworkBackupState {
     $backupDir = "C:\ProgramData\Scynesthesia"
     $file = Join-Path $backupDir "network_backup.json"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
+    $result = [pscustomobject]@{
+        Success            = $false
+        FilePath           = $file
+        RegRollbackSnippet = $null
+    }
+
+    $regRollbackMap = @{}
+    $formatRegPath = {
+        param([string]$Path)
+        if (-not $Path) { return $null }
+        $normalized = $Path
+        $normalized = $normalized -replace '^HKLM:', 'HKEY_LOCAL_MACHINE'
+        $normalized = $normalized -replace '^HKCU:', 'HKEY_CURRENT_USER'
+        return $normalized
+    }
+
+    $appendRegValue = {
+        param(
+            [string]$Path,
+            [string]$Name,
+            $Value,
+            [string]$Type = 'DWord'
+        )
+
+        if ($null -eq $Value) { return }
+        $normalizedPath = & $formatRegPath $Path
+        if (-not $normalizedPath) { return }
+        if (-not $regRollbackMap.ContainsKey($normalizedPath)) {
+            $regRollbackMap[$normalizedPath] = New-Object System.Collections.Generic.List[string]
+        }
+
+        $entry = switch ($Type.ToLower()) {
+            'string' { "\"$Name\"=\"$Value\"" }
+            default {
+                $asInt64 = [int64]$Value
+                "\"$Name\"=dword:$($asInt64.ToString('x8'))"
+            }
+        }
+        $regRollbackMap[$normalizedPath].Add($entry) | Out-Null
+    }
+
     $backup = [ordered]@{
-        Version                = 1
+        Version                = 2
         Created                = Get-Date
         NetworkThrottlingIndex = $null
         Nagle                  = @()
@@ -678,10 +719,40 @@ function Save-NetworkBackupState {
         NetBIOS                = @()
         DeliveryOptimization   = [ordered]@{ DODownloadMode = $null; DoSvcStartup = $null }
         NetworkDiscovery       = [ordered]@{ FirewallGroupDisabled = $null }
+        Hardcore               = [ordered]@{
+            TcpParameters       = [ordered]@{
+                DefaultTTL        = $null
+                Tcp1323Opts       = $null
+                TcpMaxDupAcks     = $null
+                MaxUserPort       = $null
+                TcpTimedWaitDelay = $null
+                SackOpts          = $null
+            }
+            ServiceProvider     = [ordered]@{
+                LocalPriority = $null
+                HostsPriority = $null
+                DnsPriority   = $null
+                NetbtPriority = $null
+            }
+            LanmanServer        = [ordered]@{
+                autodisconnect = $null
+                Size           = $null
+                EnableOplocks  = $null
+                IRPStackSize   = $null
+            }
+            Winsock             = [ordered]@{
+                MinSockAddrLength = $null
+                MaxSockAddrLength = $null
+            }
+            CongestionProvider  = $null
+            TcpGlobalsRaw       = $null
+            RegRollbackSnippet  = $null
+        }
     }
 
     try {
         $backup.NetworkThrottlingIndex = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name 'NetworkThrottlingIndex' -ErrorAction Stop).NetworkThrottlingIndex
+        & $appendRegValue 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' 'NetworkThrottlingIndex' $backup.NetworkThrottlingIndex 'DWord'
     } catch { }
 
     try {
@@ -737,16 +808,93 @@ function Save-NetworkBackupState {
     } catch { }
 
     try {
+        $tcpParamsPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
+        foreach ($name in $backup.Hardcore.TcpParameters.Keys) {
+            try {
+                $value = (Get-ItemProperty -Path $tcpParamsPath -Name $name -ErrorAction Stop).$name
+                $backup.Hardcore.TcpParameters[$name] = $value
+                & $appendRegValue $tcpParamsPath $name $value 'DWord'
+            } catch { }
+        }
+    } catch { }
+
+    try {
+        $serviceProviderPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\ServiceProvider'
+        foreach ($name in $backup.Hardcore.ServiceProvider.Keys) {
+            try {
+                $value = (Get-ItemProperty -Path $serviceProviderPath -Name $name -ErrorAction Stop).$name
+                $backup.Hardcore.ServiceProvider[$name] = $value
+                & $appendRegValue $serviceProviderPath $name $value 'DWord'
+            } catch { }
+        }
+    } catch { }
+
+    try {
+        $lanmanPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters'
+        foreach ($name in $backup.Hardcore.LanmanServer.Keys) {
+            try {
+                $value = (Get-ItemProperty -Path $lanmanPath -Name $name -ErrorAction Stop).$name
+                $backup.Hardcore.LanmanServer[$name] = $value
+                & $appendRegValue $lanmanPath $name $value 'DWord'
+            } catch { }
+        }
+    } catch { }
+
+    try {
+        $winsockPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters'
+        foreach ($name in $backup.Hardcore.Winsock.Keys) {
+            try {
+                $value = (Get-ItemProperty -Path $winsockPath -Name $name -ErrorAction Stop).$name
+                $backup.Hardcore.Winsock[$name] = $value
+                & $appendRegValue $winsockPath $name $value 'DWord'
+            } catch { }
+        }
+    } catch { }
+
+    try {
+        $tcpGlobals = netsh int tcp show global 2>&1
+        if ($tcpGlobals) {
+            $tcpGlobalsString = ($tcpGlobals -join "`n")
+            $backup.Hardcore.TcpGlobalsRaw = $tcpGlobalsString
+            $match = [regex]::Match($tcpGlobalsString, 'Congestion Provider\s*:\s*(?<provider>.+)', 'IgnoreCase')
+            if ($match.Success) {
+                $backup.Hardcore.CongestionProvider = $match.Groups['provider'].Value.Trim()
+            }
+        }
+    } catch { }
+
+    if ($regRollbackMap.Count -gt 0) {
+        $regLines = New-Object System.Collections.Generic.List[string]
+        $regLines.Add('Windows Registry Editor Version 5.00') | Out-Null
+        $regLines.Add('') | Out-Null
+        foreach ($path in $regRollbackMap.Keys) {
+            $regLines.Add("[$path]") | Out-Null
+            foreach ($entry in $regRollbackMap[$path]) {
+                $regLines.Add($entry) | Out-Null
+            }
+            $regLines.Add('') | Out-Null
+        }
+        $backup.Hardcore.RegRollbackSnippet = ($regLines -join "`r`n")
+        $result.RegRollbackSnippet = $backup.Hardcore.RegRollbackSnippet
+        if ($logger) {
+            Write-Log "[Backup] Prepared registry rollback snippet for hardcore network tweaks." -Level 'Info' -Data @{ SnippetPreview = ($backup.Hardcore.RegRollbackSnippet.Substring(0, [Math]::Min(200, $backup.Hardcore.RegRollbackSnippet.Length))) }
+        }
+    }
+
+    try {
         if (-not (Test-Path $backupDir)) {
             New-Item -Path $backupDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
         }
         $backup | ConvertTo-Json -Depth 6 | Set-Content -Path $file -Encoding UTF8 -ErrorAction Stop
         if ($logger) { Write-Log "[Backup] Network backup saved to $file" }
         Write-Host "[Backup] Network backup saved to $file" -ForegroundColor Green
+        $result.Success = $true
     } catch {
         Write-Host "[Backup] Failed to save network backup." -ForegroundColor Yellow
         if ($logger) { Write-Log "[Backup] Failed to save network backup: $($_.Exception.Message)" }
     }
+
+    return $result
 }
 
 # Description: Restores network settings from the saved JSON backup if present.
