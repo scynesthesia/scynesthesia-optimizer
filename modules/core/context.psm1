@@ -48,6 +48,7 @@ function Set-NeedsReboot {
     )
 
     $Context.NeedsReboot = $true
+    try { Set-Variable -Name NeedsReboot -Scope Global -Value $true -Force } catch {}
     return $Context
 }
 
@@ -60,7 +61,28 @@ function Get-NeedsReboot {
         [pscustomobject]$Context
     )
 
+    $globalReboot = $false
+    try { $globalReboot = [bool](Get-Variable -Name NeedsReboot -Scope Global -ValueOnly -ErrorAction SilentlyContinue) } catch {}
+
+    if ($globalReboot -and -not $Context.NeedsReboot) {
+        $Context.NeedsReboot = $true
+    }
+
     return $Context.NeedsReboot
 }
 
-Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot
+# Resets the reboot flag on the supplied context and mirrors it to the legacy global flag.
+# Parameters: Context - The run context to update.
+function Reset-NeedsReboot {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    $Context.NeedsReboot = $false
+    try { Set-Variable -Name NeedsReboot -Scope Global -Value $false -Force } catch {}
+    return $Context
+}
+
+Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot

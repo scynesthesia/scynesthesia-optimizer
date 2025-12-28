@@ -14,7 +14,6 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 $Global:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 
 # ---------- 2. MODULE IMPORTS (Moved up to ensure dependencies load early.) ----------
-$Global:NeedsReboot = $false
 try {
     $modulesRoot = Join-Path $Global:ScriptRoot 'modules'
     $coreModulesRoot = Join-Path $modulesRoot 'core'
@@ -72,7 +71,12 @@ try {
     exit 1
 }
 
-# ---------- 3. LOGGING (Transcript and logging initialization.) ----------
+# ---------- 3. CONTEXT INITIALIZATION ----------
+$Context = New-RunContext -ScriptRoot $Global:ScriptRoot
+Reset-NeedsReboot -Context $Context | Out-Null
+$script:Logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+# ---------- 4. LOGGING (Transcript and logging initialization.) ----------
 $TranscriptStarted = $false
 # Get-Confirmation is now available from ui.psm1.
 if (Get-Confirmation "Enable session logging to a file? (Recommended for service records)" 'n') {
@@ -92,7 +96,7 @@ if (Get-Confirmation "Enable session logging to a file? (Recommended for service
     }
 }
 
-# ---------- 4. LOCAL FUNCTIONS ----------
+# ---------- 5. LOCAL FUNCTIONS ----------
 
 # Description: Displays the application banner with version and active power plan details.
 # Parameters: None.
@@ -201,7 +205,45 @@ function Invoke-SafeOptionalPrompts {
     }
 }
 
-# ---------- 5. PRESETS ----------
+# Description: Handles reboot prompting based on the supplied context and resets the flag afterward.
+# Parameters: Context - The current run context. OnExit - Indicates whether the prompt is shown while exiting.
+# Returns: None. Mutates Context.NeedsReboot.
+function Handle-RebootIfNeeded {
+    param(
+        [pscustomobject]$Context,
+        [switch]$OnExit
+    )
+
+    $needsReboot = Get-NeedsReboot -Context $Context
+    if (-not $needsReboot) {
+        if ($OnExit) {
+            Write-Host "[i] No changes requiring a reboot were applied." -ForegroundColor Gray
+        }
+        return
+    }
+
+    $prompt = "Some changes (like Nagle/MSI Mode) require a reboot to fully apply. Do you want to restart now?"
+    if (Get-Confirmation -Question $prompt -Default 'n') {
+        $logContext = if ($OnExit) { "[System] User chose to reboot from main menu." } else { "[System] User chose to reboot before returning to the menu." }
+        if ($script:Logger) { Write-Log $logContext }
+        try {
+            shutdown /r /t 0
+        } catch {
+            Write-Host "[System] Failed to initiate reboot: $($_.Exception.Message)" -ForegroundColor Red
+            if ($script:Logger) { Write-Log "[System] Failed to initiate reboot: $($_.Exception.Message)" }
+        }
+    } else {
+        if ($script:Logger) {
+            $logMessage = if ($OnExit) { "[System] User chose NOT to reboot at the end of the script." } else { "[System] User chose NOT to reboot before returning to the menu." }
+            Write-Log $logMessage
+        }
+        Write-Host "[System] Reminder: some changes will fully apply after a manual reboot." -ForegroundColor Yellow
+    }
+
+    Reset-NeedsReboot -Context $Context | Out-Null
+}
+
+# ---------- 6. PRESETS ----------
 
 # Description: Executes the Safe preset workflow focused on stability and baseline performance.
 # Parameters: None.
@@ -226,7 +268,7 @@ function Run-SafePreset {
     Invoke-SafePerformanceTweaks
     Ensure-PowerPlan -Mode 'HighPerformance'
 
-    $Status.RebootRequired = $Global:NeedsReboot
+    $Status.RebootRequired = Get-NeedsReboot -Context $script:Context
     Write-OutcomeSummary -Status $Status
     Write-Host "[+] Safe preset applied. Restart when convenient to finalize settings." -ForegroundColor Green
 }
@@ -258,7 +300,7 @@ function Run-PCSlowPreset {
     Invoke-AggressivePerformanceTweaks -OemServices $OemServices
     Invoke-AggressiveTweaks -HardwareProfile $HWProfile -FailedPackages ([ref]$Status.PackagesFailed) -OemServices $OemServices
 
-    $Status.RebootRequired = $Global:NeedsReboot
+    $Status.RebootRequired = Get-NeedsReboot -Context $script:Context
     Write-OutcomeSummary -Status $Status
     Write-Host "[+] Slow PC / Aggressive preset applied. Please restart." -ForegroundColor Green
 }
@@ -312,7 +354,7 @@ function Show-NetworkTweaksMenu {
                 } else {
                     Write-Host "[ ] Gaming Network Tweaks skipped." -ForegroundColor Gray
                 }
-                if ($Global:NeedsReboot) {
+                if (Get-NeedsReboot -Context $script:Context) {
                     Write-Host "  [i] Some network/gaming changes will require a reboot. You will be prompted before exiting." -ForegroundColor Yellow
                 }
             }
@@ -331,11 +373,11 @@ function Show-NetworkTweaksMenu {
 
                     Write-Host "  [!] Warning: MTU discovery will run and may cause brief network disconnects." -ForegroundColor Yellow
                     try {
-                        Invoke-NetworkTweaksHardcore
-                        $Global:NeedsReboot = $true
-                    } catch {
-                        Invoke-ErrorHandler -Context "Applying Hardcore Network Tweaks from Network Tweaks menu" -ErrorRecord $_
-                    }
+                    Invoke-NetworkTweaksHardcore
+                    Set-NeedsReboot -Context $script:Context | Out-Null
+                } catch {
+                    Invoke-ErrorHandler -Context "Applying Hardcore Network Tweaks from Network Tweaks menu" -ErrorRecord $_
+                }
                 } else {
                     Write-Host "[ ] Hardcore Network Tweaks skipped." -ForegroundColor Gray
                 }
@@ -409,8 +451,9 @@ function Show-ExplorerTweaksMenu {
     } while ($true)
 }
 
-# ---------- 6. MAIN LOOP ----------
+# ---------- 7. MAIN LOOP ----------
 
+$exitRequested = $false
 do {
     Show-Banner
     Write-Host "[ Automated Presets ]" -ForegroundColor Cyan
@@ -424,7 +467,7 @@ do {
     Write-Host "6) Software & Updates"
     Write-Host "7) UI & Explorer tweaks"
     Write-Host ""
-    $rebootStatus = if ($Global:NeedsReboot) { 'System Status: Reboot pending' } else { 'System Status: No reboot pending' }
+    $rebootStatus = if (Get-NeedsReboot -Context $script:Context) { 'System Status: Reboot pending' } else { 'System Status: No reboot pending' }
     Write-Host $rebootStatus -ForegroundColor DarkCyan
     Write-Host "0) Exit" -ForegroundColor Gray
     Write-Host ""
@@ -435,13 +478,12 @@ do {
         '2' { Run-PCSlowPreset }
         '3' {
             Write-Section "Gaming Mode / FPS Boost"
-            $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
             Invoke-GamingOptimizations
             if (Get-Confirmation "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.)" 'y') {
                 $msiResult = Enable-MsiModeSafe -Target @('GPU','STORAGE')
-                if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {
+                if ($script:Logger -and $msiResult -and $msiResult.Touched -gt 0) {
                     Write-Log "[Gaming] MSI Mode enabled for GPU and storage controllers from main Gaming Mode."
-                } elseif ($logger) {
+                } elseif ($script:Logger) {
                     Write-Log "[Gaming] MSI Mode for GPU/storage already enabled or not applicable." -Level 'Info'
                 }
             } else {
@@ -462,7 +504,7 @@ do {
                 Write-Host "  [!] Warning: MTU discovery will run and may cause brief network disconnects." -ForegroundColor Yellow
                 try {
                     Invoke-NetworkTweaksHardcore
-                    $Global:NeedsReboot = $true
+                    Set-NeedsReboot -Context $script:Context | Out-Null
                 } catch {
                     Invoke-ErrorHandler -Context "Applying Hardcore Network Tweaks from Gaming preset" -ErrorRecord $_
                 }
@@ -484,30 +526,18 @@ do {
         '7' {
             Show-ExplorerTweaksMenu
         }
-        '0' { break }
+        '0' { $exitRequested = $true }
     }
 
-    Write-Host "Tip: Run 'Safe Preset' before 'Gaming Mode' for best results." -ForegroundColor DarkGray
-
-} while ($choice -ne '0')
-
-$logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-if ($Global:NeedsReboot) {
-    if (Get-Confirmation -Question "Some changes (like Nagle/MSI Mode) require a reboot to fully apply. Do you want to restart now?" -Default 'n') {
-        if ($logger) { Write-Log "[System] User chose to reboot from main menu." }
-        try {
-            shutdown /r /t 0
-        } catch {
-            Write-Host "[System] Failed to initiate reboot: $($_.Exception.Message)" -ForegroundColor Red
-            if ($logger) { Write-Log "[System] Failed to initiate reboot: $($_.Exception.Message)" }
-        }
-    } else {
-        if ($logger) { Write-Log "[System] User chose NOT to reboot at the end of the script." }
-        Write-Host "[System] Reminder: some changes will fully apply after a manual reboot." -ForegroundColor Yellow
+    if (-not $exitRequested) {
+        Write-Host "Tip: Run 'Safe Preset' before 'Gaming Mode' for best results." -ForegroundColor DarkGray
     }
-} else {
-    Write-Host "[i] No changes requiring a reboot were applied." -ForegroundColor Gray
-}
+
+    Handle-RebootIfNeeded -Context $Context -OnExit:$exitRequested
+
+    if ($exitRequested) { break }
+
+} while ($true)
 
 try {
     if ($TranscriptStarted) {
