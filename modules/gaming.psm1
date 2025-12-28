@@ -19,7 +19,7 @@ function Optimize-GamingScheduler {
             Write-Log "[Gaming] Foreground game priorities set (GPU Priority=8, Priority=6, Scheduling/SFIO=High)."
         }
 
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
     } else {
         Write-Host "  [ ] Scheduler left unchanged." -ForegroundColor DarkGray
     }
@@ -130,7 +130,7 @@ function Invoke-CustomGamingPowerSettings {
                 Write-Log "[Gaming] Hardcore power plan tweaks applied and set active (GUID=$gamingGuid)."
             }
 
-            $Global:NeedsReboot = $true
+            Set-RebootRequired | Out-Null
         } catch {
             Invoke-ErrorHandler -Context "Applying gaming power settings" -ErrorRecord $_
         }
@@ -190,7 +190,7 @@ function Set-UsbPowerManagementHardcore {
                 Write-Log "[Gaming] USB hub '$($hub.Name)' PnPCapabilities set to 24."
             }
 
-            $Global:NeedsReboot = $true
+            Set-RebootRequired | Out-Null
         } catch {
             Invoke-ErrorHandler -Context "Setting USB power flags on $($hub.Name)" -ErrorRecord $_
         }
@@ -221,7 +221,7 @@ function Optimize-HidLatency {
         }
     }
 
-    $Global:NeedsReboot = $true
+    Set-RebootRequired | Out-Null
 }
 # Description: Tunes processor scheduling registry settings for lower input latency.
 # Parameters: None.
@@ -247,7 +247,7 @@ function Optimize-ProcessorScheduling {
             Write-Log "[Gaming] Win32PrioritySeparation set to 0x28 for fixed/short quanta."
         }
 
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
     } else {
         Write-Host "  [ ] Processor scheduling left unchanged." -ForegroundColor DarkGray
     }
@@ -280,7 +280,7 @@ function Set-FsoGlobalOverride {
             }
         }
 
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
         Write-Host "  [!] Reboot required to finalize Fullscreen Optimizations override." -ForegroundColor Yellow
     } catch {
         Invoke-ErrorHandler -Context "Applying Fullscreen Optimizations global override" -ErrorRecord $_

@@ -141,7 +141,7 @@ function Invoke-PerformanceBaseline {
     $prefetchValue = if ($HardwareProfile.HasSSD -and -not $HardwareProfile.HasHDD) { 1 } else { 3 }
     Set-RegistryValueSafe $prefetchPath "EnablePrefetcher" $prefetchValue
     Set-RegistryValueSafe $prefetchPath "EnableSuperfetch" $prefetchValue
-    $Global:NeedsReboot = $true
+    Set-RebootRequired | Out-Null
 
     if ($HardwareProfile.MemoryCategory -eq 'Low') {
         Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" "VisualFXSetting" 2
@@ -244,7 +244,7 @@ function Set-RegistryPerformanceValue {
 
         New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
         Write-Log -Message $SuccessMessage -Level 'Info'
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
     } catch {
         Invoke-ErrorHandler -Context $Context -ErrorRecord $_
     }
@@ -348,7 +348,7 @@ function Invoke-MpoVisualFixDisable {
     $name = "OverlayTestMode"
 
     Set-RegistryValueSafe -Path $path -Name $name -Value 5 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-    $Global:NeedsReboot = $true
+    Set-RebootRequired | Out-Null
     Write-Host "  [+] MPO disabled for stability." -ForegroundColor Gray
 }
 
@@ -363,7 +363,7 @@ function Invoke-HagsPerformanceEnablement {
     $name = "HwSchMode"
 
     Set-RegistryValueSafe -Path $path -Name $name -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-    $Global:NeedsReboot = $true
+    Set-RebootRequired | Out-Null
     Write-Host "  [+] HAGS enabled for performance." -ForegroundColor Gray
 }
 
@@ -378,7 +378,7 @@ function Invoke-PowerThrottlingDisablement {
     $name = "PowerThrottlingOff"
 
     Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-    $Global:NeedsReboot = $true
+    Set-RebootRequired | Out-Null
     Write-Host "  [+] Global power throttling disabled." -ForegroundColor Gray
 }
 
@@ -393,7 +393,7 @@ function Invoke-PagingExecutivePerformance {
     $name = "DisablePagingExecutive"
 
     Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-    $Global:NeedsReboot = $true
+    Set-RebootRequired | Out-Null
     Write-Host "  [+] Kernel paging disabled (kept in RAM)." -ForegroundColor Gray
 }
 
@@ -407,7 +407,7 @@ function Invoke-MemoryCompressionOptimization {
     $hardware = Get-HardwareProfile
     if ($hardware.TotalMemoryGB -ge 8) {
         Disable-MMAgent -MemoryCompression -ErrorAction SilentlyContinue
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
         Write-Host "  [+] Memory compression disabled (>=8GB RAM)." -ForegroundColor Gray
     } else {
         Write-Host "  [ ] Memory compression kept (RAM <8GB)." -ForegroundColor Gray

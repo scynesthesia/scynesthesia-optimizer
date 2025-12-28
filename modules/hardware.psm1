@@ -84,7 +84,7 @@ function Enable-MsiModeSafe {
     }
 
     if ($touched -gt 0) {
-        $Global:NeedsReboot = $true
+        Set-RebootRequired | Out-Null
         Write-Host ""
         Write-Host "  [!] A REBOOT is required to apply MSI Mode changes." -ForegroundColor Magenta
     } else {
