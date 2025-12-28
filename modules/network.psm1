@@ -50,15 +50,20 @@ function Invoke-NetworkFlush {
 }
 
 # Description: Performs a Winsock reset to rebuild network stack defaults.
-# Parameters: None.
-# Returns: None. Sets global reboot flag when reset runs.
+# Parameters: Context - Run context for reboot tracking.
+# Returns: None. Sets reboot flag on the provided context when reset runs.
 function Invoke-NetworkFullReset {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     Write-Host "  [+] Resetting Winsock catalog" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     try {
         netsh winsock reset | Out-Null
         Write-Host "      Reset complete. A reboot is recommended." -ForegroundColor Yellow
-        Set-RebootRequired | Out-Null
+        Set-RebootRequired -Context $Context | Out-Null
         if ($logger) {
             Write-Log "[Network] Executed 'netsh winsock reset'."
         }
@@ -117,17 +122,21 @@ function Set-TcpAutotuningNormal {
 }
 
 # Description: Prefers IPv4 addressing without disabling IPv6.
-# Parameters: FailureTracker - Optional tracker used for aggregating critical registry failures.
-# Returns: None. Sets global reboot flag after registry update.
+# Parameters: FailureTracker - Optional tracker used for aggregating critical registry failures; Context - Run context for reboot tracking.
+# Returns: None. Sets reboot flag on the provided context after registry update.
 function Set-IPvPreferenceIPv4First {
-    param([pscustomobject]$FailureTracker)
+    param(
+        [pscustomobject]$FailureTracker,
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
     Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6)" -ForegroundColor Gray
     try {
         $result = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" "DisabledComponents" 0x20 -Critical -ReturnResult
         $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
         if ($result -and $result.Success) {
-            Set-RebootRequired | Out-Null
+            Set-RebootRequired -Context $Context | Out-Null
             Write-Host "      [>] Preference recorded. Reboot recommended." -ForegroundColor Yellow
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
                 Write-Log "[Network] IPv4 preference set (DisabledComponents=0x20)."
@@ -296,19 +305,15 @@ function Set-NetworkThrottling {
 }
 
 # Description: Optimizes TCP acknowledgement parameters (Nagle-related) per adapter.
-# Parameters: None.
-# Returns: None. Sets global reboot flag if registry changes occur.
+# Parameters: Context - Run context for reboot tracking and applied-tweak deduplication.
+# Returns: None. Sets reboot flag on the provided context if registry changes occur.
 function Set-NagleState {
-    $nagleContext = $Context
-    $usingFallbackReboot = $false
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
-    if (-not $nagleContext) {
-        try { $nagleContext = (Get-Variable -Name Context -Scope Global -ErrorAction Stop).Value } catch { }
-    }
-    if (-not $nagleContext) {
-        $nagleContext = New-RunContext
-        $usingFallbackReboot = $true
-    }
+    $nagleContext = $Context
 
     $nagleAlreadyApplied = $false
     if ($nagleContext -and $nagleContext.PSObject.Properties.Name -contains 'AppliedTweaks') {
@@ -371,8 +376,7 @@ function Set-NagleState {
     }
 
     if ($changesMade) {
-        $rebootContext = if ($usingFallbackReboot) { $null } else { $nagleContext }
-        Set-RebootRequired -Context $rebootContext | Out-Null
+        Set-RebootRequired -Context $nagleContext | Out-Null
     }
 }
 
@@ -539,15 +543,20 @@ function Set-InterruptModeration {
 }
 
 # Description: Applies safe network tweaks focused on stability and privacy.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None.
 function Invoke-NetworkTweaksSafe {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     Write-Section "Network tweaks (Safe profile)"
     $tracker = New-RegistryFailureTracker -Name 'Network'
     Invoke-NetworkFlush
 
     if (Get-Confirmation "Reset Winsock (requires reboot)?" 'n') {
-        Invoke-NetworkFullReset
+        Invoke-NetworkFullReset -Context $Context
     } else {
         Write-Host "  [ ] Winsock left unchanged." -ForegroundColor Gray
     }
@@ -559,7 +568,7 @@ function Invoke-NetworkTweaksSafe {
     }
 
     Set-TcpAutotuningNormal
-    Set-IPvPreferenceIPv4First -FailureTracker $tracker
+    Set-IPvPreferenceIPv4First -FailureTracker $tracker -Context $Context
     if ($tracker.Abort) {
         Write-RegistryFailureSummary -Tracker $tracker
         return
@@ -598,15 +607,20 @@ function Invoke-NetworkTweaksAggressive {
 }
 
 # Description: Applies gaming-focused network tweaks for lower latency.
-# Parameters: None.
-# Returns: None. May set global reboot flag for certain changes.
+# Parameters: Context - Run context for reboot tracking.
+# Returns: None. May set reboot flag for certain changes.
 function Invoke-NetworkTweaksGaming {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     Write-Section "Network tweaks (Gaming profile)"
     Write-Host "  [i] Applying hardware power optimizations..." -ForegroundColor Gray
     Set-NicPowerManagementGaming
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     Set-NetworkThrottling
-    Set-NagleState
+    Set-NagleState -Context $Context
     Set-EnergyEfficientEthernet
     Enable-RSS
 
@@ -617,7 +631,7 @@ function Invoke-NetworkTweaksGaming {
     }
 
     if (Get-Confirmation "Enable MSI Mode for your NIC? Recommended on modern hardware. If you already applied MSI Mode elsewhere, you can skip this." 'n') {
-        $msiResult = Enable-MsiModeSafe -Target 'NIC'
+        $msiResult = Enable-MsiModeSafe -Target 'NIC' -Context $Context
         if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {
             Write-Log "[Network] MSI Mode enabled for NIC via gaming profile."
         } elseif ($logger) {

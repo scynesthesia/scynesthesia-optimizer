@@ -1,7 +1,5 @@
 # Description: Provides a per-run context object and helpers to track execution state.
 
-$script:NeedsRebootFallback = $false
-
 # Creates a new run context with defaults suitable for a single execution.
 # Returns: PSCustomObject with ScriptRoot, NeedsReboot, RollbackActions, LogPath.
 function New-RunContext {
@@ -9,8 +7,6 @@ function New-RunContext {
     param(
         [string]$ScriptRoot
     )
-
-    $script:NeedsRebootFallback = $false
 
     $resolvedRoot = if ($ScriptRoot) {
         $ScriptRoot
@@ -75,37 +71,29 @@ function Get-RunContext {
     return New-RunContext
 }
 
-# Marks that a reboot is required. Mirrors to context when provided, otherwise uses module-scoped fallback.
-# Parameters: Context - Optional run context to update.
+# Marks that a reboot is required on the provided context.
+# Parameters: Context - Run context to update.
 function Set-RebootRequired {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
         [pscustomobject]$Context
     )
 
-    if ($Context) {
-        $Context.NeedsReboot = $true
-        return $Context
-    }
-
-    $script:NeedsRebootFallback = $true
-    Write-Warning "Set-RebootRequired invoked without a run context; using module-scoped fallback flag."
-    return $true
+    $Context.NeedsReboot = $true
+    return $Context
 }
 
-# Retrieves the reboot-required flag from context or the module-scoped fallback when no context is supplied.
-# Parameters: Context - Optional run context to inspect.
+# Retrieves the reboot-required flag from the provided context.
+# Parameters: Context - Run context to inspect.
 function Get-RebootRequired {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
         [pscustomobject]$Context
     )
 
-    if ($Context) {
-        return [bool]($Context.NeedsReboot -or $script:NeedsRebootFallback)
-    }
-
-    return [bool]$script:NeedsRebootFallback
+    return [bool]$Context.NeedsReboot
 }
 
 # Marks the supplied context as requiring a reboot.
@@ -142,7 +130,6 @@ function Reset-NeedsReboot {
     )
 
     $Context.NeedsReboot = $false
-    $script:NeedsRebootFallback = $false
     return $Context
 }
 

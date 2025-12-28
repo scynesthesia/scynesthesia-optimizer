@@ -12,23 +12,20 @@ if (Get-RebootRequired -Context $baselineContext) {
     throw "New-RunContext should initialize without a reboot requirement."
 }
 
-Set-RebootRequired | Out-Null
-if (-not (Get-RebootRequired)) {
-    throw "Fallback reboot flag was not set when Set-RebootRequired ran without context."
-}
-
 $freshContext = New-RunContext
 
-if (Get-RebootRequired) {
-    throw "Fallback reboot flag should reset when creating a new run context."
+Set-RebootRequired -Context $baselineContext | Out-Null
+if (-not (Get-RebootRequired -Context $baselineContext)) {
+    throw "Set-RebootRequired must mark the provided context."
 }
 
 if (Get-RebootRequired -Context $freshContext) {
-    throw "Newly created context should not inherit reboot state from fallback."
+    throw "Newly created contexts should not inherit reboot state from other runs."
 }
 
-if ($freshContext.NeedsReboot) {
-    throw "Context.NeedsReboot should remain false after fallback-only reboot request."
+Reset-NeedsReboot -Context $baselineContext | Out-Null
+if (Get-RebootRequired -Context $baselineContext) {
+    throw "Reset-NeedsReboot should clear the reboot flag on the provided context."
 }
 
-Write-Host "[OK] Fallback reboot flag no longer contaminates new run contexts." -ForegroundColor Green
+Write-Host "[OK] Reboot state is isolated to the provided context." -ForegroundColor Green

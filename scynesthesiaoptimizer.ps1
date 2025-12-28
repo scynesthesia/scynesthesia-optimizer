@@ -60,6 +60,7 @@ try {
 
 # ---------- 3. CONTEXT INITIALIZATION ----------
 $Context = New-RunContext -ScriptRoot $Global:ScriptRoot
+$script:Context = $Context
 Reset-NeedsReboot -Context $Context | Out-Null
 $script:Logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
@@ -251,8 +252,8 @@ function Run-SafePreset {
     Invoke-PreferencesSafe
     Invoke-SafeOptionalPrompts
     Invoke-SysMainOptimization -HardwareProfile $HWProfile
-    Invoke-PerformanceBaseline -HardwareProfile $HWProfile
-    Invoke-SafePerformanceTweaks
+    Invoke-PerformanceBaseline -HardwareProfile $HWProfile -Context $script:Context
+    Invoke-SafePerformanceTweaks -Context $script:Context
     Ensure-PowerPlan -Mode 'HighPerformance'
 
     $Status.RebootRequired = Get-NeedsReboot -Context $script:Context
@@ -280,11 +281,11 @@ function Run-PCSlowPreset {
     $Status.PackagesFailed += $debloatResult.Failed
 
     Invoke-PreferencesSafe
-    Invoke-PerformanceBaseline -HardwareProfile $HWProfile
+    Invoke-PerformanceBaseline -HardwareProfile $HWProfile -Context $script:Context
     Ensure-PowerPlan -Mode 'HighPerformance'
 
     # Additional tweaks specific to slow PCs
-    Invoke-AggressivePerformanceTweaks -OemServices $OemServices
+    Invoke-AggressivePerformanceTweaks -OemServices $OemServices -Context $script:Context
     Invoke-AggressiveTweaks -HardwareProfile $HWProfile -FailedPackages ([ref]$Status.PackagesFailed) -OemServices $OemServices
 
     $Status.RebootRequired = Get-NeedsReboot -Context $script:Context
@@ -321,7 +322,7 @@ function Show-NetworkTweaksMenu {
             '1' {
                 & $ensureBackup
                 if (Get-Confirmation "Apply Safe Network Tweaks?" 'n') {
-                    Invoke-NetworkTweaksSafe
+                    Invoke-NetworkTweaksSafe -Context $script:Context
                 } else {
                     Write-Host "[ ] Safe Network Tweaks skipped." -ForegroundColor Gray
                 }
@@ -337,7 +338,7 @@ function Show-NetworkTweaksMenu {
             '3' {
                 & $ensureBackup
                 if (Get-Confirmation "Apply Gaming Network Tweaks?" 'n') {
-                    Invoke-NetworkTweaksGaming
+                    Invoke-NetworkTweaksGaming -Context $script:Context
                 } else {
                     Write-Host "[ ] Gaming Network Tweaks skipped." -ForegroundColor Gray
                 }
@@ -395,7 +396,7 @@ function Show-SoftwareUpdatesMenu {
                 Invoke-SoftwareInstaller
             }
             '2' {
-                Set-WindowsUpdateNotifyOnly
+                Set-WindowsUpdateNotifyOnly -Context $script:Context
             }
             '3' {
                 Invoke-WindowsUpdateScan
@@ -423,13 +424,13 @@ function Show-ExplorerTweaksMenu {
         $tweakChoice = Read-MenuChoice "Select a UI/Explorer option" @('1','2','3','4','5')
 
         switch ($tweakChoice) {
-            '1' { Set-ClassicContextMenus }
-            '2' { Add-TakeOwnershipMenu }
-            '3' { Set-ExplorerProSettings }
+            '1' { Set-ClassicContextMenus -Context $script:Context }
+            '2' { Add-TakeOwnershipMenu -Context $script:Context }
+            '3' { Set-ExplorerProSettings -Context $script:Context }
             '4' {
-                Set-ClassicContextMenus
-                Add-TakeOwnershipMenu
-                Set-ExplorerProSettings
+                Set-ClassicContextMenus -Context $script:Context
+                Add-TakeOwnershipMenu -Context $script:Context
+                Set-ExplorerProSettings -Context $script:Context
             }
             '5' { return }
         }
@@ -465,9 +466,9 @@ do {
         '2' { Run-PCSlowPreset }
         '3' {
             Write-Section "Gaming Mode / FPS Boost"
-            Invoke-GamingOptimizations
+            Invoke-GamingOptimizations -Context $script:Context
             if (Get-Confirmation "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.)" 'y') {
-                $msiResult = Enable-MsiModeSafe -Target @('GPU','STORAGE')
+                $msiResult = Enable-MsiModeSafe -Target @('GPU','STORAGE') -Context $script:Context
                 if ($script:Logger -and $msiResult -and $msiResult.Touched -gt 0) {
                     Write-Log "[Gaming] MSI Mode enabled for GPU and storage controllers from main Gaming Mode."
                 } elseif ($script:Logger) {
@@ -501,7 +502,7 @@ do {
         }
         '4' {
             Write-Section "Repair Tools"
-            Invoke-NetworkSoftReset
+            Invoke-NetworkSoftReset -Context $script:Context
             Invoke-SystemRepair
         }
         '5' {

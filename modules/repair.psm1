@@ -1,8 +1,13 @@
 # Depends on: ui.psm1 (loaded by main script)
 # Description: Performs a basic network repair including DNS flush and IP renewal.
-# Parameters: None.
-# Returns: None. Can set global reboot flag if Winsock reset is run.
+# Parameters: Context - Run context for reboot tracking.
+# Returns: None. Can set reboot flag on the provided context if Winsock reset is run.
 function Invoke-NetworkSoftReset {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     Write-Section "Basic Network Repair"
 
     Write-Host "This will clear DNS and renew the IP. It does NOT touch the firewall or advanced settings." -ForegroundColor Gray
@@ -16,7 +21,7 @@ function Invoke-NetworkSoftReset {
         if (Get-Confirmation "Also run 'netsh winsock reset'? (Requires reboot)" 'n') {
             netsh winsock reset | Out-Null
             Write-Host "[OK] Winsock reset. Reboot to apply changes." -ForegroundColor Yellow
-            Set-RebootRequired | Out-Null
+            Set-RebootRequired -Context $Context | Out-Null
         }
     }
 }

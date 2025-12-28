@@ -127,24 +127,26 @@ function Invoke-SysMainOptimization {
 }
 
 # Description: Applies baseline performance registry adjustments using hardware context.
-# Parameters: HardwareProfile - Used to select appropriate prefetch and visual effect settings.
+# Parameters: HardwareProfile - Used to select appropriate prefetch and visual effect settings; Context - Run context for reboot tracking.
 # Returns: None.
 function Invoke-PerformanceBaseline {
     param(
         [Parameter(Mandatory)]
-        $HardwareProfile
+        $HardwareProfile,
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
     )
 
     Write-Section "Baseline performance adjustments"
 
     $prefetchPath = "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters"
     $prefetchValue = if ($HardwareProfile.HasSSD -and -not $HardwareProfile.HasHDD) { 1 } else { 3 }
-    Set-RegistryValueSafe $prefetchPath "EnablePrefetcher" $prefetchValue
-    Set-RegistryValueSafe $prefetchPath "EnableSuperfetch" $prefetchValue
-    Set-RebootRequired | Out-Null
+    Set-RegistryValueSafe $prefetchPath "EnablePrefetcher" $prefetchValue -Context $Context
+    Set-RegistryValueSafe $prefetchPath "EnableSuperfetch" $prefetchValue -Context $Context
+    Set-RebootRequired -Context $Context | Out-Null
 
     if ($HardwareProfile.MemoryCategory -eq 'Low') {
-        Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" "VisualFXSetting" 2
+        Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" "VisualFXSetting" 2 -Context $Context
         Write-Host "  [+] Animations/effects tuned for performance (RAM <6GB)."
     } else {
         Write-Host "  [ ] Animations left as-is (RAM >=6GB)."
@@ -224,7 +226,7 @@ function Invoke-UltimatePerformancePlan {
 }
 
 # Description: Creates or updates a registry value with logging and error handling.
-# Parameters: Path, Name, Value, Type, Context, SuccessMessage - specify registry target and log messages.
+# Parameters: Path, Name, Value, Type, ContextDescription, SuccessMessage, RunContext - specify registry target, log messages, and reboot tracking context.
 # Returns: None.
 function Set-RegistryPerformanceValue {
     param(
@@ -232,8 +234,9 @@ function Set-RegistryPerformanceValue {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][object]$Value,
         [Parameter(Mandatory)][Microsoft.Win32.RegistryValueKind]$Type,
-        [Parameter(Mandatory)][string]$Context,
-        [Parameter(Mandatory)][string]$SuccessMessage
+        [Parameter(Mandatory)][string]$ContextDescription,
+        [Parameter(Mandatory)][string]$SuccessMessage,
+        [Parameter(Mandatory)][pscustomobject]$RunContext
     )
 
     try {
@@ -244,36 +247,42 @@ function Set-RegistryPerformanceValue {
 
         New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
         Write-Log -Message $SuccessMessage -Level 'Info'
-        Set-RebootRequired | Out-Null
+        Set-RebootRequired -Context $RunContext | Out-Null
     } catch {
-        Invoke-ErrorHandler -Context $Context -ErrorRecord $_
+        Invoke-ErrorHandler -Context $ContextDescription -ErrorRecord $_
     }
 }
 
 # Description: Disables NTFS Last Access time updates to reduce filesystem overhead.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Writes registry values to control last access behavior.
 function Invoke-NtfsLastAccessUpdate {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
     $name = "NtfsDisableLastAccessUpdate"
 
     Set-RegistryPerformanceValue -Path $path -Name $name -Value 1 `
         -Type ([Microsoft.Win32.RegistryValueKind]::DWord) `
-        -Context "Configuring NTFS Last Access update behavior" `
-        -SuccessMessage "Set $name to 1 under $path to disable NTFS Last Access updates."
+        -ContextDescription "Configuring NTFS Last Access update behavior" `
+        -SuccessMessage "Set $name to 1 under $path to disable NTFS Last Access updates." `
+        -RunContext $Context
 }
 
 # Description: Adjusts menu display delay for the current user to improve responsiveness.
-# Parameters: DelayMs - Desired delay in milliseconds.
+# Parameters: DelayMs - Desired delay in milliseconds; Context - Run context for reboot tracking.
 # Returns: None. Updates registry value controlling menu display timing.
 function Invoke-MenuShowDelay {
     [CmdletBinding()]
     param(
         [ValidateRange(0,1000)]
-        [int]$DelayMs = 20
+        [int]$DelayMs = 20,
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
     )
 
     $path = "HKCU:\Control Panel\Desktop"
@@ -282,49 +291,60 @@ function Invoke-MenuShowDelay {
 
     Set-RegistryPerformanceValue -Path $path -Name $name -Value $value `
         -Type ([Microsoft.Win32.RegistryValueKind]::String) `
-        -Context "Configuring menu display delay" `
-        -SuccessMessage "Set $name to $value under $path to adjust menu display delay."
+        -ContextDescription "Configuring menu display delay" `
+        -SuccessMessage "Set $name to $value under $path to adjust menu display delay." `
+        -RunContext $Context
 }
 
 # Description: Disables Windows transparency effects for the current user to reduce GPU overhead.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Sets registry key to turn off transparency effects.
 function Invoke-TransparencyEffectsDisable {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
     $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
     $name = "EnableTransparency"
 
     Set-RegistryPerformanceValue -Path $path -Name $name -Value 0 `
         -Type ([Microsoft.Win32.RegistryValueKind]::DWord) `
-        -Context "Disabling transparency effects for the current user" `
-        -SuccessMessage "Set $name to 0 under $path to disable transparency effects."
+        -ContextDescription "Disabling transparency effects for the current user" `
+        -SuccessMessage "Set $name to 0 under $path to disable transparency effects." `
+        -RunContext $Context
 }
 
 # Description: Forces visual effects to the Best Performance preset for the current user.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Writes registry setting for visual effects mode.
 function Invoke-VisualEffectsBestPerformance {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
     $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
     $name = "VisualFXSetting"
 
     Set-RegistryPerformanceValue -Path $path -Name $name -Value 2 `
         -Type ([Microsoft.Win32.RegistryValueKind]::DWord) `
-        -Context "Setting visual effects to Best Performance for the current user" `
-        -SuccessMessage "Set $name to 2 under $path to enforce Best Performance visual effects."
+        -ContextDescription "Setting visual effects to Best Performance for the current user" `
+        -SuccessMessage "Set $name to 2 under $path to enforce Best Performance visual effects." `
+        -RunContext $Context
 }
 
 # Description: Reduces the service shutdown timeout to speed up system shutdowns.
-# Parameters: Milliseconds - Target timeout value as a string-compatible integer.
+# Parameters: Milliseconds - Target timeout value as a string-compatible integer; Context - Run context for reboot tracking.
 # Returns: None. Updates registry value controlling service shutdown wait time.
 function Invoke-WaitToKillServiceTimeout {
     [CmdletBinding()]
     param(
-        [int]$Milliseconds = 2000
+        [int]$Milliseconds = 2000,
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
     )
 
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control"
@@ -333,81 +353,97 @@ function Invoke-WaitToKillServiceTimeout {
 
     Set-RegistryPerformanceValue -Path $path -Name $name -Value $value `
         -Type ([Microsoft.Win32.RegistryValueKind]::String) `
-        -Context "Configuring WaitToKillServiceTimeout for services" `
-        -SuccessMessage "Set $name to $value under $path to reduce service shutdown timeout."
+        -ContextDescription "Configuring WaitToKillServiceTimeout for services" `
+        -SuccessMessage "Set $name to $value under $path to reduce service shutdown timeout." `
+        -RunContext $Context
 }
 
 # Description: Disables Multi-Plane Overlay (MPO) to mitigate flickering and stutter issues.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Sets registry value and flags reboot requirement.
 function Invoke-MpoVisualFixDisable {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
     $path = "HKLM:\SOFTWARE\Microsoft\Windows\Dwm"
     $name = "OverlayTestMode"
 
-    Set-RegistryValueSafe -Path $path -Name $name -Value 5 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-    Set-RebootRequired | Out-Null
+    Set-RegistryValueSafe -Path $path -Name $name -Value 5 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
+    Set-RebootRequired -Context $Context | Out-Null
     Write-Host "  [+] MPO disabled for stability." -ForegroundColor Gray
 }
 
 # Description: Enables Hardware-accelerated GPU scheduling (HAGS) for supported GPUs.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Sets registry value and flags reboot requirement.
 function Invoke-HagsPerformanceEnablement {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
     $name = "HwSchMode"
 
-    Set-RegistryValueSafe -Path $path -Name $name -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-    Set-RebootRequired | Out-Null
+    Set-RegistryValueSafe -Path $path -Name $name -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
+    Set-RebootRequired -Context $Context | Out-Null
     Write-Host "  [+] HAGS enabled for performance." -ForegroundColor Gray
 }
 
 # Description: Disables global power throttling to maintain consistent CPU performance.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Writes registry value and flags reboot requirement.
 function Invoke-PowerThrottlingDisablement {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"
     $name = "PowerThrottlingOff"
 
-    Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-    Set-RebootRequired | Out-Null
+    Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
+    Set-RebootRequired -Context $Context | Out-Null
     Write-Host "  [+] Global power throttling disabled." -ForegroundColor Gray
 }
 
 # Description: Keeps the Windows kernel and drivers resident in physical memory.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Writes registry value and flags reboot requirement.
 function Invoke-PagingExecutivePerformance {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
     $name = "DisablePagingExecutive"
 
-    Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-    Set-RebootRequired | Out-Null
+    Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
+    Set-RebootRequired -Context $Context | Out-Null
     Write-Host "  [+] Kernel paging disabled (kept in RAM)." -ForegroundColor Gray
 }
 
 # Description: Disables Windows memory compression when sufficient RAM is available.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Evaluates hardware profile and adjusts compression accordingly.
 function Invoke-MemoryCompressionOptimization {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
     $hardware = Get-HardwareProfile
     if ($hardware.TotalMemoryGB -ge 8) {
         Disable-MMAgent -MemoryCompression -ErrorAction SilentlyContinue
-        Set-RebootRequired | Out-Null
+        Set-RebootRequired -Context $Context | Out-Null
         Write-Host "  [+] Memory compression disabled (>=8GB RAM)." -ForegroundColor Gray
     } else {
         Write-Host "  [ ] Memory compression kept (RAM <8GB)." -ForegroundColor Gray
@@ -415,38 +451,43 @@ function Invoke-MemoryCompressionOptimization {
 }
 
 # Description: Applies conservative performance tweaks suitable for most systems.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Calls supporting registry tweak functions.
 function Invoke-SafePerformanceTweaks {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
 
     Write-Section "Applying Safe performance tweaks..."
-    Invoke-MpoVisualFixDisable
-    Invoke-NtfsLastAccessUpdate
-    Invoke-MenuShowDelay -DelayMs 20
+    Invoke-MpoVisualFixDisable -Context $Context
+    Invoke-NtfsLastAccessUpdate -Context $Context
+    Invoke-MenuShowDelay -DelayMs 20 -Context $Context
     Invoke-SafeServiceOptimization
 }
 
 # Description: Applies more aggressive performance tweaks for low-end systems.
-# Parameters: None.
+# Parameters: OemServices - OEM service list; Context - Run context for reboot tracking.
 # Returns: None. Invokes multiple registry adjustments for responsiveness.
 function Invoke-AggressivePerformanceTweaks {
     [CmdletBinding()]
     param(
-        $OemServices
+        $OemServices,
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
     )
 
     Write-Section "Applying Aggressive/Low-end performance tweaks..."
-    Invoke-NtfsLastAccessUpdate
-    Invoke-HagsPerformanceEnablement
-    Invoke-PowerThrottlingDisablement
-    Invoke-PagingExecutivePerformance
-    Invoke-MemoryCompressionOptimization
-    Invoke-MenuShowDelay -DelayMs 0
-    Invoke-WaitToKillServiceTimeout -Milliseconds 2000
-    Invoke-TransparencyEffectsDisable
-    Invoke-VisualEffectsBestPerformance
+    Invoke-NtfsLastAccessUpdate -Context $Context
+    Invoke-HagsPerformanceEnablement -Context $Context
+    Invoke-PowerThrottlingDisablement -Context $Context
+    Invoke-PagingExecutivePerformance -Context $Context
+    Invoke-MemoryCompressionOptimization -Context $Context
+    Invoke-MenuShowDelay -DelayMs 0 -Context $Context
+    Invoke-WaitToKillServiceTimeout -Milliseconds 2000 -Context $Context
+    Invoke-TransparencyEffectsDisable -Context $Context
+    Invoke-VisualEffectsBestPerformance -Context $Context
     Invoke-AggressiveServiceOptimization -OemServices $OemServices
 }
 

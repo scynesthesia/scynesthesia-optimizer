@@ -1,25 +1,30 @@
 # Depends on: ui.psm1 (loaded by main script)
 # Description: Adjusts scheduler priorities to favor foreground gaming workloads.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Logs actions when logger available.
 function Optimize-GamingScheduler {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     Write-Section "Process Priority (Gaming)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
     if (Get-Confirmation "Prioritize GPU/CPU for foreground games?" 'y') {
         $gamesPath = "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
 
-        Set-RegistryValueSafe $gamesPath "GPU Priority" 8
-        Set-RegistryValueSafe $gamesPath "Priority" 6
-        Set-RegistryValueSafe $gamesPath "Scheduling Category" "High" ([Microsoft.Win32.RegistryValueKind]::String)
-        Set-RegistryValueSafe $gamesPath "SFIO Priority" "High" ([Microsoft.Win32.RegistryValueKind]::String)
+        Set-RegistryValueSafe $gamesPath "GPU Priority" 8 -Context $Context
+        Set-RegistryValueSafe $gamesPath "Priority" 6 -Context $Context
+        Set-RegistryValueSafe $gamesPath "Scheduling Category" "High" ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context
+        Set-RegistryValueSafe $gamesPath "SFIO Priority" "High" ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context
 
         Write-Host "  [+] Scheduler optimized for games." -ForegroundColor Green
         if ($logger) {
             Write-Log "[Gaming] Foreground game priorities set (GPU Priority=8, Priority=6, Scheduling/SFIO=High)."
         }
 
-        Set-RebootRequired | Out-Null
+        Set-RebootRequired -Context $Context | Out-Null
     } else {
         Write-Host "  [ ] Scheduler left unchanged." -ForegroundColor DarkGray
     }
@@ -81,9 +86,14 @@ function Get-OrCreate-GamingPlan {
 }
 
 # Description: Applies high-performance power settings tailored for gaming scenarios.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Activates or updates the gaming power plan.
 function Invoke-CustomGamingPowerSettings {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     Write-Section "Power Plan: 'Custom Gaming Tweaks'"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
@@ -130,7 +140,7 @@ function Invoke-CustomGamingPowerSettings {
                 Write-Log "[Gaming] Hardcore power plan tweaks applied and set active (GUID=$gamingGuid)."
             }
 
-            Set-RebootRequired | Out-Null
+            Set-RebootRequired -Context $Context | Out-Null
         } catch {
             Invoke-ErrorHandler -Context "Applying gaming power settings" -ErrorRecord $_
         }
@@ -139,9 +149,14 @@ function Invoke-CustomGamingPowerSettings {
     }
 }
 # Description: Disables USB hub power management flags to minimize input latency.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Logs actions when logger is available.
 function Set-UsbPowerManagementHardcore {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     Write-Section "USB Power Management"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     $usbRoot = "HKLM:\\SYSTEM\\CurrentControlSet\\Enum\\USB"
@@ -184,13 +199,13 @@ function Set-UsbPowerManagementHardcore {
 
     foreach ($hub in $hubs) {
         try {
-            Set-RegistryValueSafe -Path $hub.Path -Name 'PnPCapabilities' -Value 24 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+            Set-RegistryValueSafe -Path $hub.Path -Name 'PnPCapabilities' -Value 24 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
             Write-Host "  [+] USB hub '$($hub.Name)' power disable applied." -ForegroundColor Green
             if ($logger) {
                 Write-Log "[Gaming] USB hub '$($hub.Name)' PnPCapabilities set to 24."
             }
 
-            Set-RebootRequired | Out-Null
+            Set-RebootRequired -Context $Context | Out-Null
         } catch {
             Invoke-ErrorHandler -Context "Setting USB power flags on $($hub.Name)" -ErrorRecord $_
         }
@@ -200,9 +215,14 @@ function Set-UsbPowerManagementHardcore {
 }
 
 # Description: Tunes HID class queue sizes to reduce input buffering latency.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Records changes when logger is present.
 function Optimize-HidLatency {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     Write-Section "HID Latency Optimizations"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
@@ -213,7 +233,7 @@ function Optimize-HidLatency {
 
     foreach ($entry in $hidPaths) {
         try {
-            Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value 100 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+            Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value 100 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
             Write-Host "  [+] $($entry.Name) set to 100." -ForegroundColor Green
             if ($logger) { Write-Log "[Gaming] $($entry.Name) set to 100 for HID latency optimization." }
         } catch {
@@ -221,12 +241,17 @@ function Optimize-HidLatency {
         }
     }
 
-    Set-RebootRequired | Out-Null
+    Set-RebootRequired -Context $Context | Out-Null
 }
 # Description: Tunes processor scheduling registry settings for lower input latency.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Records changes when logger is present.
 function Optimize-ProcessorScheduling {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     Write-Section "Processor Scheduling (Win32Priority)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     Write-Host "Tweaks CPU allocation for active windows. Recommended for competitive gaming." -ForegroundColor Gray
@@ -241,38 +266,43 @@ function Optimize-ProcessorScheduling {
     # 0x28 (40 decimal): Short intervals + Fixed Quantum.
     # Better for consistent frametimes in games; not the classic dynamic foreground "boost."
     if (Get-Confirmation "Apply Fixed Priority Separation (28 Hex) for lower input latency?" 'n') {
-        Set-RegistryValueSafe $priorityPath "Win32PrioritySeparation" 40
+        Set-RegistryValueSafe $priorityPath "Win32PrioritySeparation" 40 -Context $Context
         Write-Host "  [+] Processor scheduling set to 28 Hex (Fixed/Short)." -ForegroundColor Green
         if ($logger) {
             Write-Log "[Gaming] Win32PrioritySeparation set to 0x28 for fixed/short quanta."
         }
 
-        Set-RebootRequired | Out-Null
+        Set-RebootRequired -Context $Context | Out-Null
     } else {
         Write-Host "  [ ] Processor scheduling left unchanged." -ForegroundColor DarkGray
     }
 }
 
 # Description: Disables Fullscreen Optimizations globally for DX11 input latency gains.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Sets reboot flag after applying registry overrides.
 function Set-FsoGlobalOverride {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
     Write-Section "Fullscreen Optimizations (Global Override)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     Write-Host "Disabling FSO reduces input lag but may cause slower or 'buggy' Alt+Tab transitions." -ForegroundColor Yellow
     $disableFso = Get-Confirmation "Disable Fullscreen Optimizations for maximum latency reduction?" 'n'
     try {
         if ($disableFso) {
-            Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-            Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+            Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
+            Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
 
             Write-Host "  [+] Fullscreen Optimizations disabled globally." -ForegroundColor Green
             if ($logger) {
                 Write-Log "[Gaming] Fullscreen Optimizations globally disabled (GameDVR_FSEBehaviorMode=2, AllowGameDVR=0)."
             }
         } else {
-            Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
-            Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord)
+            Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
+            Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context
 
             Write-Host "  [ ] Fullscreen Optimizations left at Windows defaults (restored)." -ForegroundColor DarkGray
             if ($logger) {
@@ -280,7 +310,7 @@ function Set-FsoGlobalOverride {
             }
         }
 
-        Set-RebootRequired | Out-Null
+        Set-RebootRequired -Context $Context | Out-Null
         Write-Host "  [!] Reboot required to finalize Fullscreen Optimizations override." -ForegroundColor Yellow
     } catch {
         Invoke-ErrorHandler -Context "Applying Fullscreen Optimizations global override" -ErrorRecord $_
@@ -288,16 +318,21 @@ function Set-FsoGlobalOverride {
 }
 
 # Description: Runs the complete Gaming preset sequence following modular standards.
-# Parameters: None.
+# Parameters: Context - Run context for reboot tracking.
 # Returns: None. Sequentially applies gaming optimizations and reports completion.
 function Invoke-GamingOptimizations {
-    Optimize-GamingScheduler
-    Invoke-CustomGamingPowerSettings
-    Optimize-ProcessorScheduling
-    Set-UsbPowerManagementHardcore
-    Optimize-HidLatency
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Optimize-GamingScheduler -Context $Context
+    Invoke-CustomGamingPowerSettings -Context $Context
+    Optimize-ProcessorScheduling -Context $Context
+    Set-UsbPowerManagementHardcore -Context $Context
+    Optimize-HidLatency -Context $Context
     Invoke-DriverTelemetry
-    Set-FsoGlobalOverride
+    Set-FsoGlobalOverride -Context $Context
 
     Write-Host "[+] Global Gaming Optimizations complete." -ForegroundColor Magenta
 }
