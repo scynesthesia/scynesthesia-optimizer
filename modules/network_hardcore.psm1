@@ -1129,22 +1129,42 @@ function Invoke-NetworkTweaksHardcore {
     )
     Write-Section "Network Tweaks: Hardcore (Competitive Gaming)"
     Write-Host "  [!] Warning: MTU discovery will send test packets and adapters may reset, causing temporary disconnects." -ForegroundColor Yellow
-    $backupFile = "C:\\ProgramData\\Scynesthesia\\network_backup.json"
-    if (Get-Command Save-NetworkBackupState -ErrorAction SilentlyContinue) {
-        try {
-            if (-not (Test-Path -Path $backupFile)) {
-                Write-Host "  [i] No existing network backup found at $backupFile; creating one now." -ForegroundColor Gray
-                Save-NetworkBackupState
-            } else {
-                Write-Host "  [i] Network backup already present at $backupFile; proceeding with tweaks." -ForegroundColor Gray
-            }
-        } catch {
-            Invoke-ErrorHandler -Context 'Saving network backup before hardcore tweaks' -ErrorRecord $_
-        }
-    } else {
-        Write-Host "  [!] Backup helper not available; proceeding without automatic network backup." -ForegroundColor Yellow
-    }
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $backupFile = "C:\\ProgramData\\Scynesthesia\\network_backup.json"
+    if (-not (Get-Command Save-NetworkBackupState -ErrorAction SilentlyContinue)) {
+        $message = "Backup helper not available; hardcore network tweaks require a backup. Aborting."
+        Write-Host "  [!] $message" -ForegroundColor Yellow
+        if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Error' }
+        return
+    }
+
+    if (-not (Get-Confirmation "Hardcore network tweaks require a fresh network backup. Create/refresh it now?" 'y')) {
+        $message = "Hardcore network tweaks aborted because the required backup was declined."
+        Write-Host "  [!] $message" -ForegroundColor Yellow
+        if ($logger) { Write-Log "[NetworkHardcore] $message" -Level 'Warning' }
+        return
+    }
+
+    $backupResult = $null
+    try {
+        Write-Host "  [i] Creating mandatory network backup at $backupFile..." -ForegroundColor Gray
+        $backupResult = Save-NetworkBackupState
+    } catch {
+        Invoke-ErrorHandler -Context 'Saving network backup before hardcore tweaks' -ErrorRecord $_
+    }
+
+    $backupSuccess = ($backupResult -and $backupResult.PSObject.Properties['Success'] -and $backupResult.Success)
+    if (-not $backupSuccess) {
+        $message = "Hardcore network tweaks aborted because the network backup did not complete successfully."
+        Write-Host "  [!] $message" -ForegroundColor Yellow
+        if ($logger) {
+            Write-Log "[NetworkHardcore] $message" -Level 'Error' -Data @{
+                BackupFile = $backupFile
+                RegRollbackSnippetPrepared = ($backupResult -and $backupResult.PSObject.Properties['RegRollbackSnippet'] -and $backupResult.RegRollbackSnippet)
+            }
+        }
+        return
+    }
 
     if ($null -eq $Context) {
         $Context = New-RunContext
