@@ -408,6 +408,16 @@ function Set-NicRegistryHardcore {
             'RxAbsIntDelay'= '0'
         }
 
+        $nagleContext = $Context
+        if (-not $nagleContext) {
+            try { $nagleContext = (Get-Variable -Name Context -Scope Global -ErrorAction Stop).Value } catch { }
+        }
+        if (-not $nagleContext) {
+            $nagleContext = New-RunContext
+        }
+        $nagleAllowed = Invoke-Once -Context $nagleContext -Id 'Nagle' -Action { $true }
+        $nagleSkipNotified = $false
+
         foreach ($item in $nicPaths) {
             $adapterName = $item.Adapter.Name
             $adapterChanged = $false
@@ -470,13 +480,18 @@ function Set-NicRegistryHardcore {
                     } catch { }
                 }
 
-                $nagleChanged = $false
-                if (& $setValueIfDifferent $interfacePath 'TcpAckFrequency' 1 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
-                if (& $setValueIfDifferent $interfacePath 'TCPNoDelay' 1 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
-                if (& $setValueIfDifferent $interfacePath 'TcpDelAckTicks' 0 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
-                if ($nagleChanged) {
-                    Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
-                    $adapterChanged = $true
+                if ($nagleAllowed) {
+                    $nagleChanged = $false
+                    if (& $setValueIfDifferent $interfacePath 'TcpAckFrequency' 1 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
+                    if (& $setValueIfDifferent $interfacePath 'TCPNoDelay' 1 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
+                    if (& $setValueIfDifferent $interfacePath 'TcpDelAckTicks' 0 ([Microsoft.Win32.RegistryValueKind]::DWord) -eq 'Changed') { $nagleChanged = $true }
+                    if ($nagleChanged) {
+                        Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
+                        $adapterChanged = $true
+                    }
+                } elseif (-not $nagleSkipNotified) {
+                    Write-Host "    [ ] Nagle parameters already applied; skipping." -ForegroundColor Gray
+                    $nagleSkipNotified = $true
                 }
             } catch {
                 Invoke-ErrorHandler -Context "Setting Nagle parameters for $adapterName" -ErrorRecord $_
