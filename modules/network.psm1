@@ -299,6 +299,23 @@ function Set-NetworkThrottling {
 # Parameters: None.
 # Returns: None. Sets global reboot flag if registry changes occur.
 function Set-NagleState {
+    $nagleContext = $Context
+    $usingFallbackReboot = $false
+
+    if (-not $nagleContext) {
+        try { $nagleContext = (Get-Variable -Name Context -Scope Global -ErrorAction Stop).Value } catch { }
+    }
+    if (-not $nagleContext) {
+        $nagleContext = New-RunContext
+        $usingFallbackReboot = $true
+    }
+
+    $nagleAllowed = Invoke-Once -Context $nagleContext -Id 'Nagle' -Action { $true }
+    if (-not $nagleAllowed) {
+        Write-Host "  [ ] Nagle adjustments already applied; skipping." -ForegroundColor Gray
+        return
+    }
+
     $adapters = Get-PhysicalNetAdapters
     if ($adapters.Count -eq 0) {
         Write-Host "  [!] No eligible adapters found for Nagle adjustments." -ForegroundColor Yellow
@@ -345,7 +362,8 @@ function Set-NagleState {
     }
 
     if ($changesMade) {
-        Set-RebootRequired | Out-Null
+        $rebootContext = if ($usingFallbackReboot) { $null } else { $nagleContext }
+        Set-RebootRequired -Context $rebootContext | Out-Null
     }
 }
 
