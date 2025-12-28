@@ -8,7 +8,17 @@ function Get-SharedNicRegistryPaths {
         [ref]$AccessDeniedFlag
     )
 
-    $map = network_discovery\Get-NicRegistryMap -AdapterResolver $AdapterResolver -AllowOwnershipFallback:$AllowOwnershipFallback -LoggerPrefix $LoggerPrefix -AccessDeniedFlag $AccessDeniedFlag
+    $parameters = @{
+        AdapterResolver        = $AdapterResolver
+        AllowOwnershipFallback = $AllowOwnershipFallback
+        LoggerPrefix           = $LoggerPrefix
+    }
+
+    if ($PSBoundParameters.ContainsKey('AccessDeniedFlag')) {
+        $parameters['AccessDeniedFlag'] = $AccessDeniedFlag
+    }
+
+    $map = network_discovery\Get-NicRegistryMap @parameters
     return $map | ForEach-Object {
         [pscustomobject]@{
             Adapter = $_.AdapterObject
