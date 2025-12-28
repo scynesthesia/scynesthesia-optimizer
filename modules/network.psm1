@@ -310,6 +310,15 @@ function Set-NagleState {
         $usingFallbackReboot = $true
     }
 
+    $nagleAlreadyApplied = $false
+    if ($nagleContext -and $nagleContext.PSObject.Properties.Name -contains 'AppliedTweaks') {
+        $nagleAlreadyApplied = $nagleContext.AppliedTweaks.Keys | Where-Object { $_ -like 'Nagle*' } | Select-Object -First 1
+    }
+    if ($nagleAlreadyApplied) {
+        Write-Host "  [ ] Hardcore Nagle already applied" -ForegroundColor Gray
+        return
+    }
+
     $nagleAllowed = Invoke-Once -Context $nagleContext -Id 'Nagle' -Action { $true }
     if (-not $nagleAllowed) {
         Write-Host "  [ ] Nagle adjustments already applied; skipping." -ForegroundColor Gray

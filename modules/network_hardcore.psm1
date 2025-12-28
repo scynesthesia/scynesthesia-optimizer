@@ -415,7 +415,7 @@ function Set-NicRegistryHardcore {
         if (-not $nagleContext) {
             $nagleContext = New-RunContext
         }
-        $nagleAllowed = Invoke-Once -Context $nagleContext -Id 'Nagle' -Action { $true }
+        $nagleAllowed = Invoke-Once -Context $nagleContext -Id 'Nagle:Hardcore' -Action { $true }
         $nagleSkipNotified = $false
 
         foreach ($item in $nicPaths) {
