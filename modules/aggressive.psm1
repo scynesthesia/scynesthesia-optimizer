@@ -19,8 +19,8 @@ function Get-AppRemovalListFromConfig {
 }
 
 # Description: Applies aggressive performance and debloat tweaks for slow PCs.
-# Parameters: HardwareProfile - Detected system characteristics; FailedPackages - Reference to collection of failed removals; OemServices - OEM services to protect.
-# Returns: None. May update failed package list and global reboot flag.
+# Parameters: HardwareProfile - Detected system characteristics; FailedPackages - Reference to collection of failed removals; OemServices - OEM services to protect; PresetName - Label for the active preset.
+# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. May update failed package list and global reboot flag.
 function Invoke-AggressiveTweaks {
     param(
         [Parameter(Mandatory)]
@@ -28,10 +28,12 @@ function Invoke-AggressiveTweaks {
         [Parameter(Mandatory)]
         [ref]$FailedPackages,
         $OemServices,
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string]$PresetName = 'current preset'
     )
 
     $context = Get-RunContext -Context $Context
+    $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     Write-Section "Additional tweaks for slow PCs (more aggressive)"
 
     $hibernationWarning = "WARNING: Disabling hibernation on laptops will disable Fast Startup and may prevent the system from saving state if the battery dies."
@@ -61,6 +63,7 @@ function Invoke-AggressiveTweaks {
     $backgroundAppsResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsRunInBackground" 2 -Context $context -Critical -ReturnResult -OperationLabel 'Block background apps'
     if (-not ($backgroundAppsResult -and $backgroundAppsResult.Success)) {
         Write-Host "  [!] Unable to block background apps (permission issue?)." -ForegroundColor Yellow
+        if (Test-RegistryResultForPresetAbort -Result $backgroundAppsResult -PresetName $presetLabel -OperationLabel 'Block background apps' -Critical) { return $true }
     }
 
     Write-Host "  [+] Additional debloat for slow PCs"
@@ -203,6 +206,8 @@ function Invoke-AggressiveTweaks {
     } else {
         Write-Host "  [ ] OneDrive stays installed."
     }
+
+    return $false
 }
 
 Export-ModuleMember -Function Invoke-AggressiveTweaks

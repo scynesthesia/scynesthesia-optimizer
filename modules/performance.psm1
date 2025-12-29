@@ -127,24 +127,36 @@ function Invoke-SysMainOptimization {
 }
 
 # Description: Applies baseline performance registry adjustments using hardware context.
-# Parameters: HardwareProfile - Used to select appropriate prefetch and visual effect settings; Context - Run context for reboot tracking.
-# Returns: None.
+# Parameters: HardwareProfile - Used to select appropriate prefetch and visual effect settings; Context - Run context for reboot tracking; PresetName - Label for the active preset.
+# Returns: Boolean indicating whether the preset should abort after a critical failure prompt.
 function Invoke-PerformanceBaseline {
     param(
         [Parameter(Mandatory)]
         $HardwareProfile,
         [Parameter(Mandatory)]
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string]$PresetName = 'current preset'
     )
 
     Write-Section "Baseline performance adjustments"
+    $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
 
     $prefetchPath = "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters"
     $prefetchValue = if ($HardwareProfile.HasSSD -and -not $HardwareProfile.HasHDD) { 1 } else { 3 }
     $prefetcherResult = Set-RegistryValueSafe $prefetchPath "EnablePrefetcher" $prefetchValue -Context $Context -Critical -ReturnResult -OperationLabel 'Configure prefetcher policy'
     $superfetchResult = Set-RegistryValueSafe $prefetchPath "EnableSuperfetch" $prefetchValue -Context $Context -Critical -ReturnResult -OperationLabel 'Configure superfetch policy'
-    if (($prefetcherResult -and $prefetcherResult.Success) -or ($superfetchResult -and $superfetchResult.Success)) {
+    $prefetchSuccess = $prefetcherResult -and $prefetcherResult.Success
+    $superfetchSuccess = $superfetchResult -and $superfetchResult.Success
+    if ($prefetchSuccess -or $superfetchSuccess) {
         Set-RebootRequired -Context $Context | Out-Null
+    }
+    if (-not $prefetchSuccess) {
+        Write-Host "  [!] Prefetcher policy could not be updated." -ForegroundColor Yellow
+        if (Test-RegistryResultForPresetAbort -Result $prefetcherResult -PresetName $presetLabel -OperationLabel 'Configure prefetcher policy' -Critical) { return $true }
+    }
+    if (-not $superfetchSuccess) {
+        Write-Host "  [!] Superfetch policy could not be updated." -ForegroundColor Yellow
+        if (Test-RegistryResultForPresetAbort -Result $superfetchResult -PresetName $presetLabel -OperationLabel 'Configure superfetch policy' -Critical) { return $true }
     }
 
     if ($HardwareProfile.MemoryCategory -eq 'Low') {
@@ -155,6 +167,7 @@ function Invoke-PerformanceBaseline {
     }
 
     Invoke-UltimatePerformancePlan
+    return $false
 }
 
 # Description: Ensures the Ultimate Performance power plan GUID is available, duplicating if necessary.
@@ -361,15 +374,17 @@ function Invoke-WaitToKillServiceTimeout {
 }
 
 # Description: Disables Multi-Plane Overlay (MPO) to mitigate flickering and stutter issues.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Sets registry value and flags reboot requirement.
+# Parameters: Context - Run context for reboot tracking; PresetName - Label for the active preset.
+# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Sets reboot flag on success.
 function Invoke-MpoVisualFixDisable {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string]$PresetName = 'current preset'
     )
 
+    $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     $path = "HKLM:\SOFTWARE\Microsoft\Windows\Dwm"
     $name = "OverlayTestMode"
 
@@ -379,19 +394,23 @@ function Invoke-MpoVisualFixDisable {
         Write-Host "  [+] MPO disabled for stability." -ForegroundColor Gray
     } else {
         Write-Host "  [!] Failed to disable MPO (permissions required?)." -ForegroundColor Yellow
+        if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Disable MPO overlay test mode' -Critical) { return $true }
     }
+    return $false
 }
 
 # Description: Enables Hardware-accelerated GPU scheduling (HAGS) for supported GPUs.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Sets registry value and flags reboot requirement.
+# Parameters: Context - Run context for reboot tracking; PresetName - Label for the active preset.
+# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Sets registry value and flags reboot requirement.
 function Invoke-HagsPerformanceEnablement {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string]$PresetName = 'current preset'
     )
 
+    $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
     $name = "HwSchMode"
 
@@ -401,19 +420,23 @@ function Invoke-HagsPerformanceEnablement {
         Write-Host "  [+] HAGS enabled for performance." -ForegroundColor Gray
     } else {
         Write-Host "  [!] Failed to enable HAGS (permission denied?)." -ForegroundColor Yellow
+        if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Enable HAGS' -Critical) { return $true }
     }
+    return $false
 }
 
 # Description: Disables global power throttling to maintain consistent CPU performance.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Writes registry value and flags reboot requirement.
+# Parameters: Context - Run context for reboot tracking; PresetName - Label for the active preset.
+# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Writes registry value and flags reboot requirement.
 function Invoke-PowerThrottlingDisablement {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string]$PresetName = 'current preset'
     )
 
+    $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"
     $name = "PowerThrottlingOff"
 
@@ -423,19 +446,23 @@ function Invoke-PowerThrottlingDisablement {
         Write-Host "  [+] Global power throttling disabled." -ForegroundColor Gray
     } else {
         Write-Host "  [!] Failed to disable power throttling (permission denied?)." -ForegroundColor Yellow
+        if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Disable power throttling' -Critical) { return $true }
     }
+    return $false
 }
 
 # Description: Keeps the Windows kernel and drivers resident in physical memory.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Writes registry value and flags reboot requirement.
+# Parameters: Context - Run context for reboot tracking; PresetName - Label for the active preset.
+# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Writes registry value and flags reboot requirement.
 function Invoke-PagingExecutivePerformance {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string]$PresetName = 'current preset'
     )
 
+    $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     $path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
     $name = "DisablePagingExecutive"
 
@@ -445,7 +472,9 @@ function Invoke-PagingExecutivePerformance {
         Write-Host "  [+] Kernel paging disabled (kept in RAM)." -ForegroundColor Gray
     } else {
         Write-Host "  [!] Failed to disable kernel paging (permission denied?)." -ForegroundColor Yellow
+        if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Disable kernel paging' -Critical) { return $true }
     }
+    return $false
 }
 
 # Description: Disables Windows memory compression when sufficient RAM is available.
@@ -469,44 +498,52 @@ function Invoke-MemoryCompressionOptimization {
 }
 
 # Description: Applies conservative performance tweaks suitable for most systems.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Calls supporting registry tweak functions.
+# Parameters: Context - Run context for reboot tracking; PresetName - Label for the active preset.
+# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Calls supporting registry tweak functions.
 function Invoke-SafePerformanceTweaks {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string]$PresetName = 'current preset'
     )
 
     Write-Section "Applying Safe performance tweaks..."
-    Invoke-MpoVisualFixDisable -Context $Context
+    $abort = Invoke-MpoVisualFixDisable -Context $Context -PresetName $PresetName
+    if ($abort) { return $true }
     Invoke-NtfsLastAccessUpdate -Context $Context
     Invoke-MenuShowDelay -DelayMs 20 -Context $Context
     Invoke-SafeServiceOptimization -Context $Context
+    return $false
 }
 
 # Description: Applies more aggressive performance tweaks for low-end systems.
-# Parameters: OemServices - OEM service list; Context - Run context for reboot tracking.
-# Returns: None. Invokes multiple registry adjustments for responsiveness.
+# Parameters: OemServices - OEM service list; Context - Run context for reboot tracking; PresetName - Label for the active preset.
+# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Invokes multiple registry adjustments for responsiveness.
 function Invoke-AggressivePerformanceTweaks {
     [CmdletBinding()]
     param(
         $OemServices,
         [Parameter(Mandatory)]
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string]$PresetName = 'current preset'
     )
 
     Write-Section "Applying Aggressive/Low-end performance tweaks..."
     Invoke-NtfsLastAccessUpdate -Context $Context
-    Invoke-HagsPerformanceEnablement -Context $Context
-    Invoke-PowerThrottlingDisablement -Context $Context
-    Invoke-PagingExecutivePerformance -Context $Context
+    $hagsAbort = Invoke-HagsPerformanceEnablement -Context $Context -PresetName $PresetName
+    if ($hagsAbort) { return $true }
+    $powerThrottleAbort = Invoke-PowerThrottlingDisablement -Context $Context -PresetName $PresetName
+    if ($powerThrottleAbort) { return $true }
+    $pagingAbort = Invoke-PagingExecutivePerformance -Context $Context -PresetName $PresetName
+    if ($pagingAbort) { return $true }
     Invoke-MemoryCompressionOptimization -Context $Context
     Invoke-MenuShowDelay -DelayMs 0 -Context $Context
     Invoke-WaitToKillServiceTimeout -Milliseconds 2000 -Context $Context
     Invoke-TransparencyEffectsDisable -Context $Context
     Invoke-VisualEffectsBestPerformance -Context $Context
     Invoke-AggressiveServiceOptimization -Context $Context -OemServices $OemServices
+    return $false
 }
 
 Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Invoke-SysMainOptimization, Invoke-PerformanceBaseline, Invoke-UltimatePerformancePlan, Invoke-NtfsLastAccessUpdate, Invoke-MenuShowDelay, Invoke-TransparencyEffectsDisable, Invoke-VisualEffectsBestPerformance, Invoke-WaitToKillServiceTimeout, Invoke-MpoVisualFixDisable, Invoke-HagsPerformanceEnablement, Invoke-PowerThrottlingDisablement, Invoke-PagingExecutivePerformance, Invoke-MemoryCompressionOptimization, Invoke-SafePerformanceTweaks, Invoke-AggressivePerformanceTweaks

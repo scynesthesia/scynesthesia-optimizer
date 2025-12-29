@@ -584,6 +584,8 @@ function Set-RegistryValueSafe {
         $result.Path = $target.FullPath
     } catch {
         $message = "Failed to resolve registry path for $Path -> $displayName (Type: $Type, Data: $(Format-RegistryDataForLog $Value)). Category: Missing hive or key. Error: $(Get-RegistryExceptionDetails $_.Exception)"
+        $hostColor = if ($Critical) { 'Red' } else { 'Yellow' }
+        Write-Host "[!] $message" -ForegroundColor $hostColor
         $result.ErrorCategory = 'PathResolution'
         Write-Log -Message $message -Level 'Error'
         if ($shouldThrowOnFailure) { throw }
@@ -687,6 +689,48 @@ function Set-RegistryValueSafe {
     }
 
     if ($ReturnResult) { return $result }
+}
+
+# Description: Checks a registry result and prompts the user to abort the active preset when a critical failure occurs.
+# Parameters: Result - Registry result object; PresetName - Label for the active preset; OperationLabel - Friendly description of the registry operation; Critical - Treat the failure as abort-worthy.
+# Returns: Boolean indicating whether the caller should abort the preset.
+function Test-RegistryResultForPresetAbort {
+    param(
+        [pscustomobject]$Result,
+        [string]$PresetName,
+        [string]$OperationLabel,
+        [switch]$Critical
+    )
+
+    if (-not $Critical) { return $false }
+
+    $operation = if (-not [string]::IsNullOrWhiteSpace($OperationLabel)) {
+        $OperationLabel
+    } elseif ($Result -and $Result.PSObject.Properties.Name -contains 'Operation' -and -not [string]::IsNullOrWhiteSpace($Result.Operation)) {
+        $Result.Operation
+    } elseif ($Result) {
+        "$($Result.Path) -> $($Result.Name)"
+    } else {
+        '(unspecified registry operation)'
+    }
+
+    $success = $Result -and $Result.Success
+    if ($success) { return $false }
+
+    $preset = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
+    $categoryNote = if ($Result -and $Result.ErrorCategory) { " (Category: $($Result.ErrorCategory))" } else { "" }
+    $message = "Critical registry change failed$categoryNote: $operation"
+    Write-Host "  [!] $message" -ForegroundColor Red
+    Write-Log -Message "[PresetGuard] $message" -Level 'Error'
+
+    $abortPrompt = "Abort the $preset to avoid a partially applied system state?"
+    $abort = Get-Confirmation $abortPrompt 'y'
+    if ($abort) {
+        Write-Host "  [!] Aborting $preset at user request due to critical registry failure." -ForegroundColor Red
+        Write-Log -Message "[PresetGuard] User opted to abort $preset after failure in '$operation'." -Level 'Warning'
+    }
+
+    return $abort
 }
 
 # Description: Initializes a tracker for counting critical registry write failures within a module.
@@ -795,4 +839,4 @@ function Write-OutcomeSummary {
     }
 }
 
-Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary, New-RegistryFailureTracker, Register-RegistryResult, Write-RegistryFailureSummary, Add-RegistryPermissionFailure
+Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary, New-RegistryFailureTracker, Register-RegistryResult, Write-RegistryFailureSummary, Add-RegistryPermissionFailure, Test-RegistryResultForPresetAbort
