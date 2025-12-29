@@ -437,7 +437,8 @@ function Invoke-ErrorHandler {
 function Get-Confirmation {
     param(
         [string]$Question,
-        [string]$Default = 'n'
+        [string]$Default = 'n',
+        [string[]]$RiskSummary
     )
 
     $defaultNormalized = if ([string]::IsNullOrWhiteSpace($Default)) { 'n' } else { [string]$Default }
@@ -446,6 +447,21 @@ function Get-Confirmation {
     $questionText = $Question.Trim()
     $appendPrompt = -not ($questionText -match '\[[yYnN]/?[yYnN]?\]$')
     $prompt = if ($appendPrompt) { "$questionText $defaultText".Trim() } else { $questionText }
+
+    $riskLines = @()
+    if ($RiskSummary) {
+        foreach ($risk in $RiskSummary) {
+            $trimmed = [string]$risk
+            if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
+                $riskLines += $trimmed.Trim()
+            }
+        }
+    }
+
+    if ($riskLines.Count -gt 0) {
+        $combinedRisk = $riskLines -join ' '
+        Write-Host "  [!] What breaks: $combinedRisk" -ForegroundColor Yellow
+    }
 
     while ($true) {
         $resp = Read-Host $prompt

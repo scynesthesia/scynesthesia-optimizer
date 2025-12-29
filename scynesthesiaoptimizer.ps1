@@ -429,7 +429,7 @@ function Show-NetworkTweaksMenu {
                 Restore-NetworkBackupState
             }
             '5' {
-                if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)?" 'n') {
+                if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)?" 'n' -RiskSummary @("Can disrupt adapters during MTU discovery", "netsh changes may destabilize networking until reboot")) {
                     if (-not (Test-Path $backupFile)) {
                         try {
                             Save-NetworkBackupState
@@ -560,7 +560,7 @@ do {
             Write-Host "[+] Gaming tweaks applied." -ForegroundColor Magenta
 
             $backupFile = "C:\ProgramData\Scynesthesia\network_backup.json"
-            if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)?" 'n') {
+            if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)?" 'n' -RiskSummary @("Can disrupt adapters during MTU discovery", "netsh changes may destabilize networking until reboot")) {
                 if (-not (Test-Path $backupFile)) {
                     try {
                         Save-NetworkBackupState
