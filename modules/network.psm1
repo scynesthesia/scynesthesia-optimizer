@@ -341,16 +341,7 @@ function Set-NetworkThrottling {
         [pscustomobject]$Context
     )
 
-    $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Disabling network throttling" -ForegroundColor Gray
-    $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "NetworkThrottlingIndex" 0xFFFFFFFF -Context $context -Critical -ReturnResult -OperationLabel 'Disable network throttling index'
-    if ($result -and $result.Success) {
-        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-            Write-Log "[Network] NetworkThrottlingIndex set to 0xFFFFFFFF."
-        }
-    } else {
-        Write-Host "  [!] Failed to disable network throttling (permission issue?)." -ForegroundColor Yellow
-    }
+    Invoke-NetworkThrottlingShared -Context $Context -LoggerPrefix '[Network]' -HostMessage 'Disabling network throttling' -OperationLabel 'Disable network throttling index' -FailureMessage 'Failed to disable network throttling (permission issue?).' | Out-Null
 }
 
 # Description: Optimizes TCP acknowledgement parameters (Nagle-related) per adapter.
