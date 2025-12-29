@@ -5,6 +5,9 @@ if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
 if (-not (Get-Module -Name 'network_discovery' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/network_discovery.psm1') -Force -Scope Local
 }
+if (-not (Get-Module -Name 'network_shared' -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $PSScriptRoot 'core/network_shared.psm1') -Force -Scope Local
+}
 
 # Description: Retrieves active physical adapters excluding virtual or VPN interfaces.
 # Parameters: None.
@@ -34,40 +37,6 @@ function Test-IsAdminSession {
     } catch {
         return $false
     }
-}
-
-# Description: Converts a link speed value to bits per second, handling string units.
-# Parameters: LinkSpeed - Raw speed value or string with units.
-# Returns: Int64 representing bits per second, or null when parsing fails.
-function Convert-LinkSpeedToBits {
-    param(
-        [Parameter(Mandatory)]$LinkSpeed
-    )
-
-    try {
-        if ($null -eq $LinkSpeed) { return $null }
-
-        if ($LinkSpeed -is [string]) {
-            $match = [regex]::Match($LinkSpeed, '(?i)(\d+(?:\.\d+)?)\s*(g|m)?bps')
-            if ($match.Success) {
-                $value = [double]$match.Groups[1].Value
-                $unit = $match.Groups[2].Value.ToLower()
-                switch ($unit) {
-                    'g' { return [int64]($value * 1e9) }
-                    'm' { return [int64]($value * 1e6) }
-                    default { return [int64]$value }
-                }
-            }
-        }
-
-        if ($LinkSpeed -is [IConvertible]) {
-            return [int64][double]$LinkSpeed
-        }
-    } catch {
-        Invoke-ErrorHandler -Context 'Parsing adapter link speed' -ErrorRecord $_
-    }
-
-    return $null
 }
 
 # Description: Applies advanced TCP/IP registry parameters for performance tuning.
@@ -544,160 +513,6 @@ function Get-PrimaryNetAdapter {
     } catch {
         Invoke-ErrorHandler -Context 'Selecting primary network adapter' -ErrorRecord $_
         return $null
-    }
-}
-
-# Description: Sets an adapter advanced property when a matching display name exists.
-# Parameters: AdapterName - Target adapter name; DisplayName - Property display label; DisplayValue - Desired value.
-# Returns: None.
-function Set-NetAdapterAdvancedPropertySafe {
-    param(
-        [Parameter(Mandatory)][string]$AdapterName,
-        [Parameter(Mandatory)][string]$DisplayName,
-        [Parameter(Mandatory)][string]$DisplayValue
-    )
-    try {
-        $adapterInfo = $null
-        try {
-            $adapterInfo = Get-NetAdapter -Name $AdapterName -ErrorAction SilentlyContinue
-        } catch { }
-        $linkSpeedBits = if ($adapterInfo) { Convert-LinkSpeedToBits -LinkSpeed $adapterInfo.LinkSpeed } else { $null }
-        $isSubGigabit = ($linkSpeedBits -and $linkSpeedBits -lt 1e9)
-        $isHundredMbps = ($linkSpeedBits -and [math]::Abs($linkSpeedBits - 1e8) -lt 1e7)
-
-        $property = Get-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -ErrorAction SilentlyContinue
-        if (-not $property) {
-            Write-Host "  [!] $DisplayName not available on $AdapterName; skipping." -ForegroundColor Yellow
-            return
-        }
-
-        if ($property.DisplayValue -eq $DisplayValue) {
-            Write-Host "  [i] $DisplayName already set to $DisplayValue on $AdapterName; no change needed." -ForegroundColor Gray
-            if ($DisplayName -in @('Transmit Buffers', 'Receive Buffers') -and "$DisplayValue" -eq '128') {
-                Write-Host "  [i] Value restricted by driver/hardware capacity." -ForegroundColor Gray
-            }
-            return
-        }
-
-        $valuesToTry = New-Object System.Collections.Generic.List[string]
-        $preferredBufferValues = New-Object System.Collections.Generic.List[string]
-        $addUnique = {
-            param($list, $candidate)
-            if (-not $candidate) { return }
-            $valString = "$candidate"
-            if (-not $list.Contains($valString)) { $list.Add($valString) | Out-Null }
-        }
-
-        if ($DisplayName -in @('Transmit Buffers', 'Receive Buffers')) {
-            $collectValidValues = {
-                param($source)
-                $collected = @()
-                if (-not $source) { return $collected }
-                $possibleKeys = @('ValidDisplayValues', 'ValidRegistryValues')
-                foreach ($key in $possibleKeys) {
-                    try {
-                        if ($source.PSObject.Properties[$key]) {
-                            $raw = $source.$key
-                            if ($raw -is [System.Array]) {
-                                $collected += $raw
-                            } elseif ($null -ne $raw) {
-                                $collected += @($raw)
-                            }
-                        }
-                    } catch { }
-                }
-
-                $collected = $collected | Where-Object { $_ -ne $null -and ("$_").Trim() -ne '' }
-                if ($collected.Count -eq 0) { return @() }
-
-                $numeric = @()
-                $nonNumeric = @()
-                foreach ($item in $collected) {
-                    $valueString = ("$item").Trim()
-                    $parsed = 0
-                    if ([long]::TryParse($valueString, [ref]$parsed)) {
-                        $numeric += $parsed
-                    } else {
-                        $nonNumeric += $valueString
-                    }
-                }
-
-                $ordered = @()
-                if ($numeric.Count -gt 0) { $ordered += ($numeric | Sort-Object -Descending | ForEach-Object { "$_" }) }
-                if ($nonNumeric.Count -gt 0) { $ordered += ($nonNumeric | Select-Object -Unique) }
-                return $ordered | Select-Object -Unique
-            }
-
-            $rangeSources = @($property)
-            try {
-                $refreshed = Get-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -ErrorAction SilentlyContinue
-                if ($refreshed) { $rangeSources += $refreshed }
-            } catch { }
-
-            $validValues = @()
-            foreach ($src in $rangeSources) {
-                $validValues += & $collectValidValues $src
-            }
-            $validValues = $validValues | Select-Object -Unique
-            $numericValid = @()
-            foreach ($value in $validValues) {
-                $parsedNumeric = 0
-                if ([int]::TryParse("$value", [ref]$parsedNumeric)) {
-                    $numericValid += $parsedNumeric
-                }
-            }
-
-            if ($validValues.Count -gt 0) {
-                Write-Host "  [i] Using driver-advertised buffer range for $DisplayName on ${AdapterName}: $([string]::Join(', ', $validValues))." -ForegroundColor Cyan
-                foreach ($candidate in $validValues) { & $addUnique $valuesToTry $candidate }
-            }
-
-            $fallbackDefault = if ($property.DefaultDisplayValue) { $property.DefaultDisplayValue } else { $property.DisplayValue }
-            & $addUnique $valuesToTry $fallbackDefault
-
-            if ($DisplayName -eq 'Transmit Buffers' -and $isHundredMbps) {
-                $boundedValid = @()
-                if ($numericValid.Count -gt 0) {
-                    $boundedValid = $numericValid | Where-Object { $_ -le 1024 } | Sort-Object -Descending
-                }
-                foreach ($candidate in $boundedValid) { & $addUnique $preferredBufferValues "$candidate" }
-                foreach ($fallback in @('512', '256', '128')) { & $addUnique $preferredBufferValues $fallback }
-            } elseif ($isSubGigabit) {
-                $boundedCandidate = $null
-                if ($numericValid.Count -gt 0) {
-                    $boundedCandidate = ($numericValid | Where-Object { $_ -le 2048 } | Sort-Object -Descending | Select-Object -First 1)
-                }
-
-                if ($boundedCandidate) { & $addUnique $preferredBufferValues "$boundedCandidate" }
-                foreach ($fallback in @('512', '256')) { & $addUnique $preferredBufferValues $fallback }
-            }
-        }
-
-        & $addUnique $valuesToTry $DisplayValue
-
-        if ($preferredBufferValues.Count -gt 0) {
-            $ordered = New-Object System.Collections.Generic.List[string]
-            foreach ($val in $preferredBufferValues) { & $addUnique $ordered $val }
-            foreach ($val in $valuesToTry) { & $addUnique $ordered $val }
-            $valuesToTry = $ordered
-        }
-
-        foreach ($value in $valuesToTry) {
-            try {
-                Set-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -DisplayValue $value -ErrorAction Stop | Out-Null
-                Write-Host "  [+] $DisplayName set to $value on $AdapterName" -ForegroundColor Green
-                if ($DisplayName -in @('Transmit Buffers', 'Receive Buffers') -and "$value" -eq '128') {
-                    Write-Host "  [i] Value restricted by driver/hardware capacity." -ForegroundColor Gray
-                }
-                return
-            } catch {
-                Write-Host "  [!] Failed to set $DisplayName to $value on $AdapterName; trying next candidate." -ForegroundColor Yellow
-            }
-        }
-
-        Write-Host "  [!] Unable to set $DisplayName on $AdapterName after evaluating available values." -ForegroundColor Yellow
-    } catch {
-        Invoke-ErrorHandler -Context "Setting $DisplayName on $AdapterName" -ErrorRecord $_
     }
 }
 
@@ -1235,29 +1050,19 @@ function Invoke-NetworkTweaksHardcore {
 
     Set-NicRegistryHardcore -Context $Context
     Set-WakeOnLanHardcore -Context $Context
-
-    foreach ($adapter in $adapters) {
-        try {
-            Disable-NetAdapterRsc -Name $adapter.Name -ErrorAction Stop | Out-Null
-            Write-Host "  [+] RSC disabled on $($adapter.Name)." -ForegroundColor Green
-            if ($logger) { Write-Log "[NetworkHardcore] Disabled RSC on $($adapter.Name)." }
-        } catch {
-            Invoke-ErrorHandler -Context "Disabling RSC on $($adapter.Name)" -ErrorRecord $_
-        }
-
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'Large Send Offload V2 (IPv4)' -DisplayValue 'Disabled'
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'Large Send Offload V2 (IPv6)' -DisplayValue 'Disabled'
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'IPv4 Checksum Offload' -DisplayValue 'Disabled'
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'TCP Checksum Offload (IPv4)' -DisplayValue 'Disabled'
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'TCP Checksum Offload (IPv6)' -DisplayValue 'Disabled'
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'UDP Checksum Offload (IPv4)' -DisplayValue 'Disabled'
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'UDP Checksum Offload (IPv6)' -DisplayValue 'Disabled'
-
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'Receive Buffers' -DisplayValue '512'
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'Transmit Buffers' -DisplayValue '4096'
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'Flow Control' -DisplayValue 'Disabled'
-        Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName 'Interrupt Moderation' -DisplayValue 'Disabled'
-    }
+    Invoke-AdvancedNetworkPipeline -Context $Context `
+        -Adapters $adapters `
+        -PrimaryAdapter $primary `
+        -ProfileName 'Advanced Network Pipeline (Hardcore)' `
+        -LoggerPrefix '[NetworkHardcore]' `
+        -MsiTargets @('NIC') `
+        -MsiPromptMessage "Enable MSI Mode for your NIC? Recommended on modern hardware. If you already applied MSI Mode elsewhere, you can skip this." `
+        -MsiInvokeOnceId 'MSI:NIC' `
+        -MsiDefaultResponse 'n' `
+        -OffloadPromptMessage "Disable adapter offloads (RSC/LSO/Checksum) for lowest latency? Recommended for Hardcore tweaks." `
+        -OffloadDefaultResponse 'y' `
+        -OffloadInvokeOnceId 'Network:AdapterOffloads:Shared' `
+        -SkipWirelessWarning | Out-Null
 
     if ($primaryAdapters) {
         foreach ($adapter in $primaryAdapters) {
