@@ -34,12 +34,68 @@ function Get-AppRemovalList {
 # Returns: None.
 function New-RestorePointSafe {
     Write-Section "Creating restore point"
+
+    $status = [pscustomobject]@{
+        Enabled = $true
+        Created = $false
+    }
+
     try {
+        $restoreEnabled = $true
+        $disableReasons = @()
+
+        $policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\SystemRestore"
+        $configPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore"
+
+        if (Test-Path $policyPath) {
+            $policyProps = Get-ItemProperty -Path $policyPath -ErrorAction SilentlyContinue
+            if ($policyProps.DisableSR -eq 1) {
+                $restoreEnabled = $false
+                $disableReasons += "Policy DisableSR"
+            }
+            if ($policyProps.DisableConfig -eq 1) {
+                $restoreEnabled = $false
+                $disableReasons += "Policy DisableConfig"
+            }
+        }
+
+        if (Test-Path $configPath) {
+            $configProps = Get-ItemProperty -Path $configPath -ErrorAction SilentlyContinue
+            if ($configProps.DisableSR -eq 1) {
+                $restoreEnabled = $false
+                $disableReasons += "Local DisableSR"
+            }
+        }
+
+        if (-not $restoreEnabled) {
+            $reasonText = if ($disableReasons) { " ($($disableReasons -join ', '))" } else { "" }
+            Write-Warning "System Restore appears to be disabled$reasonText."
+            if (Get-Confirmation "Enable System Restore on drive C: before proceeding?" 'y') {
+                try {
+                    Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
+                    $restoreEnabled = $true
+                    Write-Host "  [+] System Restore enabled on C:." -ForegroundColor Gray
+                } catch {
+                    Invoke-ErrorHandler -Context "Enabling System Restore on C:" -ErrorRecord $_
+                }
+            } else {
+                Write-Warning "Proceeding without a restore point may limit rollback options."
+            }
+        }
+
+        if (-not $restoreEnabled) {
+            $status.Enabled = $false
+            return $status
+        }
+
         Checkpoint-Computer -Description "Scynesthesia Windows Optimizer v1.0" -RestorePointType "MODIFY_SETTINGS"
         Write-Host "  [+] Restore point created."
+        $status.Created = $true
     } catch {
         Invoke-ErrorHandler -Context "Creating restore point" -ErrorRecord $_
     }
+
+    return $status
 }
 
 # Description: Clears common temporary directories and Windows Update cache.
