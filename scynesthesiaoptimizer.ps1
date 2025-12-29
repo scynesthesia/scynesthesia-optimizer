@@ -259,7 +259,10 @@ function Run-SafePreset {
     $HWProfile = Get-HardwareProfile
 
     Write-Section "Starting Preset 1: Safe"
-    New-RestorePointSafe
+    $restoreStatus = New-RestorePointSafe
+    if (-not $restoreStatus.Created) {
+        Write-Warning "Restore point not created. Safe preset will continue without a rollback checkpoint."
+    }
     Clear-TempFiles -Context $script:Context
 
     # Safe Debloat (Standard list)
@@ -294,7 +297,10 @@ function Run-PCSlowPreset {
     $OemServices = Get-OEMServiceInfo
 
     Write-Section "Starting Preset 2: Slow PC / Aggressive"
-    New-RestorePointSafe
+    $restoreStatus = New-RestorePointSafe
+    if (-not $restoreStatus.Created) {
+        Write-Warning "Restore point not created. Aggressive preset will continue without a rollback checkpoint."
+    }
     Clear-TempFiles -Context $script:Context
 
     Invoke-PrivacyTelemetrySafe -Context $script:Context
@@ -513,7 +519,10 @@ do {
         '2' { Run-PCSlowPreset }
         '3' {
             Write-Section "Gaming Mode / FPS Boost"
-            New-RestorePointSafe
+            $restoreStatus = New-RestorePointSafe
+            if (-not $restoreStatus.Created) {
+                Write-Warning "Restore point not created. Gaming Mode will continue without a rollback checkpoint."
+            }
             Invoke-GamingOptimizations -Context $script:Context
             $msiResult = Invoke-MsiModeOnce -Context $script:Context -Targets @('GPU','STORAGE') -PromptMessage "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.)" -InvokeOnceId 'MSI:GPU+STORAGE' -DefaultResponse 'y'
             if ($script:Logger -and $msiResult -and $msiResult.Touched -gt 0) {
