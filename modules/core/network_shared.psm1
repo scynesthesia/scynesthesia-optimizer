@@ -31,6 +31,102 @@ function Convert-LinkSpeedToBits {
     return $null
 }
 
+function Invoke-NetworkThrottlingShared {
+    param(
+        [pscustomobject]$Context,
+        [string]$LoggerPrefix = '[Network]',
+        [string]$HostMessage = 'Disabling network throttling',
+        [string]$OperationLabel = 'Disable network throttling index',
+        [string]$SuccessMessage,
+        [string]$FailureMessage = 'Failed to disable network throttling (permission issue?).',
+        [switch]$MarkReboot
+    )
+
+    $context = Get-RunContext -Context $Context
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    if (-not [string]::IsNullOrWhiteSpace($HostMessage)) {
+        Write-Host "  [+] $HostMessage" -ForegroundColor Gray
+    }
+
+    $result = Set-RegistryValueSafe -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $context -Critical -ReturnResult -OperationLabel $OperationLabel
+
+    if ($result -and $result.Success) {
+        if ($SuccessMessage) {
+            Write-Host "  [+] $SuccessMessage" -ForegroundColor Green
+        }
+
+        if ($logger) {
+            Write-Log "$LoggerPrefix NetworkThrottlingIndex set to 0xFFFFFFFF."
+        }
+
+        if ($MarkReboot) {
+            Set-RebootRequired -Context $context | Out-Null
+        }
+    } else {
+        Write-Host "  [!] $FailureMessage" -ForegroundColor Yellow
+    }
+
+    return $result
+}
+
+function Invoke-ServiceProviderPrioritiesShared {
+    param(
+        [object]$Context,
+        [pscustomobject]$FailureTracker,
+        [string]$LoggerPrefix = '[Network]',
+        [string]$HostMessage = 'Configuring Service Provider priorities',
+        [hashtable]$Values,
+        [switch]$MarkReboot
+    )
+
+    $runContext = Get-RunContext -Context $Context
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    if (-not $Values) {
+        $Values = @{
+            LocalPriority = 4
+            HostsPriority = 5
+            DnsPriority   = 6
+            NetbtPriority = 7
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($HostMessage)) {
+        Write-Host "  [+] $HostMessage" -ForegroundColor Gray
+    }
+
+    $anySuccess = $false
+    foreach ($entry in $Values.GetEnumerator()) {
+        try {
+            $result = Set-RegistryValueSafe -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\ServiceProvider' -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $runContext -Critical -ReturnResult -OperationLabel "ServiceProvider: $($entry.Key)"
+            $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
+            if ($result -and $result.Success) {
+                Write-Host "  [+] $($entry.Key) set to $($entry.Value) in ServiceProvider." -ForegroundColor Green
+                $anySuccess = $true
+                if ($logger) {
+                    Write-Log "$LoggerPrefix ServiceProvider $($entry.Key) set to $($entry.Value)."
+                }
+            } else {
+                Write-Host "  [!] Failed to set $($entry.Key) in ServiceProvider." -ForegroundColor Yellow
+            }
+            if ($abort) { break }
+        } catch {
+            Invoke-ErrorHandler -Context "Setting $($entry.Key) service priority" -ErrorRecord $_
+        }
+    }
+
+    if ($FailureTracker -and $FailureTracker.Abort) {
+        return $false
+    }
+
+    if ($anySuccess -and $MarkReboot) {
+        Set-RebootRequired -Context $runContext | Out-Null
+    }
+
+    return $anySuccess
+}
+
 function Get-SharedNicRegistryPaths {
     param(
         [ScriptBlock]$AdapterResolver,

@@ -156,25 +156,8 @@ function Set-NetworkThrottlingHardcore {
     param(
         [object]$Context
     )
-    try {
-        $path = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
-        try {
-            $result = Set-RegistryValueSafe -Path $path -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Critical -ReturnResult -OperationLabel 'Hardcore network throttling index'
-            if ($result -and $result.Success) {
-                Write-Host "  [+] NetworkThrottlingIndex set to maximum performance." -ForegroundColor Green
-            } else {
-                Write-Host "  [!] NetworkThrottlingIndex could not be set (permission issue?)." -ForegroundColor Yellow
-            }
-            if ($null -eq $Context) {
-                $Context = New-RunContext
-            }
-            Set-NeedsReboot -Context $Context | Out-Null
-        } catch {
-            Invoke-ErrorHandler -Context 'Setting NetworkThrottlingIndex' -ErrorRecord $_
-        }
-    } catch {
-        Invoke-ErrorHandler -Context 'Configuring network throttling' -ErrorRecord $_
-    }
+
+    Invoke-NetworkThrottlingShared -Context $Context -LoggerPrefix '[NetworkHardcore]' -HostMessage 'Disabling network throttling' -OperationLabel 'Hardcore network throttling index' -SuccessMessage 'NetworkThrottlingIndex set to maximum performance.' -FailureMessage 'NetworkThrottlingIndex could not be set (permission issue?).' -MarkReboot | Out-Null
 }
 
 # Description: Configures TCP/IP service provider priorities for resolution order.
@@ -185,45 +168,8 @@ function Set-ServicePriorities {
         [object]$Context,
         [pscustomobject]$FailureTracker
     )
-    try {
-        $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\ServiceProvider'
-        $values = @{
-            LocalPriority  = 4
-            HostsPriority  = 5
-            DnsPriority    = 6
-            NetbtPriority  = 7
-        }
 
-        $anySuccess = $false
-        foreach ($entry in $values.GetEnumerator()) {
-            try {
-                $result = Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Critical -ReturnResult
-                $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
-                if ($result -and $result.Success) {
-                    Write-Host "  [+] $($entry.Key) set to $($entry.Value) in ServiceProvider." -ForegroundColor Green
-                    $anySuccess = $true
-                } else {
-                    Write-Host "  [!] Failed to set $($entry.Key) in ServiceProvider." -ForegroundColor Yellow
-                }
-                if ($abort) { break }
-            } catch {
-                Invoke-ErrorHandler -Context "Setting $($entry.Key) service priority" -ErrorRecord $_
-            }
-        }
-
-        if ($FailureTracker -and $FailureTracker.Abort) {
-            return
-        }
-
-        if ($null -eq $Context) {
-            $Context = New-RunContext
-        }
-        if ($anySuccess) {
-            Set-NeedsReboot -Context $Context | Out-Null
-        }
-    } catch {
-        Invoke-ErrorHandler -Context 'Configuring ServiceProvider priorities' -ErrorRecord $_
-    }
+    Invoke-ServiceProviderPrioritiesShared -Context $Context -FailureTracker $FailureTracker -LoggerPrefix '[NetworkHardcore]' -HostMessage 'Configuring Service Provider priorities' -MarkReboot | Out-Null
 }
 
 # Description: Applies Winsock parameter adjustments to align socket behavior.
