@@ -221,6 +221,7 @@ function Disable-NetworkTelemetry {
         }
         foreach ($svc in 'DiagTrack','dmwappushservice') {
             try {
+                Register-ServiceStateForRollback -Context $context -ServiceName $svc | Out-Null
                 Stop-Service -Name $svc -ErrorAction SilentlyContinue
                 if ($logger) {
                     Write-Log "[Network] Service '$svc' stopped for telemetry reduction."
@@ -258,6 +259,7 @@ function Disable-DeliveryOptimization {
         }
 
         try {
+            Register-ServiceStateForRollback -Context $context -ServiceName "DoSvc" | Out-Null
             Stop-Service -Name "DoSvc" -ErrorAction SilentlyContinue
             if ($logger) {
                 Write-Log "[Network] Delivery Optimization service (DoSvc) stopped."
@@ -594,6 +596,7 @@ function Invoke-NetworkTweaksGaming {
             $safePath = $env:SystemRoot
             if (-not $safePath) { $safePath = $env:WINDIR }
             if (-not $safePath) { $safePath = 'C:\Windows' }
+            Register-NetshGlobalsForRollback -Context $Context | Out-Null
 
             Push-Location -Path $safePath
             try {
@@ -620,6 +623,177 @@ function Invoke-NetworkTweaksGaming {
     } else {
         Write-Host "  [ ] Chimney/DCA tweaks skipped." -ForegroundColor Gray
     }
+}
+
+# Parses netsh TCP global output into a standardized map for rollback/restore.
+function Convert-NetshGlobalsFromText {
+    [CmdletBinding()]
+    param(
+        [string]$RawText
+    )
+
+    $result = @{}
+    if (-not $RawText) { return $result }
+
+    $text = if ($RawText -is [string[]]) { $RawText -join "`n" } else { [string]$RawText }
+    $regexOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    $patterns = @{
+        Chimney            = 'Chimney Offload State\s*:\s*(?<value>.+)'
+        Dca                = 'Direct Cache Access.*:\s*(?<value>.+)'
+        Autotuninglevel    = 'Receive Window Auto-Tuning Level\s*:\s*(?<value>.+)'
+        CongestionProvider = '(Add-On Congestion Control Provider|Congestion Provider)\s*:\s*(?<value>.+)'
+        EcnCapability      = 'ECN Capability\s*:\s*(?<value>.+)'
+        Timestamps         = 'RFC 1323 Timestamps\s*:\s*(?<value>.+)'
+        InitialRto         = 'Initial RTO\s*:\s*(?<value>.+)'
+    }
+
+    foreach ($key in $patterns.Keys) {
+        $match = [regex]::Match($text, $patterns[$key], $regexOptions)
+        if (-not $match.Success) { continue }
+        $value = $match.Groups['value'].Value.Trim()
+        if ($key -eq 'InitialRto') {
+            $numeric = [regex]::Match($value, '(?<num>\d+)')
+            if ($numeric.Success) { $value = $numeric.Groups['num'].Value }
+        }
+        if ($value -and -not $result.ContainsKey($key)) {
+            $result[$key] = $value
+        }
+    }
+
+    return $result
+}
+
+# Records the current netsh TCP global state into the rollback tracker.
+function Register-NetshGlobalsForRollback {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Context,
+        [string]$RawText
+    )
+
+    if (-not $Context) { return @{} }
+    $map = Convert-NetshGlobalsFromText -RawText $RawText
+    if (-not $map -or $map.Count -eq 0) {
+        try {
+            $probe = netsh int tcp show global 2>&1
+            $map = Convert-NetshGlobalsFromText -RawText ($probe -join "`n")
+        } catch {
+            return @{}
+        }
+    }
+
+    foreach ($key in $map.Keys) {
+        try { Add-NonRegistryChange -Context $Context -Area 'NetshGlobal' -Key $key -Value $map[$key] | Out-Null } catch { }
+    }
+
+    return $map
+}
+
+# Captures the current startup type and runtime state for a service into the rollback tracker.
+function Register-ServiceStateForRollback {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Context,
+        [string]$ServiceName
+    )
+
+    if (-not $Context -or [string]::IsNullOrWhiteSpace($ServiceName)) { return $null }
+    try {
+        $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        if (-not $svc) { return $null }
+        $snapshot = [pscustomobject]@{
+            Name        = $svc.Name
+            StartupType = $svc.StartType.ToString()
+            Status      = $svc.Status.ToString()
+        }
+        Add-NonRegistryChange -Context $Context -Area 'ServiceState' -Key $svc.Name -Value $snapshot | Out-Null
+        return $snapshot
+    } catch {
+        return $null
+    }
+}
+
+# Attempts to restore service startup types/runtime states from backup entries.
+function Restore-ServiceStatesFromBackup {
+    [CmdletBinding()]
+    param(
+        [array]$ServiceStates,
+        $Logger
+    )
+
+    if (-not $ServiceStates) { return 0 }
+    $restored = 0
+    foreach ($entry in $ServiceStates) {
+        $name = $entry.Name
+        if (-not $name) { continue }
+        $startup = $entry.StartupType
+        $status = $entry.Status
+        try {
+            if ($startup) {
+                Set-Service -Name $name -StartupType $startup -ErrorAction Stop
+            }
+            if ($status) {
+                if ($status -eq 'Running') {
+                    Start-Service -Name $name -ErrorAction SilentlyContinue
+                } elseif ($status -eq 'Stopped') {
+                    Stop-Service -Name $name -Force -ErrorAction SilentlyContinue
+                }
+            }
+            $restored++
+            if ($Logger) {
+                Write-Log "[Rollback] Restored service $name to startup '$startup' (status: $status)."
+            }
+        } catch { }
+    }
+
+    return $restored
+}
+
+# Applies netsh global settings from a saved map.
+function Restore-NetshGlobalsFromMap {
+    [CmdletBinding()]
+    param(
+        [hashtable]$GlobalsMap,
+        $Logger
+    )
+
+    if (-not $GlobalsMap) { return 0 }
+
+    $applied = 0
+    $commandMap = @{
+        Chimney            = { param($value) "chimney=$value" }
+        Dca                = { param($value) "dca=$value" }
+        Autotuninglevel    = { param($value) "autotuninglevel=$value" }
+        CongestionProvider = { param($value) "congestionprovider=$value" }
+        EcnCapability      = { param($value) "ecncapability=$value" }
+        Timestamps         = { param($value) "timestamps=$value" }
+        InitialRto         = { param($value) "initialrto=$value" }
+    }
+
+    foreach ($entry in $GlobalsMap.GetEnumerator()) {
+        $key = $entry.Key
+        if (-not $commandMap.ContainsKey($key)) { continue }
+        $rawValue = if ($entry.Value -ne $null) { "$($entry.Value)".Trim() } else { $null }
+        if (-not $rawValue) { continue }
+        $normalized = if ($key -eq 'InitialRto') {
+            $match = [regex]::Match($rawValue, '(?<num>\d+)')
+            if ($match.Success) { $match.Groups['num'].Value } else { $rawValue }
+        } else {
+            $rawValue.ToLowerInvariant()
+        }
+
+        $argBuilder = $commandMap[$key]
+        $argument = & $argBuilder $normalized
+        try {
+            netsh int tcp set global $argument | Out-Null
+            $applied++
+            if ($Logger) { Write-Log "[Rollback] netsh int tcp set global $argument" }
+        } catch {
+            if ($Logger) { Write-Log "[Rollback] Failed to apply netsh global '$key' ($normalized): $($_.Exception.Message)" -Level 'Warning' }
+        }
+    }
+
+    return $applied
 }
 
 # Description: Saves current network-related registry and firewall settings to a JSON backup with a pre-check for writable storage.
@@ -694,9 +868,25 @@ function Save-NetworkBackupState {
         $regRollbackMap[$normalizedPath].Add($entry) | Out-Null
     }
 
+    $appendServiceState = {
+        param([string]$Name)
+
+        if (-not $Name) { return }
+        try {
+            $svc = Get-Service -Name $Name -ErrorAction SilentlyContinue
+            if (-not $svc) { return }
+            $backup.ServiceStates += [ordered]@{
+                Name        = $svc.Name
+                StartupType = $svc.StartType.ToString()
+                Status      = $svc.Status.ToString()
+            }
+        } catch { }
+    }
+
     $backup = [ordered]@{
         Version                = 3
         Created                = Get-Date
+        ServiceStates          = @()
         NetworkThrottlingIndex = $null
         Nagle                  = @()
         QoS                    = [ordered]@{ NonBestEffortLimit = $null }
@@ -731,6 +921,7 @@ function Save-NetworkBackupState {
                 MaxSockAddrLength = $null
             }
             CongestionProvider  = $null
+            NetshGlobals        = $null
             TcpGlobalsRaw       = $null
             RegRollbackSnippet  = $null
         }
@@ -837,6 +1028,10 @@ function Save-NetworkBackupState {
         $backup.DeliveryOptimization.DoSvcStartup = (Get-Service -Name 'DoSvc' -ErrorAction Stop).StartType.ToString()
     } catch { }
 
+    & $appendServiceState 'DoSvc'
+    & $appendServiceState 'DiagTrack'
+    & $appendServiceState 'dmwappushservice'
+
     try {
         $rules = Get-NetFirewallRule -DisplayGroup 'Network Discovery' -ErrorAction Stop
         if ($rules) {
@@ -898,9 +1093,12 @@ function Save-NetworkBackupState {
         if ($tcpGlobals) {
             $tcpGlobalsString = ($tcpGlobals -join "`n")
             $backup.Hardcore.TcpGlobalsRaw = $tcpGlobalsString
-            $match = [regex]::Match($tcpGlobalsString, 'Congestion Provider\s*:\s*(?<provider>.+)', 'IgnoreCase')
-            if ($match.Success) {
-                $backup.Hardcore.CongestionProvider = $match.Groups['provider'].Value.Trim()
+            $parsedGlobals = Convert-NetshGlobalsFromText -RawText $tcpGlobalsString
+            if ($parsedGlobals -and $parsedGlobals.Count -gt 0) {
+                $backup.Hardcore.NetshGlobals = $parsedGlobals
+                if ($parsedGlobals.ContainsKey('CongestionProvider')) {
+                    $backup.Hardcore.CongestionProvider = $parsedGlobals['CongestionProvider']
+                }
             }
         }
     } catch { }
@@ -945,19 +1143,82 @@ function Save-NetworkBackupState {
 # Parameters: None.
 # Returns: None.
 function Restore-NetworkBackupState {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Context,
+        [hashtable]$FallbackNetshGlobals,
+        [array]$FallbackServiceStates
+    )
+
     $file = "C:\ProgramData\Scynesthesia\network_backup.json"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
-    if (-not (Test-Path $file)) {
-        Write-Host "[Backup] No network backup found to restore." -ForegroundColor Yellow
-        return
+    $data = $null
+    $backupExists = Test-Path $file
+    if (-not $backupExists) {
+        if (-not $FallbackServiceStates -and (-not $FallbackNetshGlobals -or $FallbackNetshGlobals.Count -eq 0)) {
+            Write-Host "[Backup] No network backup found to restore." -ForegroundColor Yellow
+            return
+        }
+        $data = [pscustomobject]@{}
+    } else {
+        try {
+            $data = Get-Content -Path $file -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        } catch {
+            Write-Host "[Backup] Could not read network backup file." -ForegroundColor Yellow
+            return
+        }
     }
 
+    $serviceStates = @()
+    $netshGlobals = $null
     try {
-        $data = Get-Content -Path $file -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-    } catch {
-        Write-Host "[Backup] Could not read network backup file." -ForegroundColor Yellow
-        return
+        if ($data -and $data.PSObject.Properties.Name -contains 'ServiceStates' -and $data.ServiceStates) {
+            $serviceStates = @($data.ServiceStates)
+        }
+    } catch { }
+
+    if (-not $serviceStates -and $data.DeliveryOptimization -and $null -ne $data.DeliveryOptimization.DoSvcStartup) {
+        $serviceStates = @([pscustomobject]@{
+                Name        = 'DoSvc'
+                StartupType = $data.DeliveryOptimization.DoSvcStartup
+                Status      = $null
+            })
+    }
+
+    if ($FallbackServiceStates) {
+        $existingNames = @()
+        if ($serviceStates) {
+            $existingNames = $serviceStates | Where-Object { $_.Name } | ForEach-Object { $_.Name }
+        }
+        foreach ($svcEntry in $FallbackServiceStates) {
+            if (-not $svcEntry -or -not $svcEntry.Name) { continue }
+            if (-not ($existingNames -contains $svcEntry.Name)) {
+                $serviceStates += $svcEntry
+            }
+        }
+    }
+
+    $restoredServices = Restore-ServiceStatesFromBackup -ServiceStates $serviceStates -Logger $logger
+
+    try {
+        if ($data -and $data.Hardcore -and $data.Hardcore.NetshGlobals) {
+            $netshGlobals = @{}
+            foreach ($key in $data.Hardcore.NetshGlobals.PSObject.Properties.Name) {
+                $netshGlobals[$key] = $data.Hardcore.NetshGlobals.$key
+            }
+        } elseif ($data -and $data.Hardcore -and $data.Hardcore.TcpGlobalsRaw) {
+            $netshGlobals = Convert-NetshGlobalsFromText -RawText $data.Hardcore.TcpGlobalsRaw
+        }
+    } catch { }
+
+    if ($FallbackNetshGlobals) {
+        if (-not $netshGlobals) { $netshGlobals = @{} }
+        foreach ($key in $FallbackNetshGlobals.Keys) {
+            if (-not $netshGlobals.ContainsKey($key)) {
+                $netshGlobals[$key] = $FallbackNetshGlobals[$key]
+            }
+        }
     }
 
     try {
@@ -1076,7 +1337,7 @@ function Restore-NetworkBackupState {
     } catch { }
 
     try {
-        if ($null -ne $data.DeliveryOptimization.DoSvcStartup) {
+        if ($restoredServices -eq 0 -and $null -ne $data.DeliveryOptimization.DoSvcStartup) {
             Set-Service -Name 'DoSvc' -StartupType $data.DeliveryOptimization.DoSvcStartup -ErrorAction Stop
             if ($logger) { Write-Log "[Backup] Restored DoSvc startup type to $($data.DeliveryOptimization.DoSvcStartup)" }
         }
@@ -1093,8 +1354,50 @@ function Restore-NetworkBackupState {
         }
     } catch { }
 
+    try {
+        $netshApplied = Restore-NetshGlobalsFromMap -GlobalsMap $netshGlobals -Logger $logger
+        if ($netshApplied -gt 0) {
+            Write-Host "[Backup] Restored $netshApplied netsh TCP global setting(s)." -ForegroundColor Cyan
+        }
+    } catch { }
+
     Write-Host "[Backup] Network configuration restored from backup." -ForegroundColor Cyan
     if ($logger) { Write-Log "[Backup] Network settings restored from $file" }
 }
 
-Export-ModuleMember -Function Invoke-NetworkTweaksSafe, Invoke-NetworkTweaksAggressive, Invoke-NetworkTweaksGaming, Set-NetworkDnsSafe, Save-NetworkBackupState, Restore-NetworkBackupState
+# Restores non-registry changes using context tracking and network backup data.
+function Invoke-GlobalRollback {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Context
+    )
+
+    $runContext = Get-RunContext -Context $Context
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $fallbackServices = @()
+    $fallbackNetsh = $null
+    try {
+        $tracker = Get-NonRegistryChangeTracker -Context $runContext
+        if ($tracker -and $tracker.ServiceState) {
+            $fallbackServices = @($tracker.ServiceState.Values)
+        }
+        if ($tracker -and $tracker.NetshGlobal) {
+            $fallbackNetsh = @{}
+            foreach ($key in $tracker.NetshGlobal.Keys) {
+                $fallbackNetsh[$key] = $tracker.NetshGlobal[$key]
+            }
+        }
+    } catch { }
+
+    if ($logger) {
+        Write-Log "[Rollback] Initiating global rollback (services/netsh globals) using tracked context data and network backup when available."
+    }
+    else {
+        Write-Host "[Rollback] Restoring services and netsh globals from tracked changes/backup..." -ForegroundColor Cyan
+    }
+
+    Restore-NetworkBackupState -Context $runContext -FallbackNetshGlobals $fallbackNetsh -FallbackServiceStates $fallbackServices
+}
+
+Export-ModuleMember -Function Invoke-NetworkTweaksSafe, Invoke-NetworkTweaksAggressive, Invoke-NetworkTweaksGaming, Set-NetworkDnsSafe, Save-NetworkBackupState, Restore-NetworkBackupState, Invoke-GlobalRollback

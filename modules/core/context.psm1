@@ -23,6 +23,10 @@ function New-RunContext {
         NeedsReboot     = $false
         RollbackActions = @()
         RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
+        NonRegistryChanges = @{
+            ServiceState = @{}
+            NetshGlobal  = @{}
+        }
         RollbackPersistencePath = $null
         LogPath         = $null
         AppliedTweaks   = @{}
@@ -135,6 +139,63 @@ function Reset-NeedsReboot {
 
     $Context.NeedsReboot = $false
     return $Context
+}
+
+# Ensures the context exposes a NonRegistryChanges tracker with ServiceState and NetshGlobal buckets.
+# Parameters: Context - Run context to initialize or return.
+function Get-NonRegistryChangeTracker {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    $runContext = Get-RunContext -Context $Context
+    if (-not $runContext.PSObject.Properties.Name.Contains('NonRegistryChanges')) {
+        $runContext | Add-Member -Name NonRegistryChanges -MemberType NoteProperty -Value @{
+            ServiceState = @{}
+            NetshGlobal  = @{}
+        }
+    }
+    elseif (-not $runContext.NonRegistryChanges) {
+        $runContext.NonRegistryChanges = @{
+            ServiceState = @{}
+            NetshGlobal  = @{}
+        }
+    }
+
+    if (-not $runContext.NonRegistryChanges.ContainsKey('ServiceState')) {
+        $runContext.NonRegistryChanges['ServiceState'] = @{}
+    }
+    if (-not $runContext.NonRegistryChanges.ContainsKey('NetshGlobal')) {
+        $runContext.NonRegistryChanges['NetshGlobal'] = @{}
+    }
+
+    return $runContext.NonRegistryChanges
+}
+
+# Records a non-registry change (services/netsh) into the provided context if not already tracked.
+# Parameters: Context - Run context; Area - ServiceState or NetshGlobal; Key - Identifier (service name/setting); Value - Original state data.
+function Add-NonRegistryChange {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context,
+        [Parameter(Mandatory)]
+        [ValidateSet('ServiceState','NetshGlobal')]
+        [string]$Area,
+        [Parameter(Mandatory)]
+        [string]$Key,
+        [Parameter(Mandatory)]
+        $Value
+    )
+
+    $tracker = Get-NonRegistryChangeTracker -Context $Context
+    if (-not $tracker[$Area].ContainsKey($Key)) {
+        $tracker[$Area][$Key] = $Value
+    }
+
+    return $tracker[$Area][$Key]
 }
 
 # Returns the persistence path for registry rollback actions and, optionally, creates the parent directory.
@@ -413,4 +474,4 @@ function Invoke-RegistryTransaction {
     throw [System.InvalidOperationException]::new("One or more registry operations failed within $transactionLabel; changes were rolled back.")
 }
 
-Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once, Get-RollbackPersistencePath, Save-RegistryRollbackState, Restore-RegistryRollbackState, Invoke-RegistryTransaction
+Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once, Get-RollbackPersistencePath, Save-RegistryRollbackState, Restore-RegistryRollbackState, Invoke-RegistryTransaction, Get-NonRegistryChangeTracker, Add-NonRegistryChange

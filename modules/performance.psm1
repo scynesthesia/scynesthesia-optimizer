@@ -482,7 +482,7 @@ function Invoke-SafePerformanceTweaks {
     Invoke-MpoVisualFixDisable -Context $Context
     Invoke-NtfsLastAccessUpdate -Context $Context
     Invoke-MenuShowDelay -DelayMs 20 -Context $Context
-    Invoke-SafeServiceOptimization
+    Invoke-SafeServiceOptimization -Context $Context
 }
 
 # Description: Applies more aggressive performance tweaks for low-end systems.
@@ -506,7 +506,7 @@ function Invoke-AggressivePerformanceTweaks {
     Invoke-WaitToKillServiceTimeout -Milliseconds 2000 -Context $Context
     Invoke-TransparencyEffectsDisable -Context $Context
     Invoke-VisualEffectsBestPerformance -Context $Context
-    Invoke-AggressiveServiceOptimization -OemServices $OemServices
+    Invoke-AggressiveServiceOptimization -Context $Context -OemServices $OemServices
 }
 
 Export-ModuleMember -Function Get-HardwareProfile, Get-OEMServiceInfo, Invoke-SysMainOptimization, Invoke-PerformanceBaseline, Invoke-UltimatePerformancePlan, Invoke-NtfsLastAccessUpdate, Invoke-MenuShowDelay, Invoke-TransparencyEffectsDisable, Invoke-VisualEffectsBestPerformance, Invoke-WaitToKillServiceTimeout, Invoke-MpoVisualFixDisable, Invoke-HagsPerformanceEnablement, Invoke-PowerThrottlingDisablement, Invoke-PagingExecutivePerformance, Invoke-MemoryCompressionOptimization, Invoke-SafePerformanceTweaks, Invoke-AggressivePerformanceTweaks

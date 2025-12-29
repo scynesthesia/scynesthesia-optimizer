@@ -7,7 +7,8 @@ function Set-ServiceState {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][ValidateSet('Automatic','Manual','Disabled')][string]$StartupType,
-        [Parameter(Mandatory)][ValidateSet('Running','Stopped')][string]$Status
+        [Parameter(Mandatory)][ValidateSet('Running','Stopped')][string]$Status,
+        [pscustomobject]$Context
     )
 
     $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
@@ -18,7 +19,22 @@ function Set-ServiceState {
         return
     }
 
+    $serviceSnapshot = $null
     try {
+        $serviceSnapshot = [pscustomobject]@{
+            Name        = $service.Name
+            StartupType = $service.StartType.ToString()
+            Status      = $service.Status.ToString()
+        }
+    } catch { }
+
+    try {
+        if ($Context -and $serviceSnapshot) {
+            try {
+                Add-NonRegistryChange -Context $Context -Area 'ServiceState' -Key $service.Name -Value $serviceSnapshot | Out-Null
+            } catch { }
+        }
+
         Set-Service -Name $Name -StartupType $StartupType -ErrorAction Stop
 
         if ($Status -eq 'Stopped') {
@@ -40,13 +56,15 @@ function Set-ServiceState {
 # Returns: None. Disables non-essential consumer/demo services.
 function Invoke-SafeServiceOptimization {
     [CmdletBinding()]
-    param()
+    param(
+        [pscustomobject]$Context
+    )
 
     Write-Section "Service hardening (Safe)"
     $safeServices = 'RetailDemo','MapsBroker','stisvc'
 
     foreach ($svc in $safeServices) {
-        Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
+        Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped' -Context $Context
     }
 }
 
@@ -56,6 +74,7 @@ function Invoke-SafeServiceOptimization {
 function Invoke-AggressiveServiceOptimization {
     [CmdletBinding()]
     param(
+        [pscustomobject]$Context,
         $OemServices
     )
 
@@ -63,7 +82,7 @@ function Invoke-AggressiveServiceOptimization {
 
     $coreTargets = 'RemoteRegistry','WerSvc','lfsvc','DiagTrack'
     foreach ($svc in $coreTargets) {
-        Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
+        Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped' -Context $Context
     }
 
     $skipSpooler = $OemServices -and $OemServices.Count -gt 0
@@ -74,14 +93,14 @@ function Invoke-AggressiveServiceOptimization {
         Write-Host "      Skipping Print Spooler prompt to avoid breaking vendor tooling." -ForegroundColor Yellow
     } else {
         if (Get-Confirmation "Disable Print Spooler service?" 'n') {
-            Set-ServiceState -Name 'Spooler' -StartupType 'Disabled' -Status 'Stopped'
+            Set-ServiceState -Name 'Spooler' -StartupType 'Disabled' -Status 'Stopped' -Context $Context
         } else {
             Write-Host "  [ ] Print Spooler kept enabled." -ForegroundColor DarkGray
         }
     }
 
     if (Get-Confirmation "Disable Bluetooth Support service?" 'n') {
-        Set-ServiceState -Name 'bthserv' -StartupType 'Disabled' -Status 'Stopped'
+        Set-ServiceState -Name 'bthserv' -StartupType 'Disabled' -Status 'Stopped' -Context $Context
     } else {
         Write-Host "  [ ] Bluetooth Support kept enabled." -ForegroundColor DarkGray
     }
@@ -92,7 +111,9 @@ function Invoke-AggressiveServiceOptimization {
 # Returns: None. Stops and disables NVIDIA/AMD telemetry listeners when present.
 function Invoke-DriverTelemetryOptimization {
     [CmdletBinding()]
-    param()
+    param(
+        [pscustomobject]$Context
+    )
 
     Write-Section "Driver telemetry cleanup"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -100,7 +121,7 @@ function Invoke-DriverTelemetryOptimization {
     $nvidiaServices = @('NvTelemetryContainer')
     foreach ($svc in $nvidiaServices) {
         if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
-            Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
+            Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped' -Context $Context
         } else {
             $message = "[Services] NVIDIA telemetry service not found: $svc"
             Write-Host "  [ ] $message" -ForegroundColor DarkGray
@@ -111,7 +132,7 @@ function Invoke-DriverTelemetryOptimization {
     $amdServices = @('AMD Crash User Service','AMD Link Service')
     foreach ($svc in $amdServices) {
         if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
-            Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped'
+            Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped' -Context $Context
         } else {
             $message = "[Services] AMD telemetry service not found: $svc"
             Write-Host "  [ ] $message" -ForegroundColor DarkGray

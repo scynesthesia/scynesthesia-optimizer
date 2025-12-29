@@ -279,6 +279,12 @@ function Set-NetshHardcoreGlobals {
         } catch {
             Write-Host "  [!] Unable to probe IP globals; capability checks will be limited (build $buildNumber)." -ForegroundColor Yellow
         }
+        try {
+            $registerNetsh = Get-Command Register-NetshGlobalsForRollback -ErrorAction SilentlyContinue
+            if ($registerNetsh) {
+                & $registerNetsh -Context $Context -RawText ($tcpGlobals -join "`n") | Out-Null
+            }
+        } catch { }
 
         $netshCompatibility = @{
             'set global dca=enabled' = @{
