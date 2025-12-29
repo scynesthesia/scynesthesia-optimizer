@@ -91,11 +91,20 @@ function Invoke-AggressiveServiceOptimization {
         $oemLabel = if ($oemDisplayNames) { ($oemDisplayNames -join ', ') } else { 'OEM services' }
         Write-Host "  [!] OEM services detected: $oemLabel" -ForegroundColor Yellow
         Write-Host "      Skipping Print Spooler prompt to avoid breaking vendor tooling." -ForegroundColor Yellow
+        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+            Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message 'Print Spooler preserved due to OEM services safeguard'
+        }
     } else {
         if (Get-Confirmation "Disable Print Spooler service?" 'n') {
             Set-ServiceState -Name 'Spooler' -StartupType 'Disabled' -Status 'Stopped' -Context $Context
+            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'Print Spooler disabled'
+            }
         } else {
             Write-Host "  [ ] Print Spooler kept enabled." -ForegroundColor DarkGray
+            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                Add-SessionSummaryItem -Context $Context -Bucket 'DeclinedHighImpact' -Message 'Print Spooler disable prompt declined'
+            }
         }
     }
 
