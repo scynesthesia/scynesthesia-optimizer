@@ -104,6 +104,53 @@ if (Get-Confirmation "Enable session logging to a file? (Recommended for service
 }
 
 # ---------- 5. LOCAL FUNCTIONS ----------
+$script:HighImpactBlocked = $false
+$script:HighImpactBlockReason = ""
+
+function Reset-HighImpactBlock {
+    $script:HighImpactBlocked = $false
+    $script:HighImpactBlockReason = ""
+}
+
+function Set-HighImpactBlock {
+    param([string]$Reason)
+
+    $script:HighImpactBlocked = $true
+    $script:HighImpactBlockReason = if ($Reason) { $Reason } else { "A restore point could not be created." }
+    Write-Warning "[Safety] $($script:HighImpactBlockReason)"
+    Write-Warning "[Safety] Aggressive and Hardcore changes are blocked until System Restore is enabled and a restore point is created. Only Safe tweaks are available."
+}
+
+function Handle-RestorePointGate {
+    param(
+        [pscustomobject]$RestoreStatus,
+        [string]$ActionLabel
+    )
+
+    if ($RestoreStatus -and $RestoreStatus.Created) {
+        Reset-HighImpactBlock
+        return $true
+    }
+
+    $reason = if ($RestoreStatus -and -not $RestoreStatus.Enabled) {
+        "System Restore is disabled and was not enabled."
+    } else {
+        "A restore point could not be created for $ActionLabel."
+    }
+
+    Set-HighImpactBlock "$reason High-impact changes cannot proceed without an OS-level safety net."
+    return $false
+}
+
+function Assert-HighImpactAllowed {
+    param([string]$ActionLabel)
+
+    if (-not $script:HighImpactBlocked) { return $true }
+
+    $label = if ($ActionLabel) { $ActionLabel } else { "This action" }
+    Write-Warning "[Safety] $label is blocked: $($script:HighImpactBlockReason) Only Safe tweaks are available until a restore point succeeds."
+    return $false
+}
 
 # Description: Displays the application banner with version and active power plan details.
 # Parameters: None.
@@ -304,6 +351,9 @@ function Run-SafePreset {
     $restoreStatus = New-RestorePointSafe
     if (-not $restoreStatus.Created) {
         Write-Warning "Restore point not created. Safe preset will continue without a rollback checkpoint."
+        Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Safe preset" | Out-Null
+    } else {
+        Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Safe preset" | Out-Null
     }
     Clear-TempFiles -Context $script:Context
 
@@ -330,6 +380,8 @@ function Run-SafePreset {
 # Parameters: None.
 # Returns: None. Updates global reboot flag and failed package list.
 function Run-PCSlowPreset {
+    if (-not (Assert-HighImpactAllowed "The Aggressive preset")) { return }
+
     $Status = @{ PackagesFailed = @(); PackagesRemoved = @(); RebootRequired = $false }
     if (-not $script:Context.PSObject.Properties.Name.Contains('RegistryPermissionFailures')) {
         $script:Context | Add-Member -Name RegistryPermissionFailures -MemberType NoteProperty -Value @()
@@ -341,8 +393,9 @@ function Run-PCSlowPreset {
 
     Write-Section "Starting Preset 2: Slow PC / Aggressive"
     $restoreStatus = New-RestorePointSafe
-    if (-not $restoreStatus.Created) {
-        Write-Warning "Restore point not created. Aggressive preset will continue without a rollback checkpoint."
+    if (-not (Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Aggressive preset")) {
+        Write-Warning "[Safety] Aggressive preset aborted because no restore point is available."
+        return
     }
     Clear-TempFiles -Context $script:Context
 
@@ -425,6 +478,7 @@ function Show-NetworkTweaksMenu {
                 }
             }
             '2' {
+                if (-not (Assert-HighImpactAllowed "Aggressive network tweaks")) { break }
                 if (-not (& $requireNetworkBackup 'Aggressive')) { break }
                 if (Get-Confirmation "Apply Aggressive Network Tweaks?" 'n') {
                     Invoke-NetworkTweaksAggressive -Context $script:Context
@@ -433,6 +487,7 @@ function Show-NetworkTweaksMenu {
                 }
             }
             '3' {
+                if (-not (Assert-HighImpactAllowed "Gaming network tweaks")) { break }
                 if (-not (& $requireNetworkBackup 'Gaming')) { break }
                 if (Get-Confirmation "Apply Gaming Network Tweaks?" 'n') {
                     Invoke-NetworkTweaksGaming -Context $script:Context
@@ -447,6 +502,7 @@ function Show-NetworkTweaksMenu {
                 Invoke-GlobalRollback -Context $script:Context
             }
             '5' {
+                if (-not (Assert-HighImpactAllowed "Hardcore Network Tweaks")) { break }
                 if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)?" 'n' -RiskSummary @("Can disrupt adapters during MTU discovery", "netsh changes may destabilize networking until reboot")) {
                     if (-not (Test-Path $backupFile)) {
                         try {
@@ -563,10 +619,13 @@ do {
         '1' { Run-SafePreset }
         '2' { Run-PCSlowPreset }
         '3' {
+            if (-not (Assert-HighImpactAllowed "Gaming Mode")) { break }
+
             Write-Section "Gaming Mode / FPS Boost"
             $restoreStatus = New-RestorePointSafe
-            if (-not $restoreStatus.Created) {
-                Write-Warning "Restore point not created. Gaming Mode will continue without a rollback checkpoint."
+            if (-not (Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "Gaming Mode")) { 
+                Write-Warning "[Safety] Gaming Mode aborted because no restore point is available."
+                break
             }
             Invoke-GamingOptimizations -Context $script:Context
             $msiResult = Invoke-MsiModeOnce -Context $script:Context -Targets @('GPU','STORAGE') -PromptMessage "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.)" -InvokeOnceId 'MSI:GPU+STORAGE' -DefaultResponse 'y'
