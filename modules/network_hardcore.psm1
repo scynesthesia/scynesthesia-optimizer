@@ -39,6 +39,59 @@ function Test-IsAdminSession {
     }
 }
 
+# Description: Classifies adapters for hardcore tweaks, including fragile Wi-Fi detection.
+# Parameters: Adapter - NetAdapter object to evaluate.
+# Returns: Object describing Wi-Fi/fragility status.
+function Get-HardcoreAdapterProfile {
+    param(
+        [Parameter(Mandatory)][object]$Adapter
+    )
+
+    $description = $Adapter.InterfaceDescription
+    $ndisMedium = $null
+    try {
+        $ndisMedium = $Adapter | Select-Object -ExpandProperty NdisPhysicalMedium -ErrorAction SilentlyContinue
+    } catch { }
+
+    $isWifi = $false
+    if ($ndisMedium -and $ndisMedium -match '(?i)802\.11|wireless') {
+        $isWifi = $true
+    } elseif ($description -match '(?i)(wi-?fi|wireless|802\.11)') {
+        $isWifi = $true
+    }
+
+    $wifiWhitelistPatterns = @(
+        '(?i)Intel\(R\).+Wi-?Fi',
+        '(?i)Killer\(TM\).+Intel',
+        '(?i)Qualcomm\(R\).+(FastConnect|Wi-?Fi 6|Wi-?Fi 7)',
+        '(?i)Marvell.*AzureWave'
+    )
+
+    $fragileWifiPatterns = @(
+        '(?i)Realtek.*(8821|8822|8723|8188|8192|8811)',
+        '(?i)MediaTek|Ralink|MTK',
+        '(?i)Broadcom.*(43|BCM43)',
+        '(?i)Qualcomm.*(QCA9|Atheros AR9)'
+    )
+
+    $whitelistMatch = $wifiWhitelistPatterns | Where-Object { $description -match $_ } | Select-Object -First 1
+    $fragileMatch = $fragileWifiPatterns | Where-Object { $description -match $_ } | Select-Object -First 1
+    $isWhitelisted = $isWifi -and $null -ne $whitelistMatch
+    $isFragile = $isWifi -and (-not $isWhitelisted) -and ($null -ne $fragileMatch)
+
+    $riskReason = $null
+    if ($isFragile) {
+        $riskReason = "Wireless chipset '$description' is prone to driver lockups after aggressive interrupt/offload resets."
+    }
+
+    return [pscustomobject]@{
+        IsWifi        = $isWifi
+        IsWhitelisted = $isWhitelisted
+        IsFragile     = $isFragile
+        RiskReason    = $riskReason
+    }
+}
+
 # Description: Applies advanced TCP/IP registry parameters for performance tuning.
 # Parameters: Context - Optional run context for reboot tracking; FailureTracker - Optional tracker for critical registry failures.
 # Returns: None. Sets reboot flag after changes.
@@ -267,6 +320,84 @@ function Set-NetshHardcoreGlobals {
         [object]$Context
     )
     try {
+        $buildNumber = [Environment]::OSVersion.Version.Build
+        $tcpGlobals = $null
+        $ipGlobals = $null
+        try {
+            $tcpGlobals = netsh int tcp show global 2>&1
+        } catch {
+            Write-Host "  [!] Unable to probe TCP globals; capability checks will be limited (build $buildNumber)." -ForegroundColor Yellow
+        }
+        try {
+            $ipGlobals = netsh int ip show global 2>&1
+        } catch {
+            Write-Host "  [!] Unable to probe IP globals; capability checks will be limited (build $buildNumber)." -ForegroundColor Yellow
+        }
+
+        $netshCompatibility = @{
+            'set global dca=enabled' = @{
+                FeatureName        = 'Direct Cache Access (DCA)'
+                Scope              = 'tcp'
+                MinBuild           = 6000    # Vista+
+                MaxBuild           = 10240   # Removed on later Windows 10/11 builds
+                CapabilityPattern  = '(?i)direct cache access'
+            }
+            'set global netdma=enabled' = @{
+                FeatureName        = 'NetDMA'
+                Scope              = 'tcp'
+                MinBuild           = 6000
+                MaxBuild           = 10240   # Deprecated after early Windows 10
+                CapabilityPattern  = '(?i)netdma'
+            }
+            'set global mpp=disabled' = @{
+                FeatureName        = 'Memory Pressure Protection'
+                Scope              = 'tcp'
+                MinBuild           = 7600    # Windows 7+
+                CapabilityPattern  = '(?i)memory pressure'
+            }
+            'set global neighborcachelimit=4096' = @{
+                FeatureName        = 'Neighbor Cache Limit'
+                Scope              = 'ip'
+                MinBuild           = 7600
+                CapabilityPattern  = '(?i)neighbor cache limit'
+            }
+        }
+
+        $checkCompatibility = {
+            param($commandEntry, $compatibilityMap, $tcpProbe, $ipProbe, $currentBuild)
+
+            $rule = $null
+            if ($compatibilityMap.ContainsKey($commandEntry.Command)) {
+                $rule = $compatibilityMap[$commandEntry.Command]
+            }
+
+            if (-not $rule) {
+                return [pscustomobject]@{ Supported = $true; Reason = $null }
+            }
+
+            $scope = if ($rule.Scope) { $rule.Scope } else { 'tcp' }
+            $minBuild = if ($rule.MinBuild) { [int]$rule.MinBuild } else { 0 }
+            $maxBuild = if ($rule.MaxBuild) { [int]$rule.MaxBuild } else { [int]::MaxValue }
+            if ($currentBuild -lt $minBuild -or $currentBuild -gt $maxBuild) {
+                $reason = "$($rule.FeatureName) not whitelisted for build $currentBuild (supported: $minBuild-$maxBuild)."
+                return [pscustomobject]@{ Supported = $false; Reason = $reason }
+            }
+
+            $probeOutput = if ($scope -eq 'ip') { $ipProbe } else { $tcpProbe }
+            if ($rule.CapabilityPattern) {
+                if (-not $probeOutput) {
+                    $reason = "Unable to confirm $($rule.FeatureName) support on build $currentBuild (no $scope probe)."
+                    return [pscustomobject]@{ Supported = $false; Reason = $reason }
+                }
+                if ($probeOutput -notmatch $rule.CapabilityPattern) {
+                    $reason = "$($rule.FeatureName) not exposed on build $currentBuild; skipping."
+                    return [pscustomobject]@{ Supported = $false; Reason = $reason }
+                }
+            }
+
+            return [pscustomobject]@{ Supported = $true; Reason = $null }
+        }
+
         $tcpCommands = @(
             @{ Command = 'set global dca=enabled'; Description = 'DCA enabled' },
             @{ Command = 'set global netdma=enabled'; Description = 'NetDMA enabled' },
@@ -281,13 +412,38 @@ function Set-NetshHardcoreGlobals {
             @{ Command = 'set global neighborcachelimit=4096'; Description = 'NeighborCacheLimit set' }
         )
 
+        $eligibleTcpCommands = New-Object System.Collections.Generic.List[object]
+        foreach ($entry in $tcpCommands) {
+            $check = & $checkCompatibility $entry $netshCompatibility $tcpGlobals $ipGlobals $buildNumber
+            if ($check.Supported) {
+                $eligibleTcpCommands.Add($entry) | Out-Null
+            } else {
+                Write-Host "  [ ] Skipping $($entry.Description): $($check.Reason)" -ForegroundColor Gray
+            }
+        }
+
+        $eligibleIpCommands = New-Object System.Collections.Generic.List[object]
+        foreach ($entry in $ipCommands) {
+            $check = & $checkCompatibility $entry $netshCompatibility $tcpGlobals $ipGlobals $buildNumber
+            if ($check.Supported) {
+                $eligibleIpCommands.Add($entry) | Out-Null
+            } else {
+                Write-Host "  [ ] Skipping $($entry.Description): $($check.Reason)" -ForegroundColor Gray
+            }
+        }
+
+        if ($eligibleTcpCommands.Count -eq 0 -and $eligibleIpCommands.Count -eq 0) {
+            Write-Host "  [ ] No compatible netsh globals to apply for build $buildNumber." -ForegroundColor Gray
+            return
+        }
+
         $scriptBuilder = New-Object System.Text.StringBuilder
         $null = $scriptBuilder.AppendLine('pushd interface tcp')
-        foreach ($entry in $tcpCommands) {
+        foreach ($entry in $eligibleTcpCommands) {
             $null = $scriptBuilder.AppendLine($entry.Command)
         }
         $null = $scriptBuilder.AppendLine('popd')
-        foreach ($entry in $ipCommands) {
+        foreach ($entry in $eligibleIpCommands) {
             $null = $scriptBuilder.AppendLine("int ip $($entry.Command)")
         }
         $netshScript = $scriptBuilder.ToString()
@@ -301,7 +457,7 @@ function Set-NetshHardcoreGlobals {
                 $output = & cmd.exe /c "netsh -f `"$scriptPath`"" 2>&1
                 $exitCode = $LASTEXITCODE
                 if ($exitCode -eq 0) {
-                    foreach ($command in ($tcpCommands + $ipCommands)) {
+                    foreach ($command in ($eligibleTcpCommands + $eligibleIpCommands)) {
                         Write-Host "  [+] $($command.Description)." -ForegroundColor Green
                     }
                 } else {
@@ -434,6 +590,7 @@ function Set-NicRegistryHardcore {
 
         foreach ($item in $nicPaths) {
             $adapterName = $item.Adapter.Name
+            $adapterProfile = Get-HardcoreAdapterProfile -Adapter $item.Adapter
             $adapterChanged = ($sharedPowerResult -and $sharedPowerResult.ChangedAdapters -contains $adapterName)
 
             foreach ($entry in $powerOffloadRemaining.GetEnumerator()) {
@@ -492,23 +649,38 @@ function Set-NicRegistryHardcore {
             }
 
             if ($adapterChanged) {
-                try {
-                    & cmd.exe /c 'netsh int ip reset' 2>&1 | Out-Null
-                    & cmd.exe /c 'netsh winsock reset' 2>&1 | Out-Null
-                    Write-Host "    [+] Network stack cache cleared (IP/Winsock reset)" -ForegroundColor Green
-                } catch {
-                    Invoke-ErrorHandler -Context "Resetting network stack for $adapterName" -ErrorRecord $_
+                $allowAggressiveReset = $true
+                if ($adapterProfile.IsFragile) {
+                    $warning = "High-risk Wi-Fi chipset detected on $adapterName. Interrupt/offload resets can cause driver lockups or require a full reboot."
+                    Write-Host "    [!] $warning" -ForegroundColor Yellow
+                    if (-not (Get-Confirmation "Proceed with cache clears and adapter disable/enable for $adapterName? (High risk acknowledged)" 'n')) {
+                        Write-Host "    [ ] Aggressive reset skipped for fragile Wi-Fi adapter $adapterName." -ForegroundColor DarkGray
+                        $allowAggressiveReset = $false
+                    }
                 }
 
-                try {
-                    Disable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
-                    Start-Sleep -Seconds 3
-                    Enable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
-                    Write-Host "    [+] Adapter reset to reload driver settings" -ForegroundColor Green
-                } catch {
-                    Invoke-ErrorHandler -Context "Resetting adapter $adapterName" -ErrorRecord $_
+                if ($allowAggressiveReset) {
+                    try {
+                        & cmd.exe /c 'netsh int ip reset' 2>&1 | Out-Null
+                        & cmd.exe /c 'netsh winsock reset' 2>&1 | Out-Null
+                        Write-Host "    [+] Network stack cache cleared (IP/Winsock reset)" -ForegroundColor Green
+                    } catch {
+                        Invoke-ErrorHandler -Context "Resetting network stack for $adapterName" -ErrorRecord $_
+                    }
+
+                    try {
+                        Disable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
+                        Start-Sleep -Seconds 3
+                        Enable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
+                        Write-Host "    [+] Adapter reset to reload driver settings" -ForegroundColor Green
+                    } catch {
+                        Invoke-ErrorHandler -Context "Resetting adapter $adapterName" -ErrorRecord $_
+                    }
+                    $script:NicRegistryTweaksApplied = $true
+                } else {
+                    Write-Host "    [!] Registry tweaks applied without forcing resets; reboot or manual adapter toggle may be required for $adapterName." -ForegroundColor Yellow
+                    $script:NicRegistryTweaksApplied = $true
                 }
-                $script:NicRegistryTweaksApplied = $true
             }
         }
 
