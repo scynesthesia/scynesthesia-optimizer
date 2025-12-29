@@ -5,6 +5,9 @@ if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
 if (-not (Get-Module -Name 'network_discovery' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/network_discovery.psm1') -Force -Scope Local
 }
+if (-not (Get-Module -Name 'network_shared' -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $PSScriptRoot 'core/network_shared.psm1') -Force -Scope Local
+}
 # Description: Retrieves active physical network adapters excluding virtual or VPN interfaces.
 # Parameters: None.
 # Returns: Collection of adapter objects; returns empty array on failure.
@@ -593,12 +596,7 @@ function Invoke-NetworkTweaksGaming {
         Write-Host "  [ ] Interrupt moderation left unchanged." -ForegroundColor Gray
     }
 
-    $msiResult = Invoke-MsiModeOnce -Context $Context -Targets @('NIC') -PromptMessage "Enable MSI Mode for your NIC? Recommended on modern hardware. If you already applied MSI Mode elsewhere, you can skip this." -InvokeOnceId 'MSI:NIC' -DefaultResponse 'n'
-    if ($logger -and $msiResult -and $msiResult.Touched -gt 0) {
-        Write-Log "[Network] MSI Mode enabled for NIC via gaming profile."
-    } elseif ($logger -and $msiResult) {
-        Write-Log "[Network] MSI Mode for NIC already enabled or not applicable." -Level 'Info'
-    }
+    Invoke-AdvancedNetworkPipeline -Context $Context -AdapterResolver { Get-PhysicalNetAdapters } -ProfileName 'Advanced Network Pipeline (Gaming)' -LoggerPrefix '[Network]' -MsiTargets @('NIC') -MsiPromptMessage "Enable MSI Mode for your NIC? Recommended on modern hardware. If you already applied MSI Mode elsewhere, you can skip this." -MsiInvokeOnceId 'MSI:NIC' -MsiDefaultResponse 'n' -OffloadPromptMessage "Disable adapter offloads (RSC/LSO/Checksum) for lower latency? May reduce throughput on some adapters." -OffloadDefaultResponse 'n' -OffloadInvokeOnceId 'Network:AdapterOffloads:Shared' | Out-Null
 
     if (Get-Confirmation "Apply advanced TCP tweaks (Chimney Offload / DCA)? These are experimental and may be unstable on older hardware or uncommon drivers." 'n') {
         try {
