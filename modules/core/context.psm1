@@ -220,4 +220,197 @@ function Restore-RegistryRollbackState {
     }
 }
 
-Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once, Get-RollbackPersistencePath, Save-RegistryRollbackState, Restore-RegistryRollbackState
+function Invoke-RegistryTransaction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][scriptblock]$ScriptBlock,
+        [pscustomobject]$Context,
+        [string]$Name
+    )
+
+    $runContext = Get-RunContext -Context $Context
+    if (-not $runContext.PSObject.Properties.Name.Contains('RegistryRollbackActions')) {
+        $runContext | Add-Member -Name RegistryRollbackActions -MemberType NoteProperty -Value ([System.Collections.Generic.List[object]]::new())
+    }
+    elseif (-not $runContext.RegistryRollbackActions) {
+        $runContext.RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
+    }
+
+    $transactionLabel = if ([string]::IsNullOrWhiteSpace($Name)) { 'registry transaction' } else { $Name }
+    $startIndex = $runContext.RegistryRollbackActions.Count
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $caughtError = $null
+    $results = $null
+    try {
+        $results = & $ScriptBlock
+    } catch {
+        $caughtError = $_
+    }
+
+    $criticalFailure = $false
+    if ($caughtError) {
+        $criticalFailure = $true
+    }
+    elseif ($results) {
+        foreach ($item in @($results)) {
+            if ($item -is [psobject] -and $item.PSObject.Properties.Name -contains 'Success' -and -not [bool]$item.Success) {
+                $criticalFailure = $true
+                break
+            }
+        }
+    }
+
+    if (-not $criticalFailure) { return $results }
+
+    $transactionRecords = @()
+    $allRecords = $runContext.RegistryRollbackActions
+    if ($allRecords -and $allRecords.Count -gt $startIndex) {
+        $transactionRecords = @($allRecords[$startIndex..($allRecords.Count - 1)])
+    }
+
+    $messagePrefix = "[$transactionLabel]"
+    $introMessage = "$messagePrefix Critical registry failure detected; initiating rollback of $($transactionRecords.Count) change(s)."
+    if ($logger) { Write-Log -Message $introMessage -Level 'Warning' } else { Write-Host $introMessage -ForegroundColor Yellow }
+
+    $resolvePath = {
+        param([Parameter(Mandatory)][string]$Path)
+
+        $normalized = $Path.Trim()
+        $firstSeparator = $normalized.IndexOf('\\')
+        if ($firstSeparator -lt 0) { throw [System.ArgumentException]::new("Registry path is missing a subkey: $Path") }
+
+        $hiveSegment = $normalized.Substring(0, $firstSeparator).TrimEnd(':')
+        $subPath = $normalized.Substring($firstSeparator).TrimStart('\\')
+        $hiveName = $hiveSegment.ToUpperInvariant()
+        $hiveEnum = switch ($hiveName) {
+            'HKLM' { [Microsoft.Win32.RegistryHive]::LocalMachine }
+            'HKEY_LOCAL_MACHINE' { [Microsoft.Win32.RegistryHive]::LocalMachine }
+            'HKCU' { [Microsoft.Win32.RegistryHive]::CurrentUser }
+            'HKEY_CURRENT_USER' { [Microsoft.Win32.RegistryHive]::CurrentUser }
+            'HKCR' { [Microsoft.Win32.RegistryHive]::ClassesRoot }
+            'HKEY_CLASSES_ROOT' { [Microsoft.Win32.RegistryHive]::ClassesRoot }
+            'HKU' { [Microsoft.Win32.RegistryHive]::Users }
+            'HKEY_USERS' { [Microsoft.Win32.RegistryHive]::Users }
+            'HKCC' { [Microsoft.Win32.RegistryHive]::CurrentConfig }
+            'HKEY_CURRENT_CONFIG' { [Microsoft.Win32.RegistryHive]::CurrentConfig }
+            default { $null }
+        }
+
+        if (-not $hiveEnum) { throw [System.ArgumentException]::new("Unsupported registry hive in path: $Path") }
+        if ([string]::IsNullOrWhiteSpace($subPath)) { throw [System.ArgumentException]::new("Registry path is missing a key name: $Path") }
+
+        $fullPath = "${hiveSegment.TrimEnd(':')}\\$subPath"
+        return [pscustomobject]@{
+            Hive     = $hiveEnum
+            SubKey   = $subPath
+            FullPath = $fullPath
+        }
+    }
+
+    $toKind = {
+        param([string]$TypeName)
+        $parsed = $null
+        if ([System.Enum]::TryParse([Microsoft.Win32.RegistryValueKind], $TypeName, $true, [ref]$parsed)) {
+            return $parsed
+        }
+        return [Microsoft.Win32.RegistryValueKind]::String
+    }
+
+    $convertValue = {
+        param(
+            [Parameter(Mandatory)]$Value,
+            [Parameter(Mandatory)][Microsoft.Win32.RegistryValueKind]$Kind
+        )
+
+        switch ($Kind) {
+            ([Microsoft.Win32.RegistryValueKind]::DWord) { return [int]$Value }
+            ([Microsoft.Win32.RegistryValueKind]::QWord) { return [long]$Value }
+            ([Microsoft.Win32.RegistryValueKind]::String) { return [string]$Value }
+            ([Microsoft.Win32.RegistryValueKind]::ExpandString) { return [string]$Value }
+            ([Microsoft.Win32.RegistryValueKind]::MultiString) {
+                if ($Value -is [string[]]) { return $Value }
+                if ($Value -is [System.Collections.IEnumerable] -and -not ($Value -is [string])) {
+                    return @($Value | ForEach-Object { [string]$_ })
+                }
+
+                return ,([string]$Value)
+            }
+            ([Microsoft.Win32.RegistryValueKind]::Binary) {
+                if ($Value -is [byte[]]) { return $Value }
+                if ($Value -is [System.Collections.IEnumerable] -and -not ($Value -is [string])) {
+                    try { return @($Value | ForEach-Object { [byte]$_ }) } catch { throw [System.ArgumentException]::new("Value '$Value' is not valid for type Binary.", $_.Exception) }
+                }
+                throw [System.ArgumentException]::new("Value '$Value' is not valid for type Binary.")
+            }
+            default { return $Value }
+        }
+    }
+
+    $rollbackSucceeded = 0
+    $rollbackFailed = 0
+
+    for ($i = $transactionRecords.Count - 1; $i -ge 0; $i--) {
+        $record = $transactionRecords[$i]
+        $valueName = if ($record.Name -eq '(default)' -or [string]::IsNullOrWhiteSpace($record.Name)) { '' } else { $record.Name }
+        $baseKey = $null
+        $subKey = $null
+
+        try {
+            $target = & $resolvePath -Path $record.Path
+            $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey($target.Hive, [Microsoft.Win32.RegistryView]::Default)
+            if (-not $baseKey) { throw [System.IO.IOException]::new("Unable to open base hive for $($target.FullPath)") }
+
+            $subKey = $baseKey.OpenSubKey($target.SubKey, $true)
+            if (-not $subKey -and $record.KeyExisted) {
+                throw [System.IO.IOException]::new("Original registry key missing: $($target.FullPath)")
+            }
+
+            if ($record.PreviousExists) {
+                $kind = & $toKind -TypeName $record.PreviousType
+                $converted = & $convertValue -Value $record.PreviousValue -Kind $kind
+                if (-not $subKey) {
+                    $subKey = $baseKey.CreateSubKey($target.SubKey, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree)
+                }
+                $subKey.SetValue($valueName, $converted, $kind)
+            }
+            elseif (-not $record.KeyExisted) {
+                if ($subKey) {
+                    $subKey.Dispose()
+                    $subKey = $null
+                }
+                $baseKey.DeleteSubKeyTree($target.SubKey, $false)
+            }
+            else {
+                if ($subKey) {
+                    try { $subKey.DeleteValue($valueName, $false) } catch [System.ArgumentException] { }
+                }
+            }
+
+            $rollbackSucceeded++
+        }
+        catch {
+            $rollbackFailed++
+            $errorMessage = "$messagePrefix Failed to rollback $($record.Path) -> $($record.Name): $($_.Exception.Message)"
+            if ($logger) { Write-Log -Message $errorMessage -Level 'Error' } else { Write-Host $errorMessage -ForegroundColor Yellow }
+        }
+        finally {
+            if ($subKey) { $subKey.Dispose() }
+            if ($baseKey) { $baseKey.Dispose() }
+        }
+    }
+
+    if ($allRecords -and $allRecords.Count -gt $startIndex) {
+        for ($idx = $allRecords.Count - 1; $idx -ge $startIndex; $idx--) {
+            $allRecords.RemoveAt($idx)
+        }
+    }
+
+    $summaryMessage = "$messagePrefix Rollback completed. Success: $rollbackSucceeded / $($transactionRecords.Count). Failed: $rollbackFailed."
+    if ($logger) { Write-Log -Message $summaryMessage -Level 'Info' } else { Write-Host $summaryMessage -ForegroundColor Cyan }
+
+    if ($caughtError) { throw $caughtError }
+    throw [System.InvalidOperationException]::new("One or more registry operations failed within $transactionLabel; changes were rolled back.")
+}
+
+Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once, Get-RollbackPersistencePath, Save-RegistryRollbackState, Restore-RegistryRollbackState, Invoke-RegistryTransaction
