@@ -10,12 +10,12 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     exit 1
 }
 
-# Capture the script root globally so modules and sub-menus can resolve paths reliably.
-$Global:ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
+# Capture the script root so modules and sub-menus can resolve paths reliably without global scope.
+$scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 
 # ---------- 2. MODULE IMPORTS (Moved up to ensure dependencies load early.) ----------
 try {
-    $modulesRoot = Join-Path $Global:ScriptRoot 'modules'
+    $modulesRoot = Join-Path $scriptRoot 'modules'
     $moduleMapPath = Join-Path $modulesRoot 'modules.map.psd1'
 
     if (-not (Test-Path $moduleMapPath)) {
@@ -34,7 +34,7 @@ try {
         $resolvedPath = if ([System.IO.Path]::IsPathRooted($modulePath)) {
             $modulePath
         } else {
-            Join-Path $Global:ScriptRoot $modulePath
+            Join-Path $scriptRoot $modulePath
         }
 
         if (-not (Test-Path $resolvedPath)) {
@@ -59,7 +59,7 @@ try {
 }
 
 # ---------- 3. CONTEXT INITIALIZATION ----------
-$Context = New-RunContext -ScriptRoot $Global:ScriptRoot
+$Context = New-RunContext -ScriptRoot $scriptRoot
 $script:Context = $Context
 Reset-NeedsReboot -Context $Context | Out-Null
 $script:Logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -260,11 +260,11 @@ function Run-SafePreset {
 
     Write-Section "Starting Preset 1: Safe"
     New-RestorePointSafe
-    Clear-TempFiles
+    Clear-TempFiles -Context $script:Context
 
     # Safe Debloat (Standard list)
     Invoke-PrivacyTelemetrySafe -Context $script:Context
-    $debloatResult = Invoke-DebloatSafe # Uses the default list defined in the module
+    $debloatResult = Invoke-DebloatSafe -Context $script:Context # Uses the default list defined in the module
     $Status.PackagesFailed += $debloatResult.Failed
 
     Invoke-PreferencesSafe -Context $script:Context
@@ -295,13 +295,13 @@ function Run-PCSlowPreset {
 
     Write-Section "Starting Preset 2: Slow PC / Aggressive"
     New-RestorePointSafe
-    Clear-TempFiles
+    Clear-TempFiles -Context $script:Context
 
     Invoke-PrivacyTelemetrySafe -Context $script:Context
 
     # Deep cleaning using Aggressive Debloat profile.
     # Using updated function from debloat.psm1.
-    $debloatResult = Invoke-DebloatAggressive
+    $debloatResult = Invoke-DebloatAggressive -Context $script:Context
     $Status.PackagesFailed += $debloatResult.Failed
 
     Invoke-PreferencesSafe -Context $script:Context

@@ -2,15 +2,18 @@
 $script:AppRemovalConfig = $null
 $script:AppRemovalConfigPath = $null
 
-# Description: Resolves the script root using the orchestrator's global setting when available,
+# Description: Resolves the script root using the provided context when available,
 # falling back to the caller's PSScriptRoot or the invocation path when imported standalone.
-# Parameters: LocalRoot - Optional fallback path (defaults to the caller's PSScriptRoot if present).
+# Parameters: Context - Optional run context containing ScriptRoot; LocalRoot - Optional fallback path (defaults to the caller's PSScriptRoot if present).
 # Returns: Resolved script root path.
 function Get-ScriptRoot {
-    param([string]$LocalRoot)
+    param(
+        [pscustomobject]$Context,
+        [string]$LocalRoot
+    )
 
-    $preferredRoot = if ($Global:ScriptRoot) {
-        $Global:ScriptRoot
+    $preferredRoot = if ($Context -and $Context.ScriptRoot) {
+        $Context.ScriptRoot
     } elseif ($LocalRoot) {
         $LocalRoot
     } elseif ($PSScriptRoot) {
@@ -31,19 +34,20 @@ function Get-ScriptRoot {
 }
 
 # Description: Retrieves a normalized list of applications to remove for a given mode.
-# Parameters: Mode - Debloat or Aggressive profile; ConfigPath - Optional apps.json path override; Key - Optional config key override.
+# Parameters: Mode - Debloat or Aggressive profile; Context - Optional run context with ScriptRoot; ConfigPath - Optional apps.json path override; Key - Optional config key override.
 # Returns: Array of app identifiers; empty array when the configuration cannot be loaded.
 function Get-AppRemovalList {
     param(
         [Parameter(Mandatory)]
         [ValidateSet('Debloat','Aggressive')]
         [string] $Mode,
+        [pscustomobject]$Context,
         [string] $ConfigPath,
         [string] $Key
     )
 
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-    $configRoot = Get-ScriptRoot -LocalRoot $PSScriptRoot
+    $configRoot = Get-ScriptRoot -Context $Context -LocalRoot $PSScriptRoot
     $resolvedPath = if ($ConfigPath) { $ConfigPath } else { Join-Path $configRoot 'config/apps.json' }
 
     if (-not (Test-Path $resolvedPath)) {

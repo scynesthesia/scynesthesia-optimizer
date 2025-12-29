@@ -4,17 +4,19 @@ if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
 }
 
 # Description: Retrieves an app removal list from the configuration JSON using the specified key.
-# Parameters: Key - Config property to read; Path - Optional path to the apps configuration file.
+# Parameters: Key - Config property to read; Path - Optional path to the apps configuration file; Context - Optional run context with ScriptRoot.
 # Returns: Array of app package names; empty array when config missing or invalid.
 function Get-AppRemovalList {
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
         [string] $Key,
-        [string] $Path
+        [string] $Path,
+        [pscustomobject]$Context
     )
 
-    return (config\Get-AppRemovalList -Mode 'Debloat' -ConfigPath $Path -Key $Key)
+    $context = Get-RunContext -Context $Context
+    return (config\Get-AppRemovalList -Mode 'Debloat' -ConfigPath $Path -Key $Key -Context $context)
 }
 
 # Description: Creates a system restore point for rollback safety.
@@ -31,9 +33,15 @@ function New-RestorePointSafe {
 }
 
 # Description: Clears common temporary directories and Windows Update cache.
-# Parameters: None.
+# Parameters: Context - Optional run context to align cleanup with ScriptRoot.
 # Returns: None.
 function Clear-TempFiles {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+
     Write-Section "Clearing basic temporary files"
     $paths = @(
         "${env:TEMP}",
@@ -42,10 +50,14 @@ function Clear-TempFiles {
 
     # Avoid deleting the currently running payload (downloaded into %TEMP% by setup.ps1).
     $protectedRoots = @()
-    try {
-        $resolvedRoot = (Resolve-Path $Global:ScriptRoot -ErrorAction Stop).Path
-        $protectedRoots += $resolvedRoot
-    } catch { }
+    if ($context -and $context.ScriptRoot) {
+        try {
+            $resolvedRoot = (Resolve-Path $context.ScriptRoot -ErrorAction Stop).Path
+            $protectedRoots += $resolvedRoot
+        } catch {
+            $protectedRoots += $context.ScriptRoot
+        }
+    }
 
     $installerTemp = Join-Path $env:TEMP 'ScynesthesiaTemp'
     if (Test-Path $installerTemp) {
@@ -93,11 +105,17 @@ function Clear-TempFiles {
 }
 
 # Description: Performs deeper cleanup including thumbnail cache removal.
-# Parameters: None.
+# Parameters: Context - Optional run context to align cleanup with ScriptRoot.
 # Returns: None.
 function Clear-DeepTempAndThumbs {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+
     Write-Section "Extra cleanup (temp + thumbnails)"
-    Clear-TempFiles
+    Clear-TempFiles -Context $context
 
     $thumbDir = "${env:LOCALAPPDATA}\Microsoft\Windows\Explorer"
     if (Test-Path $thumbDir) {
@@ -111,15 +129,18 @@ function Clear-DeepTempAndThumbs {
 }
 
 # Description: Removes common bloatware while preserving core Windows Store functionality.
-# Parameters: AppList - Optional list of packages to remove instead of default SafeRemove list.
+# Parameters: AppList - Optional list of packages to remove instead of default SafeRemove list; Context - Optional run context with ScriptRoot.
 # Returns: PSCustomObject containing any failed package removals.
 function Invoke-DebloatSafe {
     param(
-        [string[]] $AppList
+        [string[]] $AppList,
+        [pscustomobject]$Context
     )
 
+    $context = Get-RunContext -Context $Context
+
     if (-not $PSBoundParameters.ContainsKey('AppList') -or -not $AppList) {
-        $AppList = Get-AppRemovalList -Key "SafeRemove"
+        $AppList = Get-AppRemovalList -Key "SafeRemove" -Context $context
     }
 
     Write-Section "Safe debloat (removes common bloatware, keeps Store and essentials)"
@@ -150,15 +171,18 @@ function Invoke-DebloatSafe {
 }
 
 # Description: Removes a broader set of apps and optionally provisioned packages.
-# Parameters: AppList - Optional list of packages to remove instead of default AggressiveRemove list.
+# Parameters: AppList - Optional list of packages to remove instead of default AggressiveRemove list; Context - Optional run context with ScriptRoot.
 # Returns: PSCustomObject containing any failed package removals.
 function Invoke-DebloatAggressive {
     param(
-        [string[]] $AppList
+        [string[]] $AppList,
+        [pscustomobject]$Context
     )
 
+    $context = Get-RunContext -Context $Context
+
     if (-not $PSBoundParameters.ContainsKey('AppList') -or -not $AppList) {
-        $AppList = Get-AppRemovalList -Key "AggressiveRemove"
+        $AppList = Get-AppRemovalList -Key "AggressiveRemove" -Context $context
     }
 
     Write-Section "Aggressive debloat (includes optional removal of provisioned packages)"
