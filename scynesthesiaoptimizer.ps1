@@ -62,6 +62,7 @@ try {
 $Context = New-RunContext -ScriptRoot $scriptRoot
 $script:Context = $Context
 Reset-NeedsReboot -Context $Context | Out-Null
+$script:Context.RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
 $script:Logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
 # ---------- 4. LOGGING (Transcript and logging initialization.) ----------
@@ -507,12 +508,13 @@ do {
     Write-Host "5) Network tweaks"
     Write-Host "6) Software & Updates"
     Write-Host "7) UI & Explorer tweaks"
+    Write-Host "8) Roll back registry changes from this session" -ForegroundColor Yellow
     Write-Host ""
     $rebootStatus = if (Get-NeedsReboot -Context $script:Context) { 'System Status: Reboot pending' } else { 'System Status: No reboot pending' }
     Write-Host $rebootStatus -ForegroundColor DarkCyan
     Write-Host "0) Exit" -ForegroundColor Gray
     Write-Host ""
-    $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','6','7','0')
+    $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','6','7','8','0')
 
     switch ($choice) {
         '1' { Run-SafePreset }
@@ -566,6 +568,11 @@ do {
         }
         '7' {
             Show-ExplorerTweaksMenu
+        }
+        '8' {
+            Write-Section "Rollback"
+            Invoke-RegistryRollback -Context $script:Context
+            Read-Host "`n[DONE] Press Enter to return to the menu..." | Out-Null
         }
         '0' { $exitRequested = $true }
     }

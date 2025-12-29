@@ -22,6 +22,7 @@ function New-RunContext {
         ScriptRoot      = $resolvedRoot
         NeedsReboot     = $false
         RollbackActions = @()
+        RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
         LogPath         = $null
         AppliedTweaks   = @{}
         RegistryPermissionFailures = @()
