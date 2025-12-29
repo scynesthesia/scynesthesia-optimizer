@@ -31,7 +31,7 @@ function Set-ServiceState {
     try {
         if ($Context -and $serviceSnapshot) {
             try {
-                Add-NonRegistryChange -Context $Context -Area 'ServiceState' -Key $service.Name -Value $serviceSnapshot | Out-Null
+                Add-ServiceRollbackAction -Context $Context -ServiceName $service.Name -StartupType $serviceSnapshot.StartupType -Status $serviceSnapshot.Status | Out-Null
             } catch { }
         }
 

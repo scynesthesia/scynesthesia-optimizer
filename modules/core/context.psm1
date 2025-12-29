@@ -23,6 +23,8 @@ function New-RunContext {
         NeedsReboot     = $false
         RollbackActions = @()
         RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
+        ServiceRollbackActions = [System.Collections.Generic.List[object]]::new()
+        NetshRollbackActions = [System.Collections.Generic.List[object]]::new()
         NonRegistryChanges = @{
             ServiceState = @{}
             NetshGlobal  = @{}
@@ -198,6 +200,90 @@ function Add-NonRegistryChange {
     return $tracker[$Area][$Key]
 }
 
+# Ensures the context exposes rollback collections for registry, service, and netsh actions.
+function Initialize-RollbackCollections {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    $runContext = Get-RunContext -Context $Context
+
+    if (-not $runContext.PSObject.Properties.Name.Contains('RegistryRollbackActions') -or -not $runContext.RegistryRollbackActions) {
+        if ($runContext.PSObject.Properties.Name.Contains('RegistryRollbackActions')) {
+            $runContext.RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
+        } else {
+            $runContext | Add-Member -Name RegistryRollbackActions -MemberType NoteProperty -Value ([System.Collections.Generic.List[object]]::new())
+        }
+    }
+
+    if (-not $runContext.PSObject.Properties.Name.Contains('ServiceRollbackActions') -or -not $runContext.ServiceRollbackActions) {
+        if ($runContext.PSObject.Properties.Name.Contains('ServiceRollbackActions')) {
+            $runContext.ServiceRollbackActions = [System.Collections.Generic.List[object]]::new()
+        } else {
+            $runContext | Add-Member -Name ServiceRollbackActions -MemberType NoteProperty -Value ([System.Collections.Generic.List[object]]::new())
+        }
+    }
+
+    if (-not $runContext.PSObject.Properties.Name.Contains('NetshRollbackActions') -or -not $runContext.NetshRollbackActions) {
+        if ($runContext.PSObject.Properties.Name.Contains('NetshRollbackActions')) {
+            $runContext.NetshRollbackActions = [System.Collections.Generic.List[object]]::new()
+        } else {
+            $runContext | Add-Member -Name NetshRollbackActions -MemberType NoteProperty -Value ([System.Collections.Generic.List[object]]::new())
+        }
+    }
+
+    return $runContext
+}
+
+# Adds or retrieves a service rollback snapshot keyed by service name.
+function Add-ServiceRollbackAction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Context,
+        [Parameter(Mandatory)][string]$ServiceName,
+        [Parameter(Mandatory)][string]$StartupType,
+        [string]$Status
+    )
+
+    $runContext = Initialize-RollbackCollections -Context $Context
+    $existing = $runContext.ServiceRollbackActions | Where-Object { $_.Name -and $_.Name -ieq $ServiceName }
+    if ($existing) { return $existing[0] }
+
+    $record = [pscustomobject]@{
+        Name        = $ServiceName
+        StartupType = $StartupType
+        Status      = $Status
+    }
+    [void]$runContext.ServiceRollbackActions.Add($record)
+    return $record
+}
+
+# Adds or updates a netsh global rollback entry keyed by setting name.
+function Add-NetshRollbackAction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][pscustomobject]$Context,
+        [Parameter(Mandatory)][string]$Setting,
+        [Parameter(Mandatory)]$Value
+    )
+
+    $runContext = Initialize-RollbackCollections -Context $Context
+    $existing = $runContext.NetshRollbackActions | Where-Object { $_.Name -and $_.Name -ieq $Setting }
+    if ($existing) {
+        $existing[0].Value = $Value
+        return $existing[0]
+    }
+
+    $record = [pscustomobject]@{
+        Name  = $Setting
+        Value = $Value
+    }
+    [void]$runContext.NetshRollbackActions.Add($record)
+    return $record
+}
+
 # Returns the persistence path for registry rollback actions and, optionally, creates the parent directory.
 function Get-RollbackPersistencePath {
     [CmdletBinding()]
@@ -213,8 +299,8 @@ function Get-RollbackPersistencePath {
     return Join-Path $root $FileName
 }
 
-# Persists the registry rollback actions from the context to disk so they can be restored after crashes.
-function Save-RegistryRollbackState {
+# Persists rollback actions from the context to disk so they can be restored after crashes.
+function Save-RollbackState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -228,14 +314,28 @@ function Save-RegistryRollbackState {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
 
-    $records = @()
-    if ($Context.PSObject.Properties.Name -contains 'RegistryRollbackActions' -and $Context.RegistryRollbackActions) {
-        $records = @($Context.RegistryRollbackActions)
+    $runContext = Initialize-RollbackCollections -Context $Context
+
+    $registryRecords = @()
+    if ($runContext.RegistryRollbackActions) {
+        $registryRecords = @($runContext.RegistryRollbackActions)
+    }
+
+    $serviceRecords = @()
+    if ($runContext.ServiceRollbackActions) {
+        $serviceRecords = @($runContext.ServiceRollbackActions)
+    }
+
+    $netshRecords = @()
+    if ($runContext.NetshRollbackActions) {
+        $netshRecords = @($runContext.NetshRollbackActions)
     }
 
     $payload = [pscustomobject]@{
         LastUpdated = (Get-Date).ToString('o')
-        Records     = $records
+        Registry    = $registryRecords
+        Services    = $serviceRecords
+        Netsh       = $netshRecords
     }
 
     try {
@@ -248,8 +348,20 @@ function Save-RegistryRollbackState {
     return $targetPath
 }
 
-# Restores registry rollback actions from disk into the supplied context.
-function Restore-RegistryRollbackState {
+# Maintains backward compatibility for callers expecting registry-only persistence.
+function Save-RegistryRollbackState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context,
+        [string]$Path
+    )
+
+    return Save-RollbackState -Context $Context -Path $Path
+}
+
+# Restores rollback actions from disk into the supplied context.
+function Restore-RollbackState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -263,22 +375,53 @@ function Restore-RegistryRollbackState {
     try {
         $content = Get-Content -Path $targetPath -Raw -ErrorAction Stop
         $data = $content | ConvertFrom-Json -ErrorAction Stop
-        $records = @()
-        if ($data -and $data.PSObject.Properties.Name -contains 'Records' -and $data.Records) {
-            $records = @($data.Records)
+        $registryRecords = @()
+        if ($data -and $data.PSObject.Properties.Name -contains 'Registry' -and $data.Registry) {
+            $registryRecords = @($data.Registry)
+        } elseif ($data -and $data.PSObject.Properties.Name -contains 'Records' -and $data.Records) {
+            $registryRecords = @($data.Records)
+        }
+
+        $serviceRecords = @()
+        if ($data -and $data.PSObject.Properties.Name -contains 'Services' -and $data.Services) {
+            $serviceRecords = @($data.Services)
+        }
+
+        $netshRecords = @()
+        if ($data -and $data.PSObject.Properties.Name -contains 'Netsh' -and $data.Netsh) {
+            $netshRecords = @($data.Netsh)
         }
 
         $list = [System.Collections.Generic.List[object]]::new()
-        foreach ($record in $records) {
-            [void]$list.Add($record)
-        }
+        foreach ($record in $registryRecords) { [void]$list.Add($record) }
 
-        $Context.RegistryRollbackActions = $list
+        $serviceList = [System.Collections.Generic.List[object]]::new()
+        foreach ($svcRecord in $serviceRecords) { [void]$serviceList.Add($svcRecord) }
+
+        $netshList = [System.Collections.Generic.List[object]]::new()
+        foreach ($netRecord in $netshRecords) { [void]$netshList.Add($netRecord) }
+
+        $runContext = Initialize-RollbackCollections -Context $Context
+        $runContext.RegistryRollbackActions = $list
+        $runContext.ServiceRollbackActions = $serviceList
+        $runContext.NetshRollbackActions = $netshList
         return $true
     } catch {
         Write-Warning "Failed to restore rollback actions from $targetPath: $($_.Exception.Message)"
         return $false
     }
+}
+
+# Maintains backward compatibility for callers expecting registry-only restoration.
+function Restore-RegistryRollbackState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context,
+        [string]$Path
+    )
+
+    return Restore-RollbackState -Context $Context -Path $Path
 }
 
 function Invoke-RegistryTransaction {
@@ -474,4 +617,4 @@ function Invoke-RegistryTransaction {
     throw [System.InvalidOperationException]::new("One or more registry operations failed within $transactionLabel; changes were rolled back.")
 }
 
-Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once, Get-RollbackPersistencePath, Save-RegistryRollbackState, Restore-RegistryRollbackState, Invoke-RegistryTransaction, Get-NonRegistryChangeTracker, Add-NonRegistryChange
+Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once, Get-RollbackPersistencePath, Save-RegistryRollbackState, Restore-RegistryRollbackState, Save-RollbackState, Restore-RollbackState, Invoke-RegistryTransaction, Get-NonRegistryChangeTracker, Add-NonRegistryChange, Initialize-RollbackCollections, Add-ServiceRollbackAction, Add-NetshRollbackAction

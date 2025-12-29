@@ -683,7 +683,7 @@ function Register-NetshGlobalsForRollback {
     }
 
     foreach ($key in $map.Keys) {
-        try { Add-NonRegistryChange -Context $Context -Area 'NetshGlobal' -Key $key -Value $map[$key] | Out-Null } catch { }
+        try { Add-NetshRollbackAction -Context $Context -Setting $key -Value $map[$key] | Out-Null } catch { }
     }
 
     return $map
@@ -706,7 +706,7 @@ function Register-ServiceStateForRollback {
             StartupType = $svc.StartType.ToString()
             Status      = $svc.Status.ToString()
         }
-        Add-NonRegistryChange -Context $Context -Area 'ServiceState' -Key $svc.Name -Value $snapshot | Out-Null
+        Add-ServiceRollbackAction -Context $Context -ServiceName $svc.Name -StartupType $snapshot.StartupType -Status $snapshot.Status | Out-Null
         return $snapshot
     } catch {
         return $null
@@ -1378,14 +1378,36 @@ function Invoke-GlobalRollback {
     $fallbackServices = @()
     $fallbackNetsh = $null
     try {
+        if ($runContext.PSObject.Properties.Name -contains 'ServiceRollbackActions' -and $runContext.ServiceRollbackActions) {
+            $fallbackServices = @($runContext.ServiceRollbackActions)
+        }
+        if ($runContext.PSObject.Properties.Name -contains 'NetshRollbackActions' -and $runContext.NetshRollbackActions) {
+            $fallbackNetsh = @{}
+            foreach ($entry in $runContext.NetshRollbackActions) {
+                if (-not $entry -or -not $entry.Name) { continue }
+                if (-not $fallbackNetsh.ContainsKey($entry.Name)) {
+                    $fallbackNetsh[$entry.Name] = $entry.Value
+                }
+            }
+        }
+
+        # Preserve legacy tracker entries for compatibility with older sessions.
         $tracker = Get-NonRegistryChangeTracker -Context $runContext
         if ($tracker -and $tracker.ServiceState) {
-            $fallbackServices = @($tracker.ServiceState.Values)
+            $existingNames = $fallbackServices | Where-Object { $_.Name } | ForEach-Object { $_.Name }
+            foreach ($svc in $tracker.ServiceState.Values) {
+                if (-not $svc -or -not $svc.Name) { continue }
+                if (-not ($existingNames -contains $svc.Name)) {
+                    $fallbackServices += $svc
+                }
+            }
         }
         if ($tracker -and $tracker.NetshGlobal) {
-            $fallbackNetsh = @{}
+            if (-not $fallbackNetsh) { $fallbackNetsh = @{} }
             foreach ($key in $tracker.NetshGlobal.Keys) {
-                $fallbackNetsh[$key] = $tracker.NetshGlobal[$key]
+                if (-not $fallbackNetsh.ContainsKey($key)) {
+                    $fallbackNetsh[$key] = $tracker.NetshGlobal[$key]
+                }
             }
         }
     } catch { }
