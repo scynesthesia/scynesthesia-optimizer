@@ -382,15 +382,43 @@ function Invoke-DebloatAggressive {
             Write-Log -Message $warningMessage -Level 'Warning'
             $prov = @()
         }
-        foreach ($p in $prov) {
-            Write-Host "  [+] Removing provisioned package $($p.PackageName)"
+        $provisionedTargets = @($prov)
+        $provisionedNames = $provisionedTargets.PackageName
+
+        if ($provisionedNames) {
+            Write-Host "  [+] Removing provisioned packages: $($provisionedNames -join ', ')"
+
+            $provRemoveErrors = @()
+            $uncapturedProvFailure = $false
+
             try {
-                Remove-AppxProvisionedPackage -Online -PackageName $p.PackageName | Out-Null
-                $removed += $p.PackageName
+                $provisionedTargets | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue -ErrorVariable provRemoveErrors | Out-Null
             } catch {
-                $failed += $p.PackageName
-                Write-Host "  [SKIPPED] $($p.PackageName)" -ForegroundColor DarkGray
-                Write-Log -Message "Skipped protected app: $($p.PackageName)" -Level 'Info'
+                $uncapturedProvFailure = $true
+                $provRemoveErrors += $_
+            }
+
+            foreach ($err in $provRemoveErrors) {
+                $failedName = if ($err.TargetObject -and $err.TargetObject.PackageName) { $err.TargetObject.PackageName } elseif ($err.TargetObject) { $err.TargetObject } else { $null }
+                if ($failedName) {
+                    $failed += $failedName
+                } else {
+                    $uncapturedProvFailure = $true
+                }
+                $displayName = if ($failedName) { $failedName } else { 'Unknown package' }
+                Write-Host "  [SKIPPED] $displayName" -ForegroundColor DarkGray
+                Write-Log -Message "Skipped protected app: $displayName" -Level 'Info'
+            }
+
+            if ($uncapturedProvFailure -and -not ($failed | Where-Object { $provisionedNames -contains $_ })) {
+                $failed += $provisionedNames
+            }
+
+            $provFailedNames = $failed | Where-Object { $provisionedNames -contains $_ } | Select-Object -Unique
+            $provSuccessful = $provisionedNames | Where-Object { $provFailedNames -notcontains $_ }
+
+            if ($provSuccessful) {
+                $removed += $provSuccessful
             }
         }
     }
