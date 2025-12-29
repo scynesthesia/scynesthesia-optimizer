@@ -109,6 +109,44 @@ if (Get-Confirmation "Enable session logging to a file? (Recommended for service
 $script:HighImpactBlocked = $false
 $script:HighImpactBlockReason = ""
 
+function Initialize-SessionSummaryTracker {
+    param([pscustomobject]$Context)
+
+    $context = Get-RunContext -Context $Context
+    if (-not $context.PSObject.Properties.Name.Contains('SessionSummary')) {
+        $context | Add-Member -Name SessionSummary -MemberType NoteProperty -Value ([pscustomobject]@{
+            Applied            = [System.Collections.Generic.List[string]]::new()
+            DeclinedHighImpact = [System.Collections.Generic.List[string]]::new()
+            GuardedBlocks      = [System.Collections.Generic.List[string]]::new()
+        })
+    }
+
+    foreach ($key in @('Applied','DeclinedHighImpact','GuardedBlocks')) {
+        if (-not ($context.SessionSummary.$key)) {
+            $context.SessionSummary.$key = [System.Collections.Generic.List[string]]::new()
+        }
+    }
+
+    return $context.SessionSummary
+}
+
+function Add-SessionSummaryItem {
+    param(
+        [pscustomobject]$Context,
+        [ValidateSet('Applied','DeclinedHighImpact','GuardedBlocks')]
+        [string]$Bucket,
+        [Parameter(Mandatory)][string]$Message
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Message)) { return }
+    $summary = Initialize-SessionSummaryTracker -Context $Context
+    if (-not $summary) { return }
+
+    if (-not ($summary.$Bucket -contains $Message)) {
+        [void]$summary.$Bucket.Add($Message)
+    }
+}
+
 function Reset-HighImpactBlock {
     $script:HighImpactBlocked = $false
     $script:HighImpactBlockReason = ""
@@ -151,6 +189,7 @@ function Assert-HighImpactAllowed {
 
     $label = if ($ActionLabel) { $ActionLabel } else { "This action" }
     Write-Warning "[Safety] $label is blocked: $($script:HighImpactBlockReason) Only Safe tweaks are available until a restore point succeeds."
+    Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "$label blocked: $($script:HighImpactBlockReason)"
     return $false
 }
 
@@ -237,6 +276,85 @@ function Ensure-PowerPlan {
         } catch {
             Write-Warning "  [!] Failed to activate Balanced plan: $($_.Exception.Message)"
         }
+    }
+}
+
+function Write-EndOfSessionSummary {
+    param([pscustomobject]$Context)
+
+    $context = Get-RunContext -Context $Context
+    $summary = Initialize-SessionSummaryTracker -Context $context
+    $networkBackupPath = "C:\ProgramData\Scynesthesia\network_backup.json"
+
+    Write-Host ""
+    Write-Host "===== End-of-Session Summary =====" -ForegroundColor Cyan
+
+    $applied = @()
+    if ($summary -and $summary.Applied) {
+        $applied += @($summary.Applied | Where-Object { $_ } | Select-Object -Unique)
+    }
+    if ($context.PSObject.Properties.Name -contains 'DebloatRemovalLog' -and $context.DebloatRemovalLog -and $context.DebloatRemovalLog.Count -gt 0) {
+        $applied += "App removals logged: $(@($context.DebloatRemovalLog | Where-Object { $_ } | Select-Object -Unique).Count) item(s)"
+    }
+    if ($context.PSObject.Properties.Name -contains 'AppliedTweaks' -and $context.AppliedTweaks.Keys.Count -gt 0) {
+        $applied += "Repeat-protected tweaks applied: $($context.AppliedTweaks.Keys -join ', ')"
+    }
+
+    $serviceChanges = 0
+    if ($context.PSObject.Properties.Name -contains 'ServiceRollbackActions' -and $context.ServiceRollbackActions) {
+        $serviceChanges = @($context.ServiceRollbackActions | Where-Object { $_ }).Count
+    } elseif ($context.PSObject.Properties.Name -contains 'NonRegistryChanges' -and $context.NonRegistryChanges -and $context.NonRegistryChanges.ServiceState) {
+        $serviceChanges = @($context.NonRegistryChanges.ServiceState.GetEnumerator()).Count
+    }
+
+    $netshChanges = 0
+    if ($context.PSObject.Properties.Name -contains 'NetshRollbackActions' -and $context.NetshRollbackActions) {
+        $netshChanges = @($context.NetshRollbackActions | Where-Object { $_ }).Count
+    } elseif ($context.PSObject.Properties.Name -contains 'NonRegistryChanges' -and $context.NonRegistryChanges -and $context.NonRegistryChanges.NetshGlobal) {
+        $netshChanges = @($context.NonRegistryChanges.NetshGlobal.GetEnumerator()).Count
+    }
+
+    if ($serviceChanges -gt 0) {
+        $applied += "Service state changes tracked: $serviceChanges"
+    }
+    if ($netshChanges -gt 0) {
+        $applied += "Netsh TCP global changes tracked: $netshChanges"
+    }
+
+    if ($applied.Count -gt 0) {
+        Write-Host "[+] Tweaks applied:" -ForegroundColor Green
+        foreach ($item in ($applied | Select-Object -Unique)) {
+            Write-Host "    - $item" -ForegroundColor Gray
+        }
+    } else {
+        Write-Host "[ ] No tweak applications were recorded." -ForegroundColor DarkGray
+    }
+
+    $declined = if ($summary -and $summary.DeclinedHighImpact) { @($summary.DeclinedHighImpact | Where-Object { $_ } | Select-Object -Unique) } else { @() }
+    if ($declined.Count -gt 0) {
+        Write-Host "[!] High-impact prompts declined by user:" -ForegroundColor Yellow
+        foreach ($item in $declined) {
+            Write-Host "    - $item" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[ ] No user-declined high-impact prompts recorded." -ForegroundColor DarkGray
+    }
+
+    $guards = if ($summary -and $summary.GuardedBlocks) { @($summary.GuardedBlocks | Where-Object { $_ } | Select-Object -Unique) } else { @() }
+    if ($guards.Count -gt 0) {
+        Write-Host "[i] Tweaks blocked by safeguards or compatibility checks:" -ForegroundColor Cyan
+        foreach ($item in $guards) {
+            Write-Host "    - $item" -ForegroundColor Cyan
+        }
+    } else {
+        Write-Host "[ ] No guard-enforced skips recorded." -ForegroundColor DarkGray
+    }
+
+    $rollbackNote = "Service/netsh changes rely on the network backup at $networkBackupPath for restoration via the Rollback or Network menu."
+    if ($serviceChanges -gt 0 -or $netshChanges -gt 0) {
+        Write-Host "[Reminder] $rollbackNote" -ForegroundColor Magenta
+    } else {
+        Write-Host "[Reminder] If you change services or netsh settings later, ensure $networkBackupPath is preserved for rollback." -ForegroundColor Magenta
     }
 }
 
@@ -759,6 +877,7 @@ if ($script:RollbackPersistTimer) {
     $script:RollbackPersistTimer.Dispose()
 }
 
+Write-EndOfSessionSummary -Context $script:Context
 Write-DebloatRemovalLog -Context $script:Context
 
 try {

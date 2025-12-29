@@ -73,6 +73,9 @@ function Enable-MsiModeSafe {
                     $skipMatches = $normalizedSkips | Where-Object { $normalizedInstanceId -like $_ -or $normalizedInstanceId -like "*$_*" }
                     if ($skipMatches) {
                         Write-Host "  [ ] Skipping MSI enable for $($dev.FriendlyName) due to legacy driver safeguards." -ForegroundColor DarkGray
+                        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                            Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "MSI Mode skipped for $($dev.FriendlyName): legacy driver safeguard match"
+                        }
                         continue
                     }
                 }
@@ -100,11 +103,17 @@ function Enable-MsiModeSafe {
                 if ($driverDate) {
                     if ($driverDate -lt (Get-Date '2014-01-01')) {
                         Write-Host "  [!] Skipping $($dev.FriendlyName): driver date $driverDate is older than 2014-01-01." -ForegroundColor Yellow
+                        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                            Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "MSI Mode skipped for $($dev.FriendlyName): driver dated $($driverDate.ToShortDateString())"
+                        }
                         continue
                     }
 
                     if ($dev.Manufacturer -and ($dev.Manufacturer -match '^(?i)(Realtek|JMicron)') -and $driverDate -lt (Get-Date '2017-01-01')) {
                         Write-Host "  [!] Skipping $($dev.FriendlyName): $($dev.Manufacturer) driver date $driverDate is older than 2017-01-01." -ForegroundColor Yellow
+                        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                            Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "MSI Mode skipped for $($dev.FriendlyName): $($dev.Manufacturer) driver age safeguard"
+                        }
                         continue
                     }
                 }
@@ -114,12 +123,18 @@ function Enable-MsiModeSafe {
                     $matchedOptOut = $msiOptOutPciIds[$query.TargetKey] | Where-Object { $opt = $_; $normalizedIds | Where-Object { $_ -like "*$opt*" } }
                     if ($matchedOptOut) {
                         Write-Host "  [!] Skipping $($dev.FriendlyName): hardware ID matches MSI opt-out ($($matchedOptOut -join ', '))." -ForegroundColor Yellow
+                        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                            Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "MSI Mode skipped for $($dev.FriendlyName): hardware ID opt-out ($($matchedOptOut -join ', '))"
+                        }
                         continue
                     }
                 }
 
                 if ($isInboxDriver) {
                     Write-Host "  [!] Skipping $($dev.FriendlyName): Microsoft inbox driver detected on Windows 10 build $($osVersion.Build) (pre-1903) often rejects MSI mode and may cause boot loops." -ForegroundColor Yellow
+                    if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                        Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "MSI Mode skipped for $($dev.FriendlyName): inbox driver on pre-1903 build"
+                    }
                     continue
                 }
 
@@ -133,6 +148,9 @@ function Enable-MsiModeSafe {
                         Write-Host "  [+] MSI enabled for: $($dev.FriendlyName)" -ForegroundColor Green
                         if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
                             Write-Log "[MSI] Enabled for $($dev.InstanceId)" -Level 'Info'
+                        }
+                        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                            Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message "MSI Mode enabled for $($dev.FriendlyName)"
                         }
                         $touched++
                     } else {

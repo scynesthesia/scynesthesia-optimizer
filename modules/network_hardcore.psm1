@@ -211,6 +211,9 @@ function Set-TcpIpAdvancedParameters {
             $values['SackOpts'] = 0
         } else {
             Write-Host "  [!] SackOpts skipped for build $buildNumber to maintain compatibility." -ForegroundColor Yellow
+            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "SackOpts tweak skipped: OS build $buildNumber below 16299"
+            }
         }
 
         $anySuccess = $false
@@ -1134,14 +1137,20 @@ function Suggest-NetworkIrqCores {
 }
 
 # Description: Configures the TCP congestion provider, preferring BBR when available.
-# Parameters: None.
+# Parameters: Context - Optional run context for summary tracking.
 # Returns: None. Writes status messages for chosen provider.
 function Set-TcpCongestionProvider {
+    param(
+        [pscustomobject]$Context
+    )
     try {
         $osVersion = [System.Environment]::OSVersion.Version
         $buildNumber = $osVersion.Build
         if ($osVersion.Major -lt 10 -or $buildNumber -lt 16299) {
             Write-Host "  [ ] Modern congestion control requires Windows 10 Build 16299 or later. Detected build $buildNumber; skipping congestion provider changes." -ForegroundColor Gray
+            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "Congestion provider unchanged: OS build $buildNumber lacks support"
+            }
             return
         }
 
@@ -1162,6 +1171,9 @@ function Set-TcpCongestionProvider {
                 netsh int tcp set global congestionprovider=bbr | Out-Null
                 Write-Host "  [+] TCP congestion provider set to BBR (experimental, favors throughput and latency)." -ForegroundColor Green
                 if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] TCP congestion provider set to BBR." }
+                if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                    Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'BBR congestion provider enabled'
+                }
                 return
             } catch {
                 Invoke-ErrorHandler -Context 'Setting TCP congestion provider to BBR' -ErrorRecord $_
@@ -1418,7 +1430,7 @@ function Invoke-NetworkTweaksHardcore {
         Invoke-MtuToAdapters -Mtu $mtuResult.Mtu -Adapters @($adapters)
     }
 
-    Set-TcpCongestionProvider
+    Set-TcpCongestionProvider -Context $Context
 
     Write-RegistryFailureSummary -Tracker $failureTracker
     if ($failureTracker -and $failureTracker.Abort) { return }

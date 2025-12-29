@@ -47,6 +47,9 @@ function Invoke-AggressiveTweaks {
         Write-Host "  [+] Disabling hibernation"
         try {
             powercfg -h off
+            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                Add-SessionSummaryItem -Context $context -Bucket 'Applied' -Message 'Hibernation disabled'
+            }
         } catch {
             Invoke-ErrorHandler -Context "Disabling hibernation" -ErrorRecord $_
         }
@@ -57,6 +60,9 @@ function Invoke-AggressiveTweaks {
             "  [ ] Hibernation left unchanged."
         }
         Write-Host $message -ForegroundColor Yellow
+        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+            Add-SessionSummaryItem -Context $context -Bucket 'DeclinedHighImpact' -Message 'Hibernation disable prompt declined'
+        }
     }
 
     Write-Host "  [+] Blocking background apps"
@@ -97,12 +103,22 @@ function Invoke-AggressiveTweaks {
                 }
                 Set-Service -Name "Spooler" -StartupType Disabled
                 Write-Host "  [+] Print Spooler disabled"
+                if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                    Add-SessionSummaryItem -Context $context -Bucket 'Applied' -Message 'Print Spooler disabled'
+                }
             } catch {
                 Invoke-ErrorHandler -Context "Disabling Print Spooler service" -ErrorRecord $_
+            }
+        } else {
+            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                Add-SessionSummaryItem -Context $context -Bucket 'DeclinedHighImpact' -Message 'Print Spooler disable prompt declined'
             }
         }
     } else {
         Write-Host "  [ ] Spooler left untouched because OEM services are present."
+        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+            Add-SessionSummaryItem -Context $context -Bucket 'GuardedBlocks' -Message 'Print Spooler protected due to OEM services detected'
+        }
     }
 
     if (Get-Confirmation "Block OneDrive from starting automatically?" 'y') {
