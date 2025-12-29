@@ -6,7 +6,8 @@ function Enable-MsiModeSafe {
     param(
         [string[]]$Target = 'GPU',
         [Parameter(Mandatory)]
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string[]]$SkipInstanceIds
     )
 
     Write-Section "MSI Mode (Message Signaled Interrupts)"
@@ -51,6 +52,11 @@ function Enable-MsiModeSafe {
         return [pscustomobject]@{ Touched = 0 }
     }
 
+    $normalizedSkips = @()
+    if ($SkipInstanceIds) {
+        $normalizedSkips = $SkipInstanceIds | Where-Object { $_ } | ForEach-Object { $_.ToUpperInvariant() }
+    }
+
     $touched = 0
     foreach ($query in ($classQueries | Sort-Object Class -Unique)) {
         $devices = Get-PnpDevice -Class $query.Class -Status OK -ErrorAction SilentlyContinue
@@ -59,6 +65,15 @@ function Enable-MsiModeSafe {
         }
         foreach ($dev in $devices) {
             try {
+                if ($normalizedSkips -and $dev.InstanceId) {
+                    $normalizedInstanceId = $dev.InstanceId.ToUpperInvariant()
+                    $skipMatches = $normalizedSkips | Where-Object { $normalizedInstanceId -like $_ -or $normalizedInstanceId -like "*$_*" }
+                    if ($skipMatches) {
+                        Write-Host "  [ ] Skipping MSI enable for $($dev.FriendlyName) due to legacy driver safeguards." -ForegroundColor DarkGray
+                        continue
+                    }
+                }
+
                 $driverDate = $null
                 $driverDateProperty = Get-PnpDeviceProperty -InstanceId $dev.InstanceId -KeyName 'DEVPKEY_Device_DriverDate' -ErrorAction SilentlyContinue
                 if ($driverDateProperty -and $driverDateProperty.Data) {

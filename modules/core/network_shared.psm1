@@ -336,7 +336,8 @@ function Invoke-MsiModeOnce {
         [Parameter(Mandatory)][string[]]$Targets,
         [string]$PromptMessage,
         [string]$InvokeOnceId,
-        [char]$DefaultResponse = 'n'
+        [char]$DefaultResponse = 'n',
+        [string[]]$SkipInstanceIds
     )
 
     $context = Get-RunContext -Context $Context
@@ -353,6 +354,10 @@ function Invoke-MsiModeOnce {
             Write-Host "  [ ] MSI Mode skipped." -ForegroundColor Gray
             return $null
         }
+    }
+
+    if ($SkipInstanceIds) {
+        return Enable-MsiModeSafe -Target $Targets -Context $context -SkipInstanceIds $SkipInstanceIds
     }
 
     return Enable-MsiModeSafe -Target $Targets -Context $context
@@ -501,7 +506,8 @@ function Invoke-AdapterOffloadToggle {
         [char]$DefaultResponse = 'y',
         [string]$InvokeOnceId = 'Network:AdapterOffloads',
         [string]$LoggerPrefix = '[Network]',
-        [switch]$SkipWirelessWarning
+        [switch]$SkipWirelessWarning,
+        [string[]]$InterruptModerationSkipInstanceIds
     )
 
     $context = Get-RunContext -Context $Context
@@ -552,6 +558,11 @@ function Invoke-AdapterOffloadToggle {
         return [pscustomobject]@{ Applied = $false; ChangedAdapters = @() }
     }
 
+    $normalizedInterruptSkipIds = @()
+    if ($InterruptModerationSkipInstanceIds) {
+        $normalizedInterruptSkipIds = $InterruptModerationSkipInstanceIds | Where-Object { $_ } | ForEach-Object { $_.ToUpperInvariant() }
+    }
+
     $propertyRules = @(
         @{ Name = 'Large Send Offload V2 (IPv4)'; Value = 'Disabled' },
         @{ Name = 'Large Send Offload V2 (IPv6)'; Value = 'Disabled' },
@@ -570,6 +581,22 @@ function Invoke-AdapterOffloadToggle {
 
     $Adapters | ForEach-Object {
         $adapter = $_
+        $adapterInstanceId = $null
+        foreach ($propName in @('PnPDeviceID', 'PnpDeviceID', 'DeviceID')) {
+            try {
+                if ($adapter.PSObject.Properties[$propName] -and $adapter.$propName) {
+                    $adapterInstanceId = $adapter.$propName
+                    break
+                }
+            } catch { }
+        }
+        $adapterIdNormalized = if ($adapterInstanceId) { $adapterInstanceId.ToUpperInvariant() } else { $null }
+        $skipInterruptModeration = $false
+        if ($adapterIdNormalized -and $normalizedInterruptSkipIds.Count -gt 0) {
+            $matched = $normalizedInterruptSkipIds | Where-Object { $adapterIdNormalized -like $_ -or $adapterIdNormalized -like "*$_*" }
+            if ($matched) { $skipInterruptModeration = $true }
+        }
+
         try {
             Disable-NetAdapterRsc -Name $adapter.Name -ErrorAction Stop | Out-Null
             Write-Host "  [+] RSC disabled on $($adapter.Name)." -ForegroundColor Green
@@ -580,8 +607,12 @@ function Invoke-AdapterOffloadToggle {
         }
 
         $propertyRules | ForEach-Object {
-            $changed = Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName $_.Name -DisplayValue $_.Value
-            if ($changed) { $touched.Add($adapter.Name) | Out-Null }
+            if ($_.Name -eq 'Interrupt Moderation' -and $skipInterruptModeration) {
+                Write-Host "  [ ] Skipping Interrupt Moderation changes on $($adapter.Name) due to legacy driver safeguards." -ForegroundColor DarkGray
+            } else {
+                $changed = Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName $_.Name -DisplayValue $_.Value
+                if ($changed) { $touched.Add($adapter.Name) | Out-Null }
+            }
         }
     }
 
@@ -607,7 +638,9 @@ function Invoke-AdvancedNetworkPipeline {
         [string]$OffloadPromptMessage = "Disable adapter offloads (RSC/LSO/Checksum) for lower latency? May reduce throughput.",
         [char]$OffloadDefaultResponse = 'y',
         [string]$OffloadInvokeOnceId = 'Network:AdapterOffloads',
-        [switch]$SkipWirelessWarning
+        [switch]$SkipWirelessWarning,
+        [string[]]$MsiSkipInstanceIds,
+        [string[]]$InterruptModerationSkipInstanceIds
     )
 
     $context = Get-RunContext -Context $Context
@@ -658,6 +691,9 @@ function Invoke-AdvancedNetworkPipeline {
         if ($MsiInvokeOnceId) {
             $msiParams['InvokeOnceId'] = $MsiInvokeOnceId
         }
+        if ($MsiSkipInstanceIds) {
+            $msiParams['SkipInstanceIds'] = $MsiSkipInstanceIds
+        }
 
         $result.Msi = Invoke-MsiModeOnce @msiParams
 
@@ -668,7 +704,7 @@ function Invoke-AdvancedNetworkPipeline {
         }
     }
 
-    $result.Offloads = Invoke-AdapterOffloadToggle -Context $context -Adapters $resolvedAdapters -PrimaryAdapter $primary -PromptMessage $OffloadPromptMessage -DefaultResponse $OffloadDefaultResponse -InvokeOnceId $OffloadInvokeOnceId -LoggerPrefix $LoggerPrefix -SkipWirelessWarning:$SkipWirelessWarning
+    $result.Offloads = Invoke-AdapterOffloadToggle -Context $context -Adapters $resolvedAdapters -PrimaryAdapter $primary -PromptMessage $OffloadPromptMessage -DefaultResponse $OffloadDefaultResponse -InvokeOnceId $OffloadInvokeOnceId -LoggerPrefix $LoggerPrefix -SkipWirelessWarning:$SkipWirelessWarning -InterruptModerationSkipInstanceIds $InterruptModerationSkipInstanceIds
 
     return [pscustomobject]$result
 }
