@@ -60,10 +60,28 @@ try {
 
 # ---------- 3. CONTEXT INITIALIZATION ----------
 $Context = New-RunContext -ScriptRoot $scriptRoot
+$Context.RollbackPersistencePath = Get-RollbackPersistencePath
+Restore-RegistryRollbackState -Context $Context -Path $Context.RollbackPersistencePath | Out-Null
+$script:RollbackPersistencePath = $Context.RollbackPersistencePath
 $script:Context = $Context
 Reset-NeedsReboot -Context $Context | Out-Null
-$script:Context.RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
+$script:Context.RegistryRollbackActions = if ($Context.RegistryRollbackActions) { $Context.RegistryRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
 $script:Logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+# Periodically persist rollback entries so they can survive unexpected termination.
+$script:RollbackPersistTimer = [System.Timers.Timer]::new()
+$script:RollbackPersistTimer.Interval = 30000
+$script:RollbackPersistTimer.AutoReset = $true
+$script:RollbackPersistSubscription = Register-ObjectEvent -InputObject $script:RollbackPersistTimer -EventName Elapsed -SourceIdentifier 'RegistryRollbackPersistence' -Action {
+    try {
+        if ($script:Context) {
+            Save-RegistryRollbackState -Context $script:Context -Path $script:Context.RollbackPersistencePath | Out-Null
+        }
+    } catch {
+        Write-Verbose "Rollback persistence failed: $($_.Exception.Message)"
+    }
+} -ErrorAction SilentlyContinue
+$script:RollbackPersistTimer.Start()
 
 # ---------- 4. LOGGING (Transcript and logging initialization.) ----------
 $TranscriptStarted = $false
@@ -611,6 +629,25 @@ do {
     if ($exitRequested) { break }
 
 } while ($true)
+
+try {
+    Save-RegistryRollbackState -Context $script:Context -Path $script:Context.RollbackPersistencePath | Out-Null
+} catch {
+    Write-Verbose "Final rollback persistence failed: $($_.Exception.Message)"
+}
+
+if ($script:RollbackPersistTimer) {
+    $script:RollbackPersistTimer.Stop()
+}
+if (Get-EventSubscriber -SourceIdentifier 'RegistryRollbackPersistence' -ErrorAction SilentlyContinue) {
+    Unregister-Event -SourceIdentifier 'RegistryRollbackPersistence' -ErrorAction SilentlyContinue
+}
+if ($script:RollbackPersistSubscription) {
+    try { Remove-Job -Id $script:RollbackPersistSubscription.Id -ErrorAction SilentlyContinue } catch {}
+}
+if ($script:RollbackPersistTimer) {
+    $script:RollbackPersistTimer.Dispose()
+}
 
 Write-DebloatRemovalLog -Context $script:Context
 
