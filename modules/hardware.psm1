@@ -19,12 +19,26 @@ function Enable-MsiModeSafe {
         'STORAGE' = @{ Classes = @('SCSIAdapter','HDC'); ClassGuids = @('{4d36e97b-e325-11ce-bfc1-08002be10318}', '{4d36e96a-e325-11ce-bfc1-08002be10318}'); Description = 'Storage controllers' }
     }
 
+    # PCI ID opt-outs for devices known to be unstable with MSI mode despite driver age
+    $msiOptOutPciIds = @{
+        'NIC' = @(
+            'VEN_10EC&DEV_8168', # Realtek PCIe GBE Family Controller (inconsistent MSI stability on some boards)
+            'VEN_14E4&DEV_16B1', # Broadcom NetXtreme BCM57781/BCM57785
+            'VEN_8086&DEV_10D3'  # Intel 82574L (desktop server NICs with MSI quirks)
+        )
+        'STORAGE' = @(
+            'VEN_1B21&DEV_0612', # ASMedia 106x SATA controllers
+            'VEN_1B4B&DEV_9172', # Marvell 88SE9172 SATA
+            'VEN_197B&DEV_2368'  # JMicron JMB36x SATA/PATA controllers
+        )
+    }
+
     $normalizedTargets = $Target | ForEach-Object { $_.ToUpperInvariant() } | Select-Object -Unique
     $classQueries = @()
     foreach ($t in $normalizedTargets) {
         if ($targetMap.ContainsKey($t)) {
             foreach ($className in $targetMap[$t].Classes) {
-                $classQueries += [pscustomobject]@{ Class = $className; ClassGuids = $targetMap[$t].ClassGuids }
+                $classQueries += [pscustomobject]@{ Class = $className; ClassGuids = $targetMap[$t].ClassGuids; TargetKey = $t }
             }
             Write-Host "  [>] Targeting: $($targetMap[$t].Description)" -ForegroundColor Gray
         } else {
@@ -51,6 +65,12 @@ function Enable-MsiModeSafe {
                     [datetime]::TryParse($driverDateProperty.Data, [ref]$driverDate) | Out-Null
                 }
 
+                $hardwareIds = @()
+                $hardwareIdProperty = Get-PnpDeviceProperty -InstanceId $dev.InstanceId -KeyName 'DEVPKEY_Device_HardwareIds' -ErrorAction SilentlyContinue
+                if ($hardwareIdProperty -and $hardwareIdProperty.Data) {
+                    $hardwareIds = @($hardwareIdProperty.Data) | Where-Object { $_ }
+                }
+
                 if ($driverDate) {
                     if ($driverDate -lt (Get-Date '2014-01-01')) {
                         Write-Host "  [!] Skipping $($dev.FriendlyName): driver date $driverDate is older than 2014-01-01." -ForegroundColor Yellow
@@ -59,6 +79,15 @@ function Enable-MsiModeSafe {
 
                     if ($dev.Manufacturer -and ($dev.Manufacturer -match '^(?i)(Realtek|JMicron)') -and $driverDate -lt (Get-Date '2017-01-01')) {
                         Write-Host "  [!] Skipping $($dev.FriendlyName): $($dev.Manufacturer) driver date $driverDate is older than 2017-01-01." -ForegroundColor Yellow
+                        continue
+                    }
+                }
+
+                if ($msiOptOutPciIds.ContainsKey($query.TargetKey) -and $hardwareIds) {
+                    $normalizedIds = $hardwareIds | ForEach-Object { $_.ToUpperInvariant() }
+                    $matchedOptOut = $msiOptOutPciIds[$query.TargetKey] | Where-Object { $opt = $_; $normalizedIds | Where-Object { $_ -like "*$opt*" } }
+                    if ($matchedOptOut) {
+                        Write-Host "  [!] Skipping $($dev.FriendlyName): hardware ID matches MSI opt-out ($($matchedOptOut -join ', '))." -ForegroundColor Yellow
                         continue
                     }
                 }
