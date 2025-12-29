@@ -4,16 +4,18 @@ if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
 }
 
 # Description: Retrieves a list of applications to remove based on the provided config key.
-# Parameters: Key - The JSON property name to extract from the app removal configuration.
+# Parameters: Key - The JSON property name to extract from the app removal configuration; Context - Optional run context with ScriptRoot.
 # Returns: Array of application names corresponding to the requested key.
 function Get-AppRemovalListFromConfig {
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [string] $Key
+        [string] $Key,
+        [pscustomobject]$Context
     )
 
-    return (config\Get-AppRemovalList -Mode 'Aggressive' -Key $Key)
+    $context = Get-RunContext -Context $Context
+    return (config\Get-AppRemovalList -Mode 'Aggressive' -Key $Key -Context $context)
 }
 
 # Description: Applies aggressive performance and debloat tweaks for slow PCs.
@@ -62,7 +64,7 @@ function Invoke-AggressiveTweaks {
     }
 
     Write-Host "  [+] Additional debloat for slow PCs"
-    $extra = Get-AppRemovalListFromConfig -Key "AggressiveTweaksRemove"
+    $extra = Get-AppRemovalListFromConfig -Key "AggressiveTweaksRemove" -Context $context
     foreach ($a in $extra) {
         $pkg = Get-AppxPackage -AllUsers -Name $a -ErrorAction SilentlyContinue
         if ($pkg) {
@@ -181,7 +183,7 @@ function Invoke-AggressiveTweaks {
         }
     }
 
-    Clear-DeepTempAndThumbs
+    Clear-DeepTempAndThumbs -Context $context
 
     Write-Host ""
     if (Get-Confirmation "Remove OneDrive from this system?" 'n') {
