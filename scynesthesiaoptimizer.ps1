@@ -444,7 +444,7 @@ function Show-NetworkTweaksMenu {
                 }
             }
             '4' {
-                Restore-NetworkBackupState
+                Invoke-GlobalRollback -Context $script:Context
             }
             '5' {
                 if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)?" 'n' -RiskSummary @("Can disrupt adapters during MTU discovery", "netsh changes may destabilize networking until reboot")) {
@@ -551,7 +551,7 @@ do {
     Write-Host "5) Network tweaks"
     Write-Host "6) Software & Updates"
     Write-Host "7) UI & Explorer tweaks"
-    Write-Host "8) Roll back registry changes from this session" -ForegroundColor Yellow
+    Write-Host "8) Roll back changes from this session (registry + network)" -ForegroundColor Yellow
     Write-Host ""
     $rebootStatus = if (Get-NeedsReboot -Context $script:Context) { 'System Status: Reboot pending' } else { 'System Status: No reboot pending' }
     Write-Host $rebootStatus -ForegroundColor DarkCyan
@@ -615,6 +615,11 @@ do {
         '8' {
             Write-Section "Rollback"
             Invoke-RegistryRollback -Context $script:Context
+            try {
+                Invoke-GlobalRollback -Context $script:Context
+            } catch {
+                Invoke-ErrorHandler -Context "Running global rollback (services/netsh)" -ErrorRecord $_
+            }
             Read-Host "`n[DONE] Press Enter to return to the menu..." | Out-Null
         }
         '0' { $exitRequested = $true }
