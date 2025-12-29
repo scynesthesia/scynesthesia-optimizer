@@ -267,28 +267,54 @@ function Set-NetshHardcoreGlobals {
         [object]$Context
     )
     try {
-        $commands = @(
-            @{ Cmd = 'netsh int tcp set global dca=enabled'; Description = 'DCA enabled' },
-            @{ Cmd = 'netsh int tcp set global netdma=enabled'; Description = 'NetDMA enabled' },
-            @{ Cmd = 'netsh int tcp set global nonsackrttresiliency=disabled'; Description = 'NonSackRTTResiliency disabled' },
-            @{ Cmd = 'netsh int tcp set global maxsynretransmissions=2'; Description = 'MaxSynRetransmissions set' },
-            @{ Cmd = 'netsh int tcp set global mpp=disabled'; Description = 'MPP disabled' },
-            @{ Cmd = 'netsh int tcp set security profiles=disabled'; Description = 'Security profiles disabled' },
-            @{ Cmd = 'netsh int tcp set heuristics disabled'; Description = 'Heuristics disabled' },
-            @{ Cmd = 'netsh int ip set global neighborcachelimit=4096'; Description = 'NeighborCacheLimit set' }
+        $tcpCommands = @(
+            @{ Command = 'set global dca=enabled'; Description = 'DCA enabled' },
+            @{ Command = 'set global netdma=enabled'; Description = 'NetDMA enabled' },
+            @{ Command = 'set global nonsackrttresiliency=disabled'; Description = 'NonSackRTTResiliency disabled' },
+            @{ Command = 'set global maxsynretransmissions=2'; Description = 'MaxSynRetransmissions set' },
+            @{ Command = 'set global mpp=disabled'; Description = 'MPP disabled' },
+            @{ Command = 'set security profiles=disabled'; Description = 'Security profiles disabled' },
+            @{ Command = 'set heuristics disabled'; Description = 'Heuristics disabled' }
         )
+
+        $ipCommands = @(
+            @{ Command = 'set global neighborcachelimit=4096'; Description = 'NeighborCacheLimit set' }
+        )
+
+        $scriptBuilder = New-Object System.Text.StringBuilder
+        $null = $scriptBuilder.AppendLine('pushd interface tcp')
+        foreach ($entry in $tcpCommands) {
+            $null = $scriptBuilder.AppendLine($entry.Command)
+        }
+        $null = $scriptBuilder.AppendLine('popd')
+        foreach ($entry in $ipCommands) {
+            $null = $scriptBuilder.AppendLine("int ip $($entry.Command)")
+        }
+        $netshScript = $scriptBuilder.ToString()
+
+        $scriptPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("netsh_hardcore_{0}.txt" -f ([Guid]::NewGuid().ToString('N')))
+        Set-Content -Path $scriptPath -Value $netshScript -Encoding ASCII
 
         Push-Location -Path ($env:SystemRoot | ForEach-Object { if ($_ -and (Test-Path $_)) { $_ } else { $env:WINDIR } })
         try {
-            foreach ($command in $commands) {
-                try {
-                    & cmd.exe /c $command.Cmd 2>&1 | Out-Null
-                    Write-Host "  [+] $($command.Description)." -ForegroundColor Green
-                } catch {
-                    Invoke-ErrorHandler -Context "Running $($command.Cmd)" -ErrorRecord $_
+            try {
+                $output = & cmd.exe /c "netsh -f `"$scriptPath`"" 2>&1
+                $exitCode = $LASTEXITCODE
+                if ($exitCode -eq 0) {
+                    foreach ($command in ($tcpCommands + $ipCommands)) {
+                        Write-Host "  [+] $($command.Description)." -ForegroundColor Green
+                    }
+                } else {
+                    Write-Host "  [!] netsh script returned exit code $exitCode. Review output for details." -ForegroundColor Yellow
+                    if ($output) {
+                        Write-Host $output -ForegroundColor Yellow
+                    }
                 }
+            } catch {
+                Invoke-ErrorHandler -Context 'Running netsh hardcore script' -ErrorRecord $_
             }
         } finally {
+            Remove-Item -Path $scriptPath -ErrorAction SilentlyContinue
             Pop-Location -ErrorAction SilentlyContinue
         }
 
