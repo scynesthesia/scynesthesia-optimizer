@@ -241,9 +241,13 @@ function Invoke-DebloatSafe {
 
     Write-Section "Safe debloat (removes common bloatware, keeps Store and essentials)"
 
-    $installedPackages = Get-InstalledAppxPackages
-    $targets = $installedPackages | Where-Object { $AppList -contains $_.Name }
-    $missing = $AppList | Where-Object { -not ($installedPackages.Name -contains $_) }
+    $targetNames = @()
+    $targets = @(Get-InstalledAppxPackages | Where-Object {
+            $match = $AppList -contains $_.Name
+            if ($match) { $targetNames += $_.Name }
+            $match
+        })
+    $missing = $AppList | Where-Object { $targetNames -notcontains $_ }
 
     foreach ($name in $missing) {
         Write-Host "  [ ] $name is not installed."
@@ -322,9 +326,13 @@ function Invoke-DebloatAggressive {
 
     Write-Section "Aggressive debloat (includes optional removal of provisioned packages)"
 
-    $installedPackages = Get-InstalledAppxPackages
-    $targets = $installedPackages | Where-Object { $AppList -contains $_.Name }
-    $missing = $AppList | Where-Object { -not ($installedPackages.Name -contains $_) }
+    $targetNames = @()
+    $targets = @(Get-InstalledAppxPackages | Where-Object {
+            $match = $AppList -contains $_.Name
+            if ($match) { $targetNames += $_.Name }
+            $match
+        })
+    $missing = $AppList | Where-Object { $targetNames -notcontains $_ }
 
     foreach ($name in $missing) {
         Write-Host "  [ ] $name is not installed."
