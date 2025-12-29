@@ -199,6 +199,128 @@ function Add-RegistryRollbackRecord {
     [void]$targetCollection.Add($Record)
 }
 
+function Get-RegistryRollbackRecords {
+    param([object]$Context)
+
+    if ($Context -and $Context.PSObject.Properties.Name -contains 'RegistryRollbackActions' -and $Context.RegistryRollbackActions) {
+        return @($Context.RegistryRollbackActions)
+    }
+
+    return @($script:RegistryRollbackActions)
+}
+
+function ConvertTo-RegistryValueKindSafe {
+    param(
+        [string]$TypeName,
+        [Microsoft.Win32.RegistryValueKind]$Fallback = [Microsoft.Win32.RegistryValueKind]::String
+    )
+
+    if ([string]::IsNullOrWhiteSpace($TypeName)) { return $Fallback }
+
+    $parsed = $null
+    if ([System.Enum]::TryParse([Microsoft.Win32.RegistryValueKind], $TypeName, $true, [ref]$parsed)) {
+        return $parsed
+    }
+
+    return $Fallback
+}
+
+function Invoke-RegistryRollback {
+    [CmdletBinding()]
+    param([pscustomobject]$Context)
+
+    $records = @(Get-RegistryRollbackRecords -Context $Context)
+    if (-not $records -or $records.Count -eq 0) {
+        Write-Host "[ ] No registry rollback entries recorded for this session." -ForegroundColor Gray
+        return
+    }
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    Write-Host "[i] Attempting rollback of $($records.Count) registry change(s)." -ForegroundColor Cyan
+
+    $total = $records.Count
+    $success = 0
+    $failed = 0
+
+    # Roll back in reverse order to mirror application order.
+    for ($i = $records.Count - 1; $i -ge 0; $i--) {
+        $record = $records[$i]
+        $valueName = if ($record.Name -eq '(default)' -or [string]::IsNullOrWhiteSpace($record.Name)) { '' } else { $record.Name }
+        $target = $null
+        try {
+            $target = Resolve-RegistryPathComponents -Path $record.Path
+        } catch {
+            $failed++
+            $msg = "[Rollback] Could not resolve registry path: $($record.Path) -> $($record.Name). Error: $($_.Exception.Message)"
+            Write-Host "  [!] $msg" -ForegroundColor Yellow
+            if ($logger) { Write-Log -Message $msg -Level 'Warning' }
+            continue
+        }
+
+        $baseKey = $null
+        $subKey = $null
+        try {
+            $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey($target.Hive, [Microsoft.Win32.RegistryView]::Default)
+            if (-not $baseKey) { throw [System.IO.IOException]::new("Unable to open base key for $($target.HiveName)") }
+
+            $subKey = $baseKey.OpenSubKey($target.SubKey, $true)
+            if (-not $subKey -and $record.KeyExisted) {
+                throw [System.IO.IOException]::new("Original key missing: $($target.FullPath)")
+            }
+
+            if ($record.PreviousExists) {
+                $kind = ConvertTo-RegistryValueKindSafe -TypeName $record.PreviousType -Fallback ([Microsoft.Win32.RegistryValueKind]::String)
+                $converted = ConvertTo-RegistryValueData -Value $record.PreviousValue -Type $kind
+                if (-not $subKey) {
+                    $subKey = $baseKey.CreateSubKey($target.SubKey, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree)
+                }
+                $subKey.SetValue($valueName, $converted, $kind)
+                $success++
+                $msg = "[Rollback] Restored $($record.Path) -> $($record.Name) to previous value."
+                Write-Host "  [+] $msg" -ForegroundColor Green
+                if ($logger) { Write-Log -Message $msg -Level 'Info' }
+            }
+            elseif (-not $record.KeyExisted) {
+                # Key did not exist before; remove it entirely if present.
+                if ($subKey) {
+                    $subKey.Dispose(); $subKey = $null
+                }
+                $baseKey.DeleteSubKeyTree($target.SubKey, $false)
+                $success++
+                $msg = "[Rollback] Removed created key $($record.Path)."
+                Write-Host "  [+] $msg" -ForegroundColor Green
+                if ($logger) { Write-Log -Message $msg -Level 'Info' }
+            }
+            else {
+                # Value did not exist before; remove it if present.
+                if ($subKey) {
+                    try {
+                        $subKey.DeleteValue($valueName, $false)
+                    } catch [System.ArgumentException] {
+                        # Value already absent; treat as successful cleanup.
+                    }
+                }
+                $success++
+                $msg = "[Rollback] Removed new value at $($record.Path) -> $($record.Name)."
+                Write-Host "  [+] $msg" -ForegroundColor Green
+                if ($logger) { Write-Log -Message $msg -Level 'Info' }
+            }
+        }
+        catch {
+            $failed++
+            $msg = "[Rollback] Failed to revert $($record.Path) -> $($record.Name): $(Get-RegistryExceptionDetails $_.Exception)"
+            Write-Host "  [!] $msg" -ForegroundColor Yellow
+            if ($logger) { Write-Log -Message $msg -Level 'Error' }
+        }
+        finally {
+            if ($subKey) { $subKey.Dispose() }
+            if ($baseKey) { $baseKey.Dispose() }
+        }
+    }
+
+    Write-Host "[i] Registry rollback completed. Success: $success / $total, Failed: $failed." -ForegroundColor Cyan
+}
+
 # Description: Normalizes GUID input into uppercase brace-enclosed string form.
 # Parameters: Value - Input GUID or string representation.
 # Returns: Normalized GUID string or null when conversion fails.
