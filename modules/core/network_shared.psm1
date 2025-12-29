@@ -552,9 +552,24 @@ function Invoke-AdapterOffloadToggle {
         return [pscustomobject]@{ Applied = $false; ChangedAdapters = @() }
     }
 
+    $propertyRules = @(
+        @{ Name = 'Large Send Offload V2 (IPv4)'; Value = 'Disabled' },
+        @{ Name = 'Large Send Offload V2 (IPv6)'; Value = 'Disabled' },
+        @{ Name = 'IPv4 Checksum Offload'; Value = 'Disabled' },
+        @{ Name = 'TCP Checksum Offload (IPv4)'; Value = 'Disabled' },
+        @{ Name = 'TCP Checksum Offload (IPv6)'; Value = 'Disabled' },
+        @{ Name = 'UDP Checksum Offload (IPv4)'; Value = 'Disabled' },
+        @{ Name = 'UDP Checksum Offload (IPv6)'; Value = 'Disabled' },
+        @{ Name = 'Receive Buffers'; Value = '512' },
+        @{ Name = 'Transmit Buffers'; Value = '4096' },
+        @{ Name = 'Flow Control'; Value = 'Disabled' },
+        @{ Name = 'Interrupt Moderation'; Value = 'Disabled' }
+    )
+
     $touched = New-Object System.Collections.Generic.List[string]
 
-    foreach ($adapter in $Adapters) {
+    $Adapters | ForEach-Object {
+        $adapter = $_
         try {
             Disable-NetAdapterRsc -Name $adapter.Name -ErrorAction Stop | Out-Null
             Write-Host "  [+] RSC disabled on $($adapter.Name)." -ForegroundColor Green
@@ -564,20 +579,8 @@ function Invoke-AdapterOffloadToggle {
             Invoke-ErrorHandler -Context "Disabling RSC on $($adapter.Name)" -ErrorRecord $_
         }
 
-        foreach ($entry in @(
-                @{ Name = 'Large Send Offload V2 (IPv4)'; Value = 'Disabled' },
-                @{ Name = 'Large Send Offload V2 (IPv6)'; Value = 'Disabled' },
-                @{ Name = 'IPv4 Checksum Offload'; Value = 'Disabled' },
-                @{ Name = 'TCP Checksum Offload (IPv4)'; Value = 'Disabled' },
-                @{ Name = 'TCP Checksum Offload (IPv6)'; Value = 'Disabled' },
-                @{ Name = 'UDP Checksum Offload (IPv4)'; Value = 'Disabled' },
-                @{ Name = 'UDP Checksum Offload (IPv6)'; Value = 'Disabled' },
-                @{ Name = 'Receive Buffers'; Value = '512' },
-                @{ Name = 'Transmit Buffers'; Value = '4096' },
-                @{ Name = 'Flow Control'; Value = 'Disabled' },
-                @{ Name = 'Interrupt Moderation'; Value = 'Disabled' }
-            )) {
-            $changed = Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName $entry.Name -DisplayValue $entry.Value
+        $propertyRules | ForEach-Object {
+            $changed = Set-NetAdapterAdvancedPropertySafe -AdapterName $adapter.Name -DisplayName $_.Name -DisplayValue $_.Value
             if ($changed) { $touched.Add($adapter.Name) | Out-Null }
         }
     }
