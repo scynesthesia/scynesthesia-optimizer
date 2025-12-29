@@ -561,29 +561,7 @@ function Set-NicRegistryHardcore {
             return
         }
 
-        $setValueIfDifferent = {
-            param($path, $name, $value, $type)
-            $current = $null
-            try {
-                $existing = Get-ItemProperty -Path $path -Name $name -ErrorAction Stop
-                $current = $existing.$name
-            } catch { }
-                if ($current -eq $value) { return 'Unchanged' }
-                try {
-                    $normalizedType = if ($type -is [Microsoft.Win32.RegistryValueKind]) {
-                        $type
-                    } else {
-                        [System.Enum]::Parse([Microsoft.Win32.RegistryValueKind], [string]$type, $true)
-                    }
-                    $result = Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type $normalizedType -Context $runContext -Critical -ReturnResult -OperationLabel "NIC hardcore: $name"
-                    if ($result -and $result.Success) {
-                        return 'Changed'
-                    }
-                    return 'Failed'
-                } catch {
-                    return 'Failed'
-                }
-            }
+        $registryString = [Microsoft.Win32.RegistryValueKind]::String
 
         $sharedPowerFlags = @{
             '*EEE'                 = '0'
@@ -641,33 +619,40 @@ function Set-NicRegistryHardcore {
             $adapterProfile = Get-HardcoreAdapterProfile -Adapter $item.Adapter
             $adapterChanged = ($sharedPowerResult -and $sharedPowerResult.ChangedAdapters -contains $adapterName)
 
+            $targetValues = @{}
             foreach ($entry in $powerOffloadRemaining.GetEnumerator()) {
-                try {
-                    $status = & $setValueIfDifferent $item.Path $entry.Key $entry.Value ([Microsoft.Win32.RegistryValueKind]::String)
-                    if ($status -eq 'Changed') {
-                        Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
-                        $adapterChanged = $true
-                    } elseif ($status -eq 'Failed') {
-                        Write-Host "    [!] Failed to set $($entry.Key) on $adapterName" -ForegroundColor Yellow
-                    }
-                } catch {
-                    Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
-                }
+                $targetValues[$entry.Key] = $entry.Value
+            }
+            foreach ($entry in $interruptDelays.GetEnumerator()) {
+                $targetValues[$entry.Key] = $entry.Value
             }
 
-            foreach ($entry in $interruptDelays.GetEnumerator()) {
-                try {
-                    $status = & $setValueIfDifferent $item.Path $entry.Key $entry.Value ([Microsoft.Win32.RegistryValueKind]::String)
-                    if ($status -eq 'Changed') {
-                        Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
-                        $adapterChanged = $true
-                    } elseif ($status -eq 'Failed') {
-                        Write-Host "    [!] Failed to set $($entry.Key) on $adapterName" -ForegroundColor Yellow
+            $existingProperties = $null
+            try {
+                $existingProperties = Get-ItemProperty -Path $item.Path -ErrorAction SilentlyContinue
+            } catch { }
+
+            $targetValues.GetEnumerator() |
+                Where-Object {
+                    $current = $null
+                    if ($existingProperties -and $existingProperties.PSObject.Properties[$_.Key]) {
+                        $current = $existingProperties.$($_.Key)
                     }
-                } catch {
-                    Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName" -ErrorRecord $_
+                    $current -ne $_.Value
+                } |
+                ForEach-Object {
+                    try {
+                        $result = Set-RegistryValueSafe -Path $item.Path -Name $_.Key -Value $_.Value -Type $registryString -Context $runContext -Critical -ReturnResult -OperationLabel "NIC hardcore: $($_.Key)"
+                        if ($result -and $result.Success) {
+                            Write-Host "    [+] $($_.Key) set to $($_.Value)" -ForegroundColor Green
+                            $adapterChanged = $true
+                        } else {
+                            Write-Host "    [!] Failed to set $($_.Key) on $adapterName" -ForegroundColor Yellow
+                        }
+                    } catch {
+                        Invoke-ErrorHandler -Context "Setting $($_.Key) on $adapterName" -ErrorRecord $_
+                    }
                 }
-            }
 
             try {
                 if (-not $item.Guid) {
@@ -1371,30 +1356,6 @@ function Invoke-NetworkTweaksHardcore {
 
     Suggest-NetworkIrqCores
 
-    try {
-        netsh int tcp set global ecncapability=disabled | Out-Null
-        Write-Host "  [+] ECN capability disabled." -ForegroundColor Green
-        if ($logger) { Write-Log "[NetworkHardcore] ECN capability disabled." }
-    } catch {
-        Invoke-ErrorHandler -Context 'Disabling ECN capability' -ErrorRecord $_
-    }
-
-    try {
-        netsh int tcp set global timestamps=disabled | Out-Null
-        Write-Host "  [+] TCP timestamps disabled." -ForegroundColor Green
-        if ($logger) { Write-Log "[NetworkHardcore] TCP timestamps disabled." }
-    } catch {
-        Invoke-ErrorHandler -Context 'Disabling TCP timestamps' -ErrorRecord $_
-    }
-
-    try {
-        netsh int tcp set global initialrto=2000 | Out-Null
-        Write-Host "  [+] Initial RTO set to 2000ms." -ForegroundColor Green
-        if ($logger) { Write-Log "[NetworkHardcore] InitialRTO set to 2000ms." }
-    } catch {
-        Invoke-ErrorHandler -Context 'Setting InitialRTO' -ErrorRecord $_
-    }
-
     $ageYears = Get-HardwareAgeYears
     $ageKnown = ($null -ne $ageYears -and "$ageYears" -ne '')
     $autotuneLevel = if ($ageYears -and $ageYears -gt 6) { 'highlyrestricted' } else { 'disabled' }
@@ -1414,12 +1375,39 @@ function Invoke-NetworkTweaksHardcore {
         }
         Write-Host "  [i] $reason" -ForegroundColor Cyan
     }
+    $netshGlobals = @(
+        @{ Command = 'int tcp set global ecncapability=disabled'; Description = 'ECN capability disabled.'; LogMessage = '[NetworkHardcore] ECN capability disabled.' },
+        @{ Command = 'int tcp set global timestamps=disabled'; Description = 'TCP timestamps disabled.'; LogMessage = '[NetworkHardcore] TCP timestamps disabled.' },
+        @{ Command = 'int tcp set global initialrto=2000'; Description = 'Initial RTO set to 2000ms.'; LogMessage = '[NetworkHardcore] InitialRTO set to 2000ms.' },
+        @{ Command = "int tcp set global autotuninglevel=$autotuneLevel"; Description = "Network autotuning set to $autotuneLevel (hardware age: $ageLabel)."; LogMessage = "[NetworkHardcore] Autotuning level set to $autotuneLevel (hardware age: $ageLabel)." }
+    )
+
+    $netshScriptContent = ($netshGlobals | ForEach-Object { $_.Command }) -join [Environment]::NewLine
+    $netshScriptPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("netsh_global_{0}.txt" -f ([Guid]::NewGuid().ToString('N')))
+    Set-Content -Path $netshScriptPath -Value $netshScriptContent -Encoding ASCII
+
+    Push-Location -Path ($env:SystemRoot | ForEach-Object { if ($_ -and (Test-Path $_)) { $_ } else { $env:WINDIR } })
     try {
-        netsh int tcp set global autotuninglevel=$autotuneLevel | Out-Null
-        Write-Host "  [+] Network autotuning set to $autotuneLevel (hardware age: $ageLabel)." -ForegroundColor Green
-        if ($logger) { Write-Log "[NetworkHardcore] Autotuning level set to $autotuneLevel (hardware age: $ageLabel)." }
-    } catch {
-        Invoke-ErrorHandler -Context 'Setting TCP autotuning level' -ErrorRecord $_
+        try {
+            $netshOutput = & cmd.exe /c "netsh -f `"$netshScriptPath`"" 2>&1
+            $netshExitCode = $LASTEXITCODE
+            if ($netshExitCode -eq 0) {
+                foreach ($entry in $netshGlobals) {
+                    Write-Host "  [+] $($entry.Description)" -ForegroundColor Green
+                    if ($logger -and $entry.LogMessage) { Write-Log $entry.LogMessage }
+                }
+            } else {
+                Write-Host "  [!] netsh globals script returned exit code $netshExitCode. Review output for details." -ForegroundColor Yellow
+                if ($netshOutput) {
+                    Write-Host $netshOutput -ForegroundColor Yellow
+                }
+            }
+        } catch {
+            Invoke-ErrorHandler -Context 'Applying TCP global settings (netsh script)' -ErrorRecord $_
+        }
+    } finally {
+        Pop-Location -ErrorAction SilentlyContinue
+        Remove-Item -Path $netshScriptPath -ErrorAction SilentlyContinue
     }
 
     $mtuResult = Find-OptimalMtu
