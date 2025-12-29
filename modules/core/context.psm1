@@ -26,6 +26,7 @@ function New-RunContext {
         LogPath         = $null
         AppliedTweaks   = @{}
         RegistryPermissionFailures = @()
+        DebloatRemovalLog = [System.Collections.Generic.List[string]]::new()
     }
 }
 

@@ -732,6 +732,18 @@ function Write-OutcomeSummary {
         Write-Host "[+] All targeted packages removed" -ForegroundColor Green
     }
 
+    if ($Status -and $Status.ContainsKey('PackagesRemoved')) {
+        $removed = @($Status.PackagesRemoved | Where-Object { $_ } | Select-Object -Unique)
+        if ($removed.Count -gt 0) {
+            Write-Host "[#] Apps removed this run:" -ForegroundColor Cyan
+            foreach ($pkg in $removed) {
+                Write-Host "    - $pkg" -ForegroundColor Gray
+            }
+        } else {
+            Write-Host "[ ] No app removals recorded during this run." -ForegroundColor DarkGray
+        }
+    }
+
     $permissionFailures = @()
     if ($Status -and $Status.ContainsKey('RegistryPermissionFailures')) {
         $permissionFailures = @($Status.RegistryPermissionFailures)

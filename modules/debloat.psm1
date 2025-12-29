@@ -5,6 +5,36 @@ if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
 
 $script:AppxPackageCache = $null
 
+function Initialize-DebloatRemovalLog {
+    param([pscustomobject]$Context)
+
+    if (-not $Context) { return $null }
+
+    if (-not $Context.PSObject.Properties.Name.Contains('DebloatRemovalLog')) {
+        $Context | Add-Member -Name DebloatRemovalLog -MemberType NoteProperty -Value ([System.Collections.Generic.List[string]]::new())
+    } elseif (-not $Context.DebloatRemovalLog) {
+        $Context.DebloatRemovalLog = [System.Collections.Generic.List[string]]::new()
+    }
+
+    return $Context.DebloatRemovalLog
+}
+
+function Add-DebloatRemovalLogEntry {
+    param(
+        [pscustomobject]$Context,
+        [string[]]$PackageNames
+    )
+
+    $log = Initialize-DebloatRemovalLog -Context $Context
+    if (-not $log) { return }
+
+    foreach ($pkg in ($PackageNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+        if (-not $log.Contains($pkg)) {
+            $log.Add($pkg) | Out-Null
+        }
+    }
+}
+
 function Get-InstalledAppxPackages {
     if ($null -eq $script:AppxPackageCache) {
         $script:AppxPackageCache = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
@@ -220,6 +250,7 @@ function Invoke-DebloatSafe {
     }
 
     $failed = @()
+    $removed = @()
     $targetNames = $targets.Name
 
     foreach ($name in $targetNames) {
@@ -251,6 +282,10 @@ function Invoke-DebloatSafe {
         $successful = $targetNames | Where-Object { $failedNames -notcontains $_ }
 
         if ($successful) {
+            $removed += $successful
+        }
+
+        if ($successful) {
             $script:AppxPackageCache = $script:AppxPackageCache | Where-Object { $successful -notcontains $_.Name }
         }
 
@@ -258,9 +293,15 @@ function Invoke-DebloatSafe {
     }
 
     $failedUnique = $failed | Select-Object -Unique
+    $removedUnique = $removed | Select-Object -Unique
+
+    if ($removedUnique) {
+        Add-DebloatRemovalLogEntry -Context $context -PackageNames $removedUnique
+    }
 
     [pscustomobject]@{
-        Failed = $failedUnique
+        Failed  = $failedUnique
+        Removed = $removedUnique
     }
 }
 
@@ -290,6 +331,7 @@ function Invoke-DebloatAggressive {
     }
 
     $failed = @()
+    $removed = @()
     $targetNames = $targets.Name
 
     foreach ($name in $targetNames) {
@@ -321,6 +363,10 @@ function Invoke-DebloatAggressive {
         $successful = $targetNames | Where-Object { $failedNames -notcontains $_ }
 
         if ($successful) {
+            $removed += $successful
+        }
+
+        if ($successful) {
             $script:AppxPackageCache = $script:AppxPackageCache | Where-Object { $successful -notcontains $_.Name }
         }
 
@@ -340,6 +386,7 @@ function Invoke-DebloatAggressive {
             Write-Host "  [+] Removing provisioned package $($p.PackageName)"
             try {
                 Remove-AppxProvisionedPackage -Online -PackageName $p.PackageName | Out-Null
+                $removed += $p.PackageName
             } catch {
                 $failed += $p.PackageName
                 Write-Host "  [SKIPPED] $($p.PackageName)" -ForegroundColor DarkGray
@@ -349,9 +396,15 @@ function Invoke-DebloatAggressive {
     }
 
     $failedUnique = $failed | Select-Object -Unique
+    $removedUnique = $removed | Select-Object -Unique
+
+    if ($removedUnique) {
+        Add-DebloatRemovalLogEntry -Context $context -PackageNames $removedUnique
+    }
 
     [pscustomobject]@{
-        Failed = $failedUnique
+        Failed  = $failedUnique
+        Removed = $removedUnique
     }
 }
 
