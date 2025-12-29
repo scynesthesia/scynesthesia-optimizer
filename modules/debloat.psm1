@@ -3,6 +3,16 @@ if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
 }
 
+$script:AppxPackageCache = $null
+
+function Get-InstalledAppxPackages {
+    if ($null -eq $script:AppxPackageCache) {
+        $script:AppxPackageCache = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
+    }
+
+    return $script:AppxPackageCache
+}
+
 # Description: Retrieves an app removal list from the configuration JSON using the specified key.
 # Parameters: Key - Config property to read; Path - Optional path to the apps configuration file; Context - Optional run context with ScriptRoot.
 # Returns: Array of app package names; empty array when config missing or invalid.
@@ -145,7 +155,7 @@ function Invoke-DebloatSafe {
 
     Write-Section "Safe debloat (removes common bloatware, keeps Store and essentials)"
 
-    $installedPackages = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+    $installedPackages = Get-InstalledAppxPackages
     $targets = $installedPackages | Where-Object { $AppList -contains $_.Name }
     $missing = $AppList | Where-Object { -not ($installedPackages.Name -contains $_) }
 
@@ -154,19 +164,47 @@ function Invoke-DebloatSafe {
     }
 
     $failed = @()
-    $targets | ForEach-Object {
-        Write-Host "  [+] Removing $($_.Name)"
-        try {
-            $_ | Remove-AppxPackage -ErrorAction SilentlyContinue
-        } catch {
-            $failed += $_.Name
-            Write-Host "  [SKIPPED] $($_.Name)" -ForegroundColor DarkGray
-            Write-Log -Message "Skipped protected app: $($_.Name)" -Level 'Info'
-        }
+    $targetNames = $targets.Name
+
+    foreach ($name in $targetNames) {
+        Write-Host "  [+] Removing $name"
     }
 
+    if ($targets) {
+        $removeErrors = @()
+        $targets | Remove-AppxPackage -ErrorAction SilentlyContinue -ErrorVariable removeErrors
+
+        $uncapturedFailure = $false
+        foreach ($err in $removeErrors) {
+            $failedName = if ($err.TargetObject -and $err.TargetObject.Name) { $err.TargetObject.Name } elseif ($err.TargetObject) { $err.TargetObject } else { $null }
+            if ($failedName) {
+                $failed += $failedName
+            } else {
+                $uncapturedFailure = $true
+            }
+            $displayName = if ($failedName) { $failedName } else { 'Unknown package' }
+            Write-Host "  [SKIPPED] $displayName" -ForegroundColor DarkGray
+            Write-Log -Message "Skipped protected app: $displayName" -Level 'Info'
+        }
+
+        if ($uncapturedFailure -and -not $failed) {
+            $failed += $targetNames
+        }
+
+        $failedNames = $failed | Select-Object -Unique
+        $successful = $targetNames | Where-Object { $failedNames -notcontains $_ }
+
+        if ($successful) {
+            $script:AppxPackageCache = $script:AppxPackageCache | Where-Object { $successful -notcontains $_.Name }
+        }
+
+        $failed = $failedNames
+    }
+
+    $failedUnique = $failed | Select-Object -Unique
+
     [pscustomobject]@{
-        Failed = $failed
+        Failed = $failedUnique
     }
 }
 
@@ -187,7 +225,7 @@ function Invoke-DebloatAggressive {
 
     Write-Section "Aggressive debloat (includes optional removal of provisioned packages)"
 
-    $installedPackages = Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+    $installedPackages = Get-InstalledAppxPackages
     $targets = $installedPackages | Where-Object { $AppList -contains $_.Name }
     $missing = $AppList | Where-Object { -not ($installedPackages.Name -contains $_) }
 
@@ -196,15 +234,41 @@ function Invoke-DebloatAggressive {
     }
 
     $failed = @()
-    $targets | ForEach-Object {
-        Write-Host "  [+] Removing $($_.Name)"
-        try {
-            $_ | Remove-AppxPackage -ErrorAction SilentlyContinue
-        } catch {
-            $failed += $_.Name
-            Write-Host "  [SKIPPED] $($_.Name)" -ForegroundColor DarkGray
-            Write-Log -Message "Skipped protected app: $($_.Name)" -Level 'Info'
+    $targetNames = $targets.Name
+
+    foreach ($name in $targetNames) {
+        Write-Host "  [+] Removing $name"
+    }
+
+    if ($targets) {
+        $removeErrors = @()
+        $targets | Remove-AppxPackage -ErrorAction SilentlyContinue -ErrorVariable removeErrors
+
+        $uncapturedFailure = $false
+        foreach ($err in $removeErrors) {
+            $failedName = if ($err.TargetObject -and $err.TargetObject.Name) { $err.TargetObject.Name } elseif ($err.TargetObject) { $err.TargetObject } else { $null }
+            if ($failedName) {
+                $failed += $failedName
+            } else {
+                $uncapturedFailure = $true
+            }
+            $displayName = if ($failedName) { $failedName } else { 'Unknown package' }
+            Write-Host "  [SKIPPED] $displayName" -ForegroundColor DarkGray
+            Write-Log -Message "Skipped protected app: $displayName" -Level 'Info'
         }
+
+        if ($uncapturedFailure -and -not $failed) {
+            $failed += $targetNames
+        }
+
+        $failedNames = $failed | Select-Object -Unique
+        $successful = $targetNames | Where-Object { $failedNames -notcontains $_ }
+
+        if ($successful) {
+            $script:AppxPackageCache = $script:AppxPackageCache | Where-Object { $successful -notcontains $_.Name }
+        }
+
+        $failed = $failedNames
     }
 
     if (Get-Confirmation -Question "Also remove provisioned packages for future users? (More aggressive)" -Default 'n') {
@@ -228,8 +292,10 @@ function Invoke-DebloatAggressive {
         }
     }
 
+    $failedUnique = $failed | Select-Object -Unique
+
     [pscustomobject]@{
-        Failed = $failed
+        Failed = $failedUnique
     }
 }
 
