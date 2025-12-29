@@ -681,7 +681,7 @@ function Save-NetworkBackupState {
     }
 
     $backup = [ordered]@{
-        Version                = 2
+        Version                = 3
         Created                = Get-Date
         NetworkThrottlingIndex = $null
         Nagle                  = @()
@@ -690,6 +690,7 @@ function Save-NetworkBackupState {
         NetBIOS                = @()
         DeliveryOptimization   = [ordered]@{ DODownloadMode = $null; DoSvcStartup = $null }
         NetworkDiscovery       = [ordered]@{ FirewallGroupDisabled = $null }
+        AdapterAdvanced        = @()
         Hardcore               = [ordered]@{
             TcpParameters       = [ordered]@{
                 DefaultTTL        = $null
@@ -720,6 +721,62 @@ function Save-NetworkBackupState {
             RegRollbackSnippet  = $null
         }
     }
+
+    try {
+        $adapters = Get-PhysicalNetAdapters
+        if ($adapters -and $adapters.Count -gt 0) {
+            foreach ($adapter in $adapters) {
+                $adapterEntry = [ordered]@{
+                    Name               = $adapter.Name
+                    InterfaceIndex     = $adapter.ifIndex
+                    InterfaceDescription = $adapter.InterfaceDescription
+                    AdvancedProperties = @()
+                    Rsc                = $null
+                }
+
+                try {
+                    $advanced = Get-NetAdapterAdvancedProperty -Name $adapter.Name -ErrorAction Stop
+                    if ($advanced) {
+                        $targets = @(
+                            'Flow Control',
+                            'Interrupt Moderation',
+                            'Large Send Offload V2 (IPv4)',
+                            'Large Send Offload V2 (IPv6)',
+                            'IPv4 Checksum Offload',
+                            'TCP Checksum Offload (IPv4)',
+                            'TCP Checksum Offload (IPv6)',
+                            'UDP Checksum Offload (IPv4)',
+                            'UDP Checksum Offload (IPv6)',
+                            'Receive Buffers',
+                            'Transmit Buffers'
+                        )
+
+                        foreach ($target in $targets) {
+                            $match = $advanced | Where-Object { $_.DisplayName -eq $target } | Select-Object -First 1
+                            if ($match) {
+                                $adapterEntry.AdvancedProperties += [ordered]@{
+                                    DisplayName  = $match.DisplayName
+                                    DisplayValue = $match.DisplayValue
+                                }
+                            }
+                        }
+                    }
+                } catch { }
+
+                try {
+                    $rscInfo = Get-NetAdapterRsc -Name $adapter.Name -ErrorAction Stop | Select-Object -First 1
+                    if ($rscInfo) {
+                        $adapterEntry.Rsc = [ordered]@{
+                            IPv4Enabled = $rscInfo.IPv4Enabled
+                            IPv6Enabled = $rscInfo.IPv6Enabled
+                        }
+                    }
+                } catch { }
+
+                $backup.AdapterAdvanced += $adapterEntry
+            }
+        }
+    } catch { }
 
     try {
         $backup.NetworkThrottlingIndex = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name 'NetworkThrottlingIndex' -ErrorAction Stop).NetworkThrottlingIndex
@@ -856,7 +913,7 @@ function Save-NetworkBackupState {
         if (-not (Test-Path $backupDir)) {
             New-Item -Path $backupDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
         }
-        $backup | ConvertTo-Json -Depth 6 | Set-Content -Path $file -Encoding UTF8 -ErrorAction Stop
+        $backup | ConvertTo-Json -Depth 8 | Set-Content -Path $file -Encoding UTF8 -ErrorAction Stop
         if ($logger) { Write-Log "[Backup] Network backup saved to $file" }
         Write-Host "[Backup] Network backup saved to $file" -ForegroundColor Green
         $result.Success = $true
@@ -945,6 +1002,52 @@ function Restore-NetworkBackupState {
                     if ($logger) { Write-Log "[Backup] Removed NetbiosOptions at $path (was null)" }
                 }
             } catch { }
+        }
+    }
+
+    if ($data.AdapterAdvanced) {
+        foreach ($adapterEntry in $data.AdapterAdvanced) {
+            $adapterName = $adapterEntry.Name
+            if (-not $adapterName) { continue }
+
+            if ($adapterEntry.AdvancedProperties) {
+                foreach ($prop in $adapterEntry.AdvancedProperties) {
+                    $displayName = $prop.DisplayName
+                    if (-not $displayName) { continue }
+                    $displayValue = $prop.DisplayValue
+                    try {
+                        if ($null -ne $displayValue -and "$displayValue" -ne '') {
+                            Set-NetAdapterAdvancedProperty -Name $adapterName -DisplayName $displayName -DisplayValue $displayValue -NoRestart -ErrorAction Stop | Out-Null
+                            if ($logger) { Write-Log "[Backup] Restored $displayName on $adapterName to $displayValue." }
+                        }
+                    } catch { }
+                }
+            }
+
+            if ($adapterEntry.Rsc) {
+                $ipv4Enabled = $adapterEntry.Rsc.IPv4Enabled
+                $ipv6Enabled = $adapterEntry.Rsc.IPv6Enabled
+
+                try {
+                    if ($ipv4Enabled -eq $true) {
+                        Enable-NetAdapterRsc -Name $adapterName -IPv4 -ErrorAction Stop | Out-Null
+                        if ($logger) { Write-Log "[Backup] RSC IPv4 enabled on $adapterName." }
+                    } elseif ($ipv4Enabled -eq $false) {
+                        Disable-NetAdapterRsc -Name $adapterName -IPv4 -ErrorAction Stop | Out-Null
+                        if ($logger) { Write-Log "[Backup] RSC IPv4 disabled on $adapterName." }
+                    }
+                } catch { }
+
+                try {
+                    if ($ipv6Enabled -eq $true) {
+                        Enable-NetAdapterRsc -Name $adapterName -IPv6 -ErrorAction Stop | Out-Null
+                        if ($logger) { Write-Log "[Backup] RSC IPv6 enabled on $adapterName." }
+                    } elseif ($ipv6Enabled -eq $false) {
+                        Disable-NetAdapterRsc -Name $adapterName -IPv6 -ErrorAction Stop | Out-Null
+                        if ($logger) { Write-Log "[Backup] RSC IPv6 disabled on $adapterName." }
+                    }
+                } catch { }
+            }
         }
     }
 
