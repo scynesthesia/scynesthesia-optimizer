@@ -92,6 +92,102 @@ function Get-HardcoreAdapterProfile {
     }
 }
 
+# Description: Evaluates a network adapter for legacy driver risks.
+# Parameters: Adapter - NetAdapter object to evaluate.
+# Returns: Object indicating whether Interrupt Moderation/MSI should be skipped along with metadata.
+function Get-NicLegacyDriverAssessment {
+    param(
+        [Parameter(Mandatory)][object]$Adapter
+    )
+
+    $result = [pscustomobject]@{
+        Adapter      = $Adapter
+        InstanceId   = $null
+        DriverDate   = $null
+        HardwareIds  = @()
+        IsLegacy     = $false
+        Reason       = $null
+    }
+
+    $instanceId = $null
+    foreach ($propName in @('PnPDeviceID', 'PnpDeviceID', 'DeviceID')) {
+        try {
+            if ($Adapter.PSObject.Properties[$propName] -and $Adapter.$propName) {
+                $instanceId = $Adapter.$propName
+                break
+            }
+        } catch { }
+    }
+    $result.InstanceId = $instanceId
+
+    $pnpDevice = $null
+    try {
+        if ($instanceId) {
+            $pnpDevice = Get-PnpDevice -InstanceId $instanceId -ErrorAction SilentlyContinue
+        }
+        if (-not $pnpDevice) {
+            $pnpDevice = Get-PnpDevice -Class 'Net' -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -eq $Adapter.InterfaceDescription } | Select-Object -First 1
+        }
+    } catch { }
+
+    $deviceIdForProps = $instanceId
+    if ($pnpDevice -and $pnpDevice.InstanceId) {
+        $deviceIdForProps = $pnpDevice.InstanceId
+        if (-not $result.InstanceId) {
+            $result.InstanceId = $pnpDevice.InstanceId
+        }
+    }
+
+    if ($deviceIdForProps) {
+        try {
+            $driverDateProp = Get-PnpDeviceProperty -InstanceId $deviceIdForProps -KeyName 'DEVPKEY_Device_DriverDate' -ErrorAction SilentlyContinue
+            if ($driverDateProp -and $driverDateProp.Data) {
+                $parsed = $null
+                if ([datetime]::TryParse($driverDateProp.Data, [ref]$parsed)) {
+                    $result.DriverDate = $parsed
+                }
+            }
+        } catch { }
+
+        try {
+            $hardwareProp = Get-PnpDeviceProperty -InstanceId $deviceIdForProps -KeyName 'DEVPKEY_Device_HardwareIds' -ErrorAction SilentlyContinue
+            if ($hardwareProp -and $hardwareProp.Data) {
+                $result.HardwareIds = @($hardwareProp.Data) | Where-Object { $_ }
+            }
+        } catch { }
+    }
+
+    $problematicPrefixes = @(
+        'VEN_10EC&DEV_8136',
+        'VEN_10EC&DEV_8168',
+        'VEN_10EC&DEV_8169',
+        'VEN_10EC&DEV_8723',
+        'VEN_168C&DEV_001C',
+        'VEN_168C&DEV_002B',
+        'VEN_168C&DEV_0032'
+    )
+    $normalizedHardware = $result.HardwareIds | ForEach-Object { $_.ToUpperInvariant() }
+    $legacyCutoff = Get-Date '2018-01-01'
+
+    $matchedPrefix = $null
+    foreach ($hwId in $normalizedHardware) {
+        $hit = $problematicPrefixes | Where-Object { $hwId -like "*$_*" }
+        if ($hit) {
+            $matchedPrefix = $hit | Select-Object -First 1
+            break
+        }
+    }
+    if ($result.DriverDate -and $result.DriverDate -lt $legacyCutoff) {
+        $result.IsLegacy = $true
+        $result.Reason = "Driver date $($result.DriverDate.ToShortDateString()) predates 2018."
+    } elseif ($matchedPrefix) {
+        $result.IsLegacy = $true
+        $result.Reason = "Hardware ID matches known fragile PCI IDs ($($matchedPrefix))."
+    }
+
+    return $result
+}
+
 # Description: Applies advanced TCP/IP registry parameters for performance tuning.
 # Parameters: Context - Optional run context for reboot tracking; FailureTracker - Optional tracker for critical registry failures.
 # Returns: None. Sets reboot flag after changes.
@@ -1208,6 +1304,21 @@ function Invoke-NetworkTweaksHardcore {
         }
     }
 
+    $legacyAssessments = @()
+    foreach ($adapter in $adapters) {
+        $assessment = Get-NicLegacyDriverAssessment -Adapter $adapter
+        if ($assessment) {
+            $legacyAssessments += $assessment
+        }
+    }
+    $legacyFlagged = $legacyAssessments | Where-Object { $_.IsLegacy }
+    $legacyInstanceIds = $legacyFlagged | Where-Object { $_.InstanceId } | Select-Object -ExpandProperty InstanceId -Unique
+    foreach ($item in $legacyFlagged) {
+        $legacyMessage = "Legacy Driver Check: $($item.Adapter.Name) flagged ($($item.Reason)). Interrupt Moderation and MSI Mode changes will be skipped for this adapter."
+        Write-Host "  [!] $legacyMessage" -ForegroundColor Yellow
+        if ($logger) { Write-Log "[NetworkHardcore] $legacyMessage" -Level 'Warning' }
+    }
+
     Set-NicRegistryHardcore -Context $Context
     Set-WakeOnLanHardcore -Context $Context
     Invoke-AdvancedNetworkPipeline -Context $Context `
@@ -1219,9 +1330,11 @@ function Invoke-NetworkTweaksHardcore {
         -MsiPromptMessage "Enable MSI Mode for your NIC? Recommended on modern hardware. If you already applied MSI Mode elsewhere, you can skip this." `
         -MsiInvokeOnceId 'MSI:NIC' `
         -MsiDefaultResponse 'n' `
+        -MsiSkipInstanceIds $legacyInstanceIds `
         -OffloadPromptMessage "Disable adapter offloads (RSC/LSO/Checksum) for lowest latency? Recommended for Hardcore tweaks." `
         -OffloadDefaultResponse 'y' `
         -OffloadInvokeOnceId 'Network:AdapterOffloads:Shared' `
+        -InterruptModerationSkipInstanceIds $legacyInstanceIds `
         -SkipWirelessWarning | Out-Null
 
     if ($primaryAdapters) {
