@@ -1173,6 +1173,16 @@ function Invoke-NetworkTweaksHardcore {
         Invoke-ErrorHandler -Context 'Saving network backup before hardcore tweaks' -ErrorRecord $_
     }
 
+    $hardStop = ($backupResult -and $backupResult.PSObject.Properties['HardStop'] -and $backupResult.HardStop)
+    if ($hardStop) {
+        $message = "Hard Stop: Unable to create the required network backup. Hardcore tweaks will not proceed."
+        Write-Host "  [!] $message" -ForegroundColor Red
+        if ($logger) {
+            Write-Log "[NetworkHardcore] $message" -Level 'Error' -Data @{ BackupFile = $backupFile }
+        }
+        return
+    }
+
     $backupSuccess = ($backupResult -and $backupResult.PSObject.Properties['Success'] -and $backupResult.Success)
     if (-not $backupSuccess) {
         $message = "Hardcore network tweaks aborted because the network backup did not complete successfully."

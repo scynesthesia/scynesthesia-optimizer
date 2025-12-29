@@ -631,9 +631,9 @@ function Invoke-NetworkTweaksGaming {
     }
 }
 
-# Description: Saves current network-related registry and firewall settings to a JSON backup.
+# Description: Saves current network-related registry and firewall settings to a JSON backup with a pre-check for writable storage.
 # Parameters: None.
-# Returns: PSCustomObject with Success flag, file path, and optional registry rollback snippet. Writes backup file to ProgramData when possible.
+# Returns: PSCustomObject with Success flag, HardStop indicator, file path, and optional registry rollback snippet. Writes backup file to ProgramData when possible.
 function Save-NetworkBackupState {
     $backupDir = "C:\ProgramData\Scynesthesia"
     $file = Join-Path $backupDir "network_backup.json"
@@ -643,6 +643,29 @@ function Save-NetworkBackupState {
         Success            = $false
         FilePath           = $file
         RegRollbackSnippet = $null
+        HardStop           = $false
+    }
+
+    $directoryWritable = $true
+    try {
+        if (-not (Test-Path -Path $backupDir -PathType Container)) {
+            New-Item -Path $backupDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        }
+        $probePath = Join-Path $backupDir ([System.IO.Path]::GetRandomFileName())
+        "probe" | Set-Content -Path $probePath -Encoding UTF8 -ErrorAction Stop
+        Remove-Item -Path $probePath -Force -ErrorAction SilentlyContinue
+    } catch {
+        $directoryWritable = $false
+        $result.HardStop = $true
+        $message = "Hard Stop: Backup directory '$backupDir' is not writable. Aborting tweaks to avoid unsafe changes."
+        Write-Host "[Backup] $message" -ForegroundColor Red
+        if ($logger) {
+            Write-Log "[Backup] $message" -Level 'Error' -Data @{ BackupDirectory = $backupDir; Reason = $_.Exception.Message }
+        }
+    }
+
+    if (-not $directoryWritable) {
+        return $result
     }
 
     $regRollbackMap = @{}
@@ -918,8 +941,10 @@ function Save-NetworkBackupState {
         Write-Host "[Backup] Network backup saved to $file" -ForegroundColor Green
         $result.Success = $true
     } catch {
-        Write-Host "[Backup] Failed to save network backup." -ForegroundColor Yellow
-        if ($logger) { Write-Log "[Backup] Failed to save network backup: $($_.Exception.Message)" }
+        $result.HardStop = $true
+        $message = "Hard Stop: Failed to save network backup to '$file'. No network or registry changes will be applied."
+        Write-Host "[Backup] $message" -ForegroundColor Red
+        if ($logger) { Write-Log "[Backup] $message" -Level 'Error' -Data @{ Reason = $_.Exception.Message } }
     }
 
     return $result
