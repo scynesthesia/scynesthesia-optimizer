@@ -264,37 +264,42 @@ function Write-DebloatRemovalLog {
 }
 
 # Description: Presents optional safe tweaks and applies selections based on user input.
-# Parameters: None.
-# Returns: None.
+# Parameters: PresetName - Label for the active preset (used in abort prompts).
+# Returns: Boolean indicating whether the caller should abort the preset.
 function Invoke-SafeOptionalPrompts {
+    param([string]$PresetName = 'Safe preset')
+
+    $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     Write-Section "Additional options for Safe preset"
     $options = @(
-        @{ Key = '1'; Description = 'Disable Cortana in search'; Action = {
-            $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCortana" 0 -Context $script:Context -Critical -ReturnResult -OperationLabel 'Disable Cortana policy'
-            return ($result -and $result.Success)
+        @{ Key = '1'; Description = 'Disable Cortana in search'; Critical = $true; Action = {
+            Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCortana" 0 -Context $script:Context -Critical -ReturnResult -OperationLabel 'Disable Cortana policy'
         } },
-        @{ Key = '2'; Description = 'Disable Store suggestions in Start'; Action = {
-            $result = Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" "SilentInstalledAppsEnabled" 0 -Context $script:Context -ReturnResult -OperationLabel 'Disable Store suggestions'
-            return ($result -and $result.Success)
+        @{ Key = '2'; Description = 'Disable Store suggestions in Start'; Critical = $false; Action = {
+            Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" "SilentInstalledAppsEnabled" 0 -Context $script:Context -ReturnResult -OperationLabel 'Disable Store suggestions'
         } },
-        @{ Key = '3'; Description = 'Enable compact view in File Explorer'; Action = {
-            $result = Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "UseCompactMode" 1 -Context $script:Context -ReturnResult -OperationLabel 'Enable compact view'
-            return ($result -and $result.Success)
+        @{ Key = '3'; Description = 'Enable compact view in File Explorer'; Critical = $false; Action = {
+            Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "UseCompactMode" 1 -Context $script:Context -ReturnResult -OperationLabel 'Enable compact view'
         } }
     )
     foreach ($opt in $options) {
         $label = "$($opt.Key) $($opt.Description)"
         if (Get-Confirmation $label -Default 'n') {
-            $applied = & $opt.Action
+            $result = & $opt.Action
+            $applied = $result -and $result.Success
             if ($applied) {
                 Write-Host "[OK] $($opt.Description) applied." -ForegroundColor Green
             } else {
+                if ($opt.Critical) {
+                    if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel $opt.Description -Critical) { return $true }
+                }
                 Write-Host "[!] $($opt.Description) could not be applied (check permissions)." -ForegroundColor Yellow
             }
         } else {
             Write-Host "Skipped: $($opt.Description)." -ForegroundColor DarkGray
         }
     }
+    return $false
 }
 
 # Description: Handles reboot prompting based on the supplied context and resets the flag afterward.
@@ -360,16 +365,35 @@ function Run-SafePreset {
     Clear-TempFiles -Context $script:Context
 
     # Safe Debloat (Standard list)
-    Invoke-PrivacyTelemetrySafe -Context $script:Context
+    $privacyAbort = Invoke-PrivacyTelemetrySafe -Context $script:Context -PresetName 'Safe preset'
+    if ($privacyAbort) {
+        Write-Host "[!] Safe preset aborted by user due to critical registry failure." -ForegroundColor Red
+        return
+    }
     $debloatResult = Invoke-DebloatSafe -Context $script:Context # Uses the default list defined in the module
     $Status.PackagesFailed += $debloatResult.Failed
     $Status.PackagesRemoved += $debloatResult.Removed
 
-    Invoke-PreferencesSafe -Context $script:Context
-    Invoke-SafeOptionalPrompts
+    $preferencesAbort = Invoke-PreferencesSafe -Context $script:Context -PresetName 'Safe preset'
+    if ($preferencesAbort) {
+        Write-Host "[!] Safe preset aborted by user due to critical registry failure." -ForegroundColor Red
+        return
+    }
+    if (Invoke-SafeOptionalPrompts) {
+        Write-Host "[!] Safe preset aborted by user during optional tweaks." -ForegroundColor Red
+        return
+    }
     Invoke-SysMainOptimization -HardwareProfile $HWProfile
-    Invoke-PerformanceBaseline -HardwareProfile $HWProfile -Context $script:Context
-    Invoke-SafePerformanceTweaks -Context $script:Context
+    $baselineAbort = Invoke-PerformanceBaseline -HardwareProfile $HWProfile -Context $script:Context -PresetName 'Safe preset'
+    if ($baselineAbort) {
+        Write-Host "[!] Safe preset aborted by user due to critical registry failure." -ForegroundColor Red
+        return
+    }
+    $performanceAbort = Invoke-SafePerformanceTweaks -Context $script:Context -PresetName 'Safe preset'
+    if ($performanceAbort) {
+        Write-Host "[!] Safe preset aborted by user due to critical registry failure." -ForegroundColor Red
+        return
+    }
     Ensure-PowerPlan -Mode 'HighPerformance'
 
     $Status.RebootRequired = Get-NeedsReboot -Context $script:Context
@@ -401,7 +425,11 @@ function Run-PCSlowPreset {
     }
     Clear-TempFiles -Context $script:Context
 
-    Invoke-PrivacyTelemetrySafe -Context $script:Context
+    $privacyAbort = Invoke-PrivacyTelemetrySafe -Context $script:Context -PresetName 'Aggressive preset'
+    if ($privacyAbort) {
+        Write-Host "[!] Aggressive preset aborted by user due to critical registry failure." -ForegroundColor Red
+        return
+    }
 
     # Deep cleaning using Aggressive Debloat profile.
     # Using updated function from debloat.psm1.
@@ -409,13 +437,29 @@ function Run-PCSlowPreset {
     $Status.PackagesFailed += $debloatResult.Failed
     $Status.PackagesRemoved += $debloatResult.Removed
 
-    Invoke-PreferencesSafe -Context $script:Context
-    Invoke-PerformanceBaseline -HardwareProfile $HWProfile -Context $script:Context
+    $preferencesAbort = Invoke-PreferencesSafe -Context $script:Context -PresetName 'Aggressive preset'
+    if ($preferencesAbort) {
+        Write-Host "[!] Aggressive preset aborted by user due to critical registry failure." -ForegroundColor Red
+        return
+    }
+    $baselineAbort = Invoke-PerformanceBaseline -HardwareProfile $HWProfile -Context $script:Context -PresetName 'Aggressive preset'
+    if ($baselineAbort) {
+        Write-Host "[!] Aggressive preset aborted by user due to critical registry failure." -ForegroundColor Red
+        return
+    }
     Ensure-PowerPlan -Mode 'HighPerformance'
 
     # Additional tweaks specific to slow PCs
-    Invoke-AggressivePerformanceTweaks -OemServices $OemServices -Context $script:Context
-    Invoke-AggressiveTweaks -HardwareProfile $HWProfile -FailedPackages ([ref]$Status.PackagesFailed) -OemServices $OemServices -Context $script:Context
+    $aggressivePerformanceAbort = Invoke-AggressivePerformanceTweaks -OemServices $OemServices -Context $script:Context -PresetName 'Aggressive preset'
+    if ($aggressivePerformanceAbort) {
+        Write-Host "[!] Aggressive preset aborted by user due to critical registry failure." -ForegroundColor Red
+        return
+    }
+    $aggTweaksAbort = Invoke-AggressiveTweaks -HardwareProfile $HWProfile -FailedPackages ([ref]$Status.PackagesFailed) -OemServices $OemServices -Context $script:Context -PresetName 'Aggressive preset'
+    if ($aggTweaksAbort) {
+        Write-Host "[!] Aggressive preset aborted by user due to critical registry failure." -ForegroundColor Red
+        return
+    }
 
     $Status.RebootRequired = Get-NeedsReboot -Context $script:Context
     $Status.RegistryPermissionFailures = @($script:Context.RegistryPermissionFailures)

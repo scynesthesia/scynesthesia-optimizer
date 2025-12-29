@@ -1,7 +1,7 @@
 # Depends on: ui.psm1 (loaded by main script)
 # Description: Applies privacy-focused registry changes suitable for the Safe preset.
-# Parameters: Context - Optional run context for rollback tracking.
-# Returns: None. Prompts for optional Cortana and Storage Sense adjustments.
+# Parameters: Context - Optional run context for rollback tracking; PresetName - Label for the active preset.
+# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
 function Invoke-DriverTelemetry {
     Write-Section "Disabling GPU driver telemetry services"
 
@@ -24,10 +24,12 @@ function Invoke-DriverTelemetry {
 
 function Invoke-PrivacyTelemetrySafe {
     param(
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string]$PresetName = 'current preset'
     )
 
     $context = Get-RunContext -Context $Context
+    $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     Write-Section "Applying privacy/telemetry tweaks (Safe preset)"
 
     $cloudContentResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" "DisableConsumerFeatures" 1 -Context $context -Critical -ReturnResult -OperationLabel 'Disable Consumer Experience features'
@@ -41,9 +43,32 @@ function Invoke-PrivacyTelemetrySafe {
     $locationResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors" "DisableLocation" 1 -Context $context -Critical -ReturnResult -OperationLabel 'Disable location services'
     $wifiOemResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\WcmSvc\wifinetworkmanager\config" "AutoConnectAllowedOEM" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Block OEM Wi-Fi auto-connect'
 
-    Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGameDVR" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable GameDVR (HKLM)' | Out-Null
-    Set-RegistryValueSafe "HKCU\System\GameConfigStore" "GameDVR_Enabled" 0 -Context $context -ReturnResult -OperationLabel 'Disable GameDVR (HKCU)' | Out-Null
-    Set-RegistryValueSafe "HKCU\System\GameConfigStore" "GameDVR_FSEBehaviorMode" 2 -Context $context -ReturnResult -OperationLabel 'Set GameDVR FSE behavior' | Out-Null
+    $gameDvrPolicy = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGameDVR" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable GameDVR (HKLM)'
+    $gameDvrEnabled = Set-RegistryValueSafe "HKCU\System\GameConfigStore" "GameDVR_Enabled" 0 -Context $context -ReturnResult -OperationLabel 'Disable GameDVR (HKCU)'
+    $gameDvrFse = Set-RegistryValueSafe "HKCU\System\GameConfigStore" "GameDVR_FSEBehaviorMode" 2 -Context $context -ReturnResult -OperationLabel 'Set GameDVR FSE behavior'
+
+    $criticalResults = @(
+        @{ Result = $cloudContentResult; Label = 'Disable Consumer Experience features' },
+        @{ Result = $telemetryResult; Label = 'Disable Windows telemetry (AllowTelemetry)' },
+        @{ Result = $activityFeedResult; Label = 'Disable Activity Feed' },
+        @{ Result = $publishActivitiesResult; Label = 'Block publishing user activities' },
+        @{ Result = $uploadActivitiesResult; Label = 'Block uploading user activities' },
+        @{ Result = $locationResult; Label = 'Disable location services' },
+        @{ Result = $wifiOemResult; Label = 'Block OEM Wi-Fi auto-connect' },
+        @{ Result = $gameDvrPolicy; Label = 'Disable GameDVR (HKLM)' }
+    )
+    foreach ($entry in $criticalResults) {
+        if (-not ($entry.Result -and $entry.Result.Success)) {
+            if (Test-RegistryResultForPresetAbort -Result $entry.Result -PresetName $presetLabel -OperationLabel $entry.Label -Critical) { return $true }
+        }
+    }
+
+    if (-not ($gameDvrEnabled -and $gameDvrEnabled.Success)) {
+        Write-Host "  [!] GameDVR (HKCU) setting could not be updated." -ForegroundColor Yellow
+    }
+    if (-not ($gameDvrFse -and $gameDvrFse.Success)) {
+        Write-Host "  [!] GameDVR full screen optimization behavior could not be updated." -ForegroundColor Yellow
+    }
 
     if (Get-Confirmation "Disable Cortana and online searches in Start?" 'y') {
         $bingResult = Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Search" "BingSearchEnabled" 0 -Context $context -ReturnResult -OperationLabel 'Disable Bing search in Start'
@@ -79,7 +104,7 @@ function Invoke-PrivacyTelemetrySafe {
             Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" "SubscribedContent-338389Enabled" 0 -Context $context -ReturnResult -OperationLabel 'Disable subscribed content 338389',
             Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" "SubscribedContent-353694Enabled" 0 -Context $context -ReturnResult -OperationLabel 'Disable subscribed content 353694'
         )
-        if ($recResults | Where-Object { -not $_.Success }) {
+        if ($recResults | Where-Object { -not ($_ -and $_.Success) }) {
             Write-Host "  [!] Some recommendation settings could not be changed." -ForegroundColor Yellow
         } else {
             Write-Host "  [+] Recommendations disabled"
@@ -88,36 +113,66 @@ function Invoke-PrivacyTelemetrySafe {
         Write-Host "  [ ] Recommendations left as-is."
     }
 
-    Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\PowerShellCore\Telemetry" "EnableTelemetry" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable PowerShell telemetry' | Out-Null
+    $powerShellTelemetryResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\PowerShellCore\Telemetry" "EnableTelemetry" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable PowerShell telemetry'
+    if (-not ($powerShellTelemetryResult -and $powerShellTelemetryResult.Success)) {
+        if (Test-RegistryResultForPresetAbort -Result $powerShellTelemetryResult -PresetName $presetLabel -OperationLabel 'Disable PowerShell telemetry' -Critical) { return $true }
+    }
+
+    return $false
 }
 
 # Description: Configures user experience preferences for Explorer, mouse, and keyboard behavior.
-# Parameters: Context - Optional run context used for rollback and permission tracking.
-# Returns: None. Writes registry values for consistent UX defaults.
+# Parameters: Context - Optional run context used for rollback and permission tracking; PresetName - Label for the active preset.
+# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
 function Invoke-PreferencesSafe {
     param(
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [string]$PresetName = 'current preset'
     )
 
     $context = Get-RunContext -Context $Context
+    $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     Write-Section "Adjusting UX preferences (Start, Explorer, etc.)"
 
-    Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "Hidden" 1 -Context $context -ReturnResult -OperationLabel 'Show hidden files' | Out-Null
-    Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "HideFileExt" 0 -Context $context -ReturnResult -OperationLabel 'Show file extensions' | Out-Null
+    $hiddenResult = Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "Hidden" 1 -Context $context -ReturnResult -OperationLabel 'Show hidden files'
+    $hideExtResult = Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "HideFileExt" 0 -Context $context -ReturnResult -OperationLabel 'Show file extensions'
 
-    Set-RegistryValueSafe "HKCU\Control Panel\Mouse" "MouseSpeed" 0 -Context $context -ReturnResult -OperationLabel 'Mouse speed baseline' | Out-Null
-    Set-RegistryValueSafe "HKCU\Control Panel\Mouse" "MouseThreshold1" 0 -Context $context -ReturnResult -OperationLabel 'Mouse threshold 1 baseline' | Out-Null
-    Set-RegistryValueSafe "HKCU\Control Panel\Mouse" "MouseThreshold2" 0 -Context $context -ReturnResult -OperationLabel 'Mouse threshold 2 baseline' | Out-Null
+    $mouseSpeedResult = Set-RegistryValueSafe "HKCU\Control Panel\Mouse" "MouseSpeed" 0 -Context $context -ReturnResult -OperationLabel 'Mouse speed baseline'
+    $mouseThreshold1Result = Set-RegistryValueSafe "HKCU\Control Panel\Mouse" "MouseThreshold1" 0 -Context $context -ReturnResult -OperationLabel 'Mouse threshold 1 baseline'
+    $mouseThreshold2Result = Set-RegistryValueSafe "HKCU\Control Panel\Mouse" "MouseThreshold2" 0 -Context $context -ReturnResult -OperationLabel 'Mouse threshold 2 baseline'
 
-    Set-RegistryValueSafe "HKCU\Control Panel\Accessibility\StickyKeys" "Flags" 506 -Context $context -ReturnResult -OperationLabel 'Disable sticky keys prompts' | Out-Null
+    $stickyKeysResult = Set-RegistryValueSafe "HKCU\Control Panel\Accessibility\StickyKeys" "Flags" 506 -Context $context -ReturnResult -OperationLabel 'Disable sticky keys prompts'
 
-    Set-RegistryValueSafe "HKCU\SOFTWARE\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32" "(default)" "" ([Microsoft.Win32.RegistryValueKind]::String) -Context $context -ReturnResult -OperationLabel 'Enable classic context menu' | Out-Null
+    $classicContextResult = Set-RegistryValueSafe "HKCU\SOFTWARE\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32" "(default)" "" ([Microsoft.Win32.RegistryValueKind]::String) -Context $context -ReturnResult -OperationLabel 'Enable classic context menu'
 
-    Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "LaunchTo" 1 -Context $context -ReturnResult -OperationLabel 'Set Explorer launch to This PC' | Out-Null
+    $launchToResult = Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "LaunchTo" 1 -Context $context -ReturnResult -OperationLabel 'Set Explorer launch to This PC'
 
-    Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" "DisplayParameters" 1 -Context $context -Critical -ReturnResult -OperationLabel 'Show crash control parameters' | Out-Null
+    $crashControlResult = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" "DisplayParameters" 1 -Context $context -Critical -ReturnResult -OperationLabel 'Show crash control parameters'
 
-    Set-RegistryValueSafe "HKCU\Control Panel\Keyboard" "InitialKeyboardIndicators" 2147483650 -Context $context -ReturnResult -OperationLabel 'Enable num lock at startup' | Out-Null
+    $numLockResult = Set-RegistryValueSafe "HKCU\Control Panel\Keyboard" "InitialKeyboardIndicators" 2147483650 -Context $context -ReturnResult -OperationLabel 'Enable num lock at startup'
+
+    $results = @(
+        @{ Result = $hiddenResult; Label = 'Show hidden files' },
+        @{ Result = $hideExtResult; Label = 'Show file extensions' },
+        @{ Result = $mouseSpeedResult; Label = 'Mouse speed baseline' },
+        @{ Result = $mouseThreshold1Result; Label = 'Mouse threshold 1 baseline' },
+        @{ Result = $mouseThreshold2Result; Label = 'Mouse threshold 2 baseline' },
+        @{ Result = $stickyKeysResult; Label = 'Disable sticky keys prompts' },
+        @{ Result = $classicContextResult; Label = 'Enable classic context menu' },
+        @{ Result = $launchToResult; Label = 'Set Explorer launch to This PC' },
+        @{ Result = $numLockResult; Label = 'Enable num lock at startup' }
+    )
+    foreach ($entry in $results) {
+        if (-not ($entry.Result -and $entry.Result.Success)) {
+            Write-Host "  [!] $($entry.Label) could not be fully applied." -ForegroundColor Yellow
+        }
+    }
+
+    if (-not ($crashControlResult -and $crashControlResult.Success)) {
+        if (Test-RegistryResultForPresetAbort -Result $crashControlResult -PresetName $presetLabel -OperationLabel 'Show crash control parameters' -Critical) { return $true }
+    }
+
+    return $false
 }
 
 Export-ModuleMember -Function Invoke-DriverTelemetry, Invoke-PrivacyTelemetrySafe, Invoke-PreferencesSafe
