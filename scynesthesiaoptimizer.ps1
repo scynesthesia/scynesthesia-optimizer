@@ -173,6 +173,29 @@ function Ensure-PowerPlan {
     }
 }
 
+# Description: Writes a consolidated log of removed apps to the console/transcript.
+# Parameters: Context - Optional run context holding DebloatRemovalLog.
+# Returns: None.
+function Write-DebloatRemovalLog {
+    param([pscustomobject]$Context)
+
+    $context = Get-RunContext -Context $Context
+    if (-not $context -or -not $context.PSObject.Properties.Name.Contains('DebloatRemovalLog')) { return }
+
+    $removalLog = @($context.DebloatRemovalLog | Where-Object { $_ } | Select-Object -Unique | Sort-Object)
+
+    Write-Host ""
+    Write-Host "===== Debloat Removal Log =====" -ForegroundColor Cyan
+    if ($removalLog.Count -eq 0) {
+        Write-Host "[ ] No apps were removed during this session." -ForegroundColor DarkGray
+        return
+    }
+
+    foreach ($pkg in $removalLog) {
+        Write-Host "  - $pkg" -ForegroundColor Green
+    }
+}
+
 # Description: Presents optional safe tweaks and applies selections based on user input.
 # Parameters: None.
 # Returns: None.
@@ -251,7 +274,7 @@ function Handle-RebootIfNeeded {
 # Parameters: None.
 # Returns: None. Updates global reboot flag as needed.
 function Run-SafePreset {
-    $Status = @{ PackagesFailed = @(); RebootRequired = $false }
+    $Status = @{ PackagesFailed = @(); PackagesRemoved = @(); RebootRequired = $false }
     if (-not $script:Context.PSObject.Properties.Name.Contains('RegistryPermissionFailures')) {
         $script:Context | Add-Member -Name RegistryPermissionFailures -MemberType NoteProperty -Value @()
     } else {
@@ -270,6 +293,7 @@ function Run-SafePreset {
     Invoke-PrivacyTelemetrySafe -Context $script:Context
     $debloatResult = Invoke-DebloatSafe -Context $script:Context # Uses the default list defined in the module
     $Status.PackagesFailed += $debloatResult.Failed
+    $Status.PackagesRemoved += $debloatResult.Removed
 
     Invoke-PreferencesSafe -Context $script:Context
     Invoke-SafeOptionalPrompts
@@ -288,7 +312,7 @@ function Run-SafePreset {
 # Parameters: None.
 # Returns: None. Updates global reboot flag and failed package list.
 function Run-PCSlowPreset {
-    $Status = @{ PackagesFailed = @(); RebootRequired = $false }
+    $Status = @{ PackagesFailed = @(); PackagesRemoved = @(); RebootRequired = $false }
     if (-not $script:Context.PSObject.Properties.Name.Contains('RegistryPermissionFailures')) {
         $script:Context | Add-Member -Name RegistryPermissionFailures -MemberType NoteProperty -Value @()
     } else {
@@ -310,6 +334,7 @@ function Run-PCSlowPreset {
     # Using updated function from debloat.psm1.
     $debloatResult = Invoke-DebloatAggressive -Context $script:Context
     $Status.PackagesFailed += $debloatResult.Failed
+    $Status.PackagesRemoved += $debloatResult.Removed
 
     Invoke-PreferencesSafe -Context $script:Context
     Invoke-PerformanceBaseline -HardwareProfile $HWProfile -Context $script:Context
@@ -586,6 +611,8 @@ do {
     if ($exitRequested) { break }
 
 } while ($true)
+
+Write-DebloatRemovalLog -Context $script:Context
 
 try {
     if ($TranscriptStarted) {
