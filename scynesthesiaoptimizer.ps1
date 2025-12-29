@@ -61,11 +61,13 @@ try {
 # ---------- 3. CONTEXT INITIALIZATION ----------
 $Context = New-RunContext -ScriptRoot $scriptRoot
 $Context.RollbackPersistencePath = Get-RollbackPersistencePath
-Restore-RegistryRollbackState -Context $Context -Path $Context.RollbackPersistencePath | Out-Null
+Restore-RollbackState -Context $Context -Path $Context.RollbackPersistencePath | Out-Null
 $script:RollbackPersistencePath = $Context.RollbackPersistencePath
 $script:Context = $Context
 Reset-NeedsReboot -Context $Context | Out-Null
 $script:Context.RegistryRollbackActions = if ($Context.RegistryRollbackActions) { $Context.RegistryRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
+$script:Context.ServiceRollbackActions = if ($Context.ServiceRollbackActions) { $Context.ServiceRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
+$script:Context.NetshRollbackActions = if ($Context.NetshRollbackActions) { $Context.NetshRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
 $script:Logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
 # Periodically persist rollback entries so they can survive unexpected termination.
@@ -75,7 +77,7 @@ $script:RollbackPersistTimer.AutoReset = $true
 $script:RollbackPersistSubscription = Register-ObjectEvent -InputObject $script:RollbackPersistTimer -EventName Elapsed -SourceIdentifier 'RegistryRollbackPersistence' -Action {
     try {
         if ($script:Context) {
-            Save-RegistryRollbackState -Context $script:Context -Path $script:Context.RollbackPersistencePath | Out-Null
+            Save-RollbackState -Context $script:Context -Path $script:Context.RollbackPersistencePath | Out-Null
         }
     } catch {
         Write-Verbose "Rollback persistence failed: $($_.Exception.Message)"
@@ -695,7 +697,7 @@ do {
 } while ($true)
 
 try {
-    Save-RegistryRollbackState -Context $script:Context -Path $script:Context.RollbackPersistencePath | Out-Null
+    Save-RollbackState -Context $script:Context -Path $script:Context.RollbackPersistencePath | Out-Null
 } catch {
     Write-Verbose "Final rollback persistence failed: $($_.Exception.Message)"
 }
