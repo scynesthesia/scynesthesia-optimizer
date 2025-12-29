@@ -373,7 +373,7 @@ function Invoke-DebloatAggressive {
         $failed = $failedNames
     }
 
-    if (Get-Confirmation -Question "Also remove provisioned packages for future users? (More aggressive)" -Default 'n') {
+    if (Get-Confirmation -Question "Also remove provisioned packages for future users? (More aggressive)" -Default 'n' -RiskSummary @("Removing provisioned packages affects all future user accounts created on this PC")) {
         try {
             $prov = Get-AppxProvisionedPackage -Online | Where-Object { $AppList -contains $_.PackageName }
         } catch {
