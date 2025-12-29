@@ -23,6 +23,7 @@ function New-RunContext {
         NeedsReboot     = $false
         RollbackActions = @()
         RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
+        RollbackPersistencePath = $null
         LogPath         = $null
         AppliedTweaks   = @{}
         RegistryPermissionFailures = @()
@@ -136,4 +137,87 @@ function Reset-NeedsReboot {
     return $Context
 }
 
-Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once
+# Returns the persistence path for registry rollback actions and, optionally, creates the parent directory.
+function Get-RollbackPersistencePath {
+    [CmdletBinding()]
+    param(
+        [string]$FileName = 'session_rollback.json'
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FileName)) {
+        $FileName = 'session_rollback.json'
+    }
+
+    $root = if ($env:ProgramData) { Join-Path $env:ProgramData 'Scynesthesia' } else { 'C:\ProgramData\Scynesthesia' }
+    return Join-Path $root $FileName
+}
+
+# Persists the registry rollback actions from the context to disk so they can be restored after crashes.
+function Save-RegistryRollbackState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context,
+        [string]$Path
+    )
+
+    $targetPath = if ($Path) { $Path } else { Get-RollbackPersistencePath }
+    $parent = Split-Path -Parent $targetPath
+    if (-not (Test-Path $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+
+    $records = @()
+    if ($Context.PSObject.Properties.Name -contains 'RegistryRollbackActions' -and $Context.RegistryRollbackActions) {
+        $records = @($Context.RegistryRollbackActions)
+    }
+
+    $payload = [pscustomobject]@{
+        LastUpdated = (Get-Date).ToString('o')
+        Records     = $records
+    }
+
+    try {
+        $json = $payload | ConvertTo-Json -Depth 8 -ErrorAction Stop
+        Set-Content -Path $targetPath -Value $json -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        Write-Warning "Failed to persist rollback actions to $targetPath: $($_.Exception.Message)"
+    }
+
+    return $targetPath
+}
+
+# Restores registry rollback actions from disk into the supplied context.
+function Restore-RegistryRollbackState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context,
+        [string]$Path
+    )
+
+    $targetPath = if ($Path) { $Path } else { Get-RollbackPersistencePath }
+    if (-not (Test-Path $targetPath)) { return $false }
+
+    try {
+        $content = Get-Content -Path $targetPath -Raw -ErrorAction Stop
+        $data = $content | ConvertFrom-Json -ErrorAction Stop
+        $records = @()
+        if ($data -and $data.PSObject.Properties.Name -contains 'Records' -and $data.Records) {
+            $records = @($data.Records)
+        }
+
+        $list = [System.Collections.Generic.List[object]]::new()
+        foreach ($record in $records) {
+            [void]$list.Add($record)
+        }
+
+        $Context.RegistryRollbackActions = $list
+        return $true
+    } catch {
+        Write-Warning "Failed to restore rollback actions from $targetPath: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once, Get-RollbackPersistencePath, Save-RegistryRollbackState, Restore-RegistryRollbackState
