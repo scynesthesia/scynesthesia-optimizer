@@ -14,6 +14,9 @@ function Enable-MsiModeSafe {
     Write-Host "Reduces DPC latency by changing how devices communicate with CPU." -ForegroundColor Gray
     Write-Host "WARNING: Only compatible devices will be touched. Reboot required." -ForegroundColor Yellow
 
+    $osVersion = [System.Environment]::OSVersion.Version
+    $isWin10Pre1903 = ($osVersion.Major -eq 10 -and $osVersion.Build -lt 18362)
+
     $targetMap = @{
         'GPU'     = @{ Classes = @('Display'); ClassGuids = @('{4d36e968-e325-11ce-bfc1-08002be10318}'); Description = 'GPU/Display adapters' }
         'NIC'     = @{ Classes = @('Net'); ClassGuids = @('{4d36e972-e325-11ce-bfc1-08002be10318}'); Description = 'Network adapters' }
@@ -86,6 +89,14 @@ function Enable-MsiModeSafe {
                     $hardwareIds = @($hardwareIdProperty.Data) | Where-Object { $_ }
                 }
 
+                $driverProvider = $null
+                $driverProviderProperty = Get-PnpDeviceProperty -InstanceId $dev.InstanceId -KeyName 'DEVPKEY_Device_DriverProvider' -ErrorAction SilentlyContinue
+                if ($driverProviderProperty -and $driverProviderProperty.Data) {
+                    $driverProvider = [string]$driverProviderProperty.Data
+                }
+
+                $isInboxDriver = ($isWin10Pre1903 -and $driverProvider -and $driverProvider -match '^(?i)microsoft')
+
                 if ($driverDate) {
                     if ($driverDate -lt (Get-Date '2014-01-01')) {
                         Write-Host "  [!] Skipping $($dev.FriendlyName): driver date $driverDate is older than 2014-01-01." -ForegroundColor Yellow
@@ -105,6 +116,11 @@ function Enable-MsiModeSafe {
                         Write-Host "  [!] Skipping $($dev.FriendlyName): hardware ID matches MSI opt-out ($($matchedOptOut -join ', '))." -ForegroundColor Yellow
                         continue
                     }
+                }
+
+                if ($isInboxDriver) {
+                    Write-Host "  [!] Skipping $($dev.FriendlyName): Microsoft inbox driver detected on Windows 10 build $($osVersion.Build) (pre-1903) often rejects MSI mode and may cause boot loops." -ForegroundColor Yellow
+                    continue
                 }
 
                 $regPath = "HKLM\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"

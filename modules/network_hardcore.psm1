@@ -919,6 +919,13 @@ function Find-OptimalMtu {
         [string]$Target = '1.1.1.1'
     )
     try {
+        $buildNumber = [Environment]::OSVersion.Version.Build
+        if ($buildNumber -lt 16299) {
+            $fallbackMtu = 1500
+            Write-Host "  [ ] Advanced MTU discovery requires Windows 10 Build 16299 or later. Detected build $buildNumber; applying safe default MTU $fallbackMtu." -ForegroundColor Gray
+            return [pscustomobject]@{ Mtu = $fallbackMtu; WasFallback = $true; SkippedReason = "Build $buildNumber below 16299" }
+        }
+
         $getDefaultGateway = {
             try {
                 $gateways = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
@@ -1147,8 +1154,9 @@ function Suggest-NetworkIrqCores {
 function Set-TcpCongestionProvider {
     try {
         $osVersion = [System.Environment]::OSVersion.Version
-        if ($osVersion.Major -lt 10) {
-            Write-Host "  [!] Modern congestion control not supported on this OS." -ForegroundColor Yellow
+        $buildNumber = $osVersion.Build
+        if ($osVersion.Major -lt 10 -or $buildNumber -lt 16299) {
+            Write-Host "  [ ] Modern congestion control requires Windows 10 Build 16299 or later. Detected build $buildNumber; skipping congestion provider changes." -ForegroundColor Gray
             return
         }
 
