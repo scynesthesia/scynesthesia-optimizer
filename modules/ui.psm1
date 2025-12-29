@@ -449,6 +449,7 @@ function Get-Confirmation {
     $prompt = if ($appendPrompt) { "$questionText $defaultText".Trim() } else { $questionText }
 
     $riskLines = @()
+    $criticalServiceNetshRisk = 'CRITICAL: Changes to service states and network globals cannot be automatically reverted via registry rollback; ensure a manual backup is verified before proceeding.'
     if ($RiskSummary) {
         foreach ($risk in $RiskSummary) {
             $trimmed = [string]$risk
@@ -458,9 +459,19 @@ function Get-Confirmation {
         }
     }
 
+    $riskContextText = (($questionText, ($riskLines -join ' ')) -join ' ').ToLowerInvariant()
+    $matchesServiceOrNetsh = $riskContextText -match '\b(service|services|netsh|winsock)\b'
+    $hasCriticalNotice = $riskLines -contains $criticalServiceNetshRisk
+
+    if ($matchesServiceOrNetsh -and -not $hasCriticalNotice) {
+        $riskLines += $criticalServiceNetshRisk
+    }
+
     if ($riskLines.Count -gt 0) {
-        $combinedRisk = $riskLines -join ' '
-        Write-Host "  [!] What breaks: $combinedRisk" -ForegroundColor Yellow
+        Write-Host "  [!] Risks / Limits:" -ForegroundColor Yellow
+        foreach ($risk in $riskLines) {
+            Write-Host "      - $risk" -ForegroundColor Yellow
+        }
     }
 
     while ($true) {
