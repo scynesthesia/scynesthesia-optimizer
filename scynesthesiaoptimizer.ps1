@@ -864,18 +864,7 @@ try {
     Write-Verbose "Final rollback persistence failed: $($_.Exception.Message)"
 }
 
-if ($script:RollbackPersistTimer) {
-    $script:RollbackPersistTimer.Stop()
-}
-if (Get-EventSubscriber -SourceIdentifier 'RegistryRollbackPersistence' -ErrorAction SilentlyContinue) {
-    Unregister-Event -SourceIdentifier 'RegistryRollbackPersistence' -ErrorAction SilentlyContinue
-}
-if ($script:RollbackPersistSubscription) {
-    try { Remove-Job -Id $script:RollbackPersistSubscription.Id -ErrorAction SilentlyContinue } catch {}
-}
-if ($script:RollbackPersistTimer) {
-    $script:RollbackPersistTimer.Dispose()
-}
+Stop-RollbackPersistenceTimer -Timer $script:RollbackPersistTimer -Subscription $script:RollbackPersistSubscription -SourceIdentifier 'RegistryRollbackPersistence'
 
 Write-EndOfSessionSummary -Context $script:Context
 Write-DebloatRemovalLog -Context $script:Context
