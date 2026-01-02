@@ -424,6 +424,34 @@ function Restore-RegistryRollbackState {
     return Restore-RollbackState -Context $Context -Path $Path
 }
 
+function Stop-RollbackPersistenceTimer {
+    [CmdletBinding()]
+    param(
+        [System.Timers.Timer]$Timer,
+        $Subscription,
+        [string]$SourceIdentifier = 'RegistryRollbackPersistence'
+    )
+
+    if ($Timer) {
+        try { $Timer.Stop() } catch {}
+    }
+
+    if ($SourceIdentifier) {
+        $subscriber = Get-EventSubscriber -SourceIdentifier $SourceIdentifier -ErrorAction SilentlyContinue
+        if ($subscriber) {
+            Unregister-Event -SourceIdentifier $SourceIdentifier -ErrorAction SilentlyContinue
+        }
+    }
+
+    if ($Subscription) {
+        try { Remove-Job -Id $Subscription.Id -ErrorAction SilentlyContinue } catch {}
+    }
+
+    if ($Timer) {
+        try { $Timer.Dispose() } catch {}
+    }
+}
+
 function Invoke-RegistryTransaction {
     [CmdletBinding()]
     param(
@@ -617,4 +645,4 @@ function Invoke-RegistryTransaction {
     throw [System.InvalidOperationException]::new("One or more registry operations failed within $transactionLabel; changes were rolled back.")
 }
 
-Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once, Get-RollbackPersistencePath, Save-RegistryRollbackState, Restore-RegistryRollbackState, Save-RollbackState, Restore-RollbackState, Invoke-RegistryTransaction, Get-NonRegistryChangeTracker, Add-NonRegistryChange, Initialize-RollbackCollections, Add-ServiceRollbackAction, Add-NetshRollbackAction
+Export-ModuleMember -Function New-RunContext, Get-RunContext, Set-NeedsReboot, Get-NeedsReboot, Reset-NeedsReboot, Set-RebootRequired, Get-RebootRequired, Invoke-Once, Get-RollbackPersistencePath, Save-RegistryRollbackState, Restore-RegistryRollbackState, Save-RollbackState, Restore-RollbackState, Invoke-RegistryTransaction, Get-NonRegistryChangeTracker, Add-NonRegistryChange, Initialize-RollbackCollections, Add-ServiceRollbackAction, Add-NetshRollbackAction, Stop-RollbackPersistenceTimer
