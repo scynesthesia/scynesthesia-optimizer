@@ -1,4 +1,8 @@
 # Depends on: ui.psm1 (loaded by main script)
+if (-not (Get-Command -Name 'Get-HardwareProfile' -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $PSScriptRoot 'performance.psm1') -Force -Scope Local
+}
+
 # Description: Adjusts scheduler priorities to favor foreground gaming workloads.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Logs actions when logger available.
@@ -89,30 +93,6 @@ function Get-OrCreate-GamingPlan {
     return $gamingPlan
 }
 
-# Description: Determines whether the system is currently running on battery power.
-# Parameters: None.
-# Returns: Boolean indicating active battery usage.
-function Test-IsOnBatteryPower {
-    try {
-        $battery = Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
-    } catch {
-        $battery = $null
-    }
-
-    if (-not $battery) { return $false }
-
-    try {
-        $status = $battery.BatteryStatus
-        if ($null -ne $status) {
-            $statusCode = [int]$status
-            $dischargingStates = @(1, 4, 5, 11)
-            return $dischargingStates -contains $statusCode
-        }
-    } catch { }
-
-    return $false
-}
-
 # Description: Applies high-performance power settings tailored for gaming scenarios.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Activates or updates the gaming power plan.
@@ -125,13 +105,14 @@ function Invoke-CustomGamingPowerSettings {
     Write-Section "Power Plan: 'Custom Gaming Tweaks'"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
-    $isLaptop = Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue
+    $hardwareProfile = Get-HardwareProfile
+    $isLaptop = $hardwareProfile -and $hardwareProfile.IsLaptop
     if ($isLaptop) {
         Write-Host "  [!] Laptop detected: these settings increase power draw and temperatures." -ForegroundColor Yellow
         Write-Host "      Recommended only while plugged into AC power." -ForegroundColor Yellow
     }
 
-    $onBatteryPower = Test-IsOnBatteryPower
+    $onBatteryPower = $hardwareProfile -and $hardwareProfile.OnBatteryPower
     if ($onBatteryPower) {
         Write-Host "  [!] System is currently running on battery power." -ForegroundColor Yellow
         Write-Host "      Aggressive tweaks disable USB/PCIe power management and assume stable AC power." -ForegroundColor Yellow
