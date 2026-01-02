@@ -883,6 +883,39 @@ function Save-NetworkBackupState {
         } catch { }
     }
 
+    $registryDefaults = Get-NetworkRegistryDefaults -IncludeCompatibilityPlaceholders
+    $tcpParameterTemplate = [ordered]@{}
+    if ($registryDefaults -and $registryDefaults.TcpParameters) {
+        foreach ($name in $registryDefaults.TcpParameters.Keys) {
+            $tcpParameterTemplate[$name] = $null
+        }
+    }
+    if ($tcpParameterTemplate.Count -eq 0) {
+        $tcpParameterTemplate = [ordered]@{
+            DefaultTTL        = $null
+            Tcp1323Opts       = $null
+            TcpMaxDupAcks     = $null
+            MaxUserPort       = $null
+            TcpTimedWaitDelay = $null
+            SackOpts          = $null
+        }
+    }
+
+    $lanmanTemplate = [ordered]@{}
+    if ($registryDefaults -and $registryDefaults.LanmanServer) {
+        foreach ($name in $registryDefaults.LanmanServer.Keys) {
+            $lanmanTemplate[$name] = $null
+        }
+    }
+    if ($lanmanTemplate.Count -eq 0) {
+        $lanmanTemplate = [ordered]@{
+            autodisconnect = $null
+            Size           = $null
+            EnableOplocks  = $null
+            IRPStackSize   = $null
+        }
+    }
+
     $backup = [ordered]@{
         Version                = 3
         Created                = Get-Date
@@ -896,26 +929,14 @@ function Save-NetworkBackupState {
         NetworkDiscovery       = [ordered]@{ FirewallGroupDisabled = $null }
         AdapterAdvanced        = @()
         Hardcore               = [ordered]@{
-            TcpParameters       = [ordered]@{
-                DefaultTTL        = $null
-                Tcp1323Opts       = $null
-                TcpMaxDupAcks     = $null
-                MaxUserPort       = $null
-                TcpTimedWaitDelay = $null
-                SackOpts          = $null
-            }
+            TcpParameters       = $tcpParameterTemplate
             ServiceProvider     = [ordered]@{
                 LocalPriority = $null
                 HostsPriority = $null
                 DnsPriority   = $null
                 NetbtPriority = $null
             }
-            LanmanServer        = [ordered]@{
-                autodisconnect = $null
-                Size           = $null
-                EnableOplocks  = $null
-                IRPStackSize   = $null
-            }
+            LanmanServer        = $lanmanTemplate
             Winsock             = [ordered]@{
                 MinSockAddrLength = $null
                 MaxSockAddrLength = $null

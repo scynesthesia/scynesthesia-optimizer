@@ -31,6 +31,48 @@ function Convert-LinkSpeedToBits {
     return $null
 }
 
+function Get-NetworkRegistryDefaults {
+    param(
+        [int]$BuildNumber = [Environment]::OSVersion.Version.Build,
+        [switch]$IncludeCompatibilityPlaceholders
+    )
+
+    $tcpParameters = [ordered]@{
+        DefaultTTL        = 64
+        Tcp1323Opts       = 1
+        TcpMaxDupAcks     = 2
+        MaxUserPort       = 65534
+        TcpTimedWaitDelay = 30
+    }
+
+    $tcpSkipped = @()
+    if ($BuildNumber -ge 16299) {
+        $tcpParameters['SackOpts'] = 0
+    } else {
+        $tcpSkipped += [pscustomobject]@{
+            Name   = 'SackOpts'
+            Reason = "OS build $BuildNumber below 16299"
+        }
+
+        if ($IncludeCompatibilityPlaceholders) {
+            $tcpParameters['SackOpts'] = $null
+        }
+    }
+
+    $lanmanServer = [ordered]@{
+        autodisconnect = 0
+        Size           = 3
+        EnableOplocks  = 0
+        IRPStackSize   = 20
+    }
+
+    [pscustomobject]@{
+        TcpParameters = $tcpParameters
+        TcpSkipped    = $tcpSkipped
+        LanmanServer  = $lanmanServer
+    }
+}
+
 function Invoke-NetworkThrottlingShared {
     param(
         [pscustomobject]$Context,
@@ -709,4 +751,4 @@ function Invoke-AdvancedNetworkPipeline {
     return [pscustomobject]$result
 }
 
-Export-ModuleMember -Function Get-SharedNicRegistryPaths, Invoke-NagleRegistryUpdate, Invoke-NicPowerRegistryTweaks, Invoke-MsiModeOnce, Convert-LinkSpeedToBits, Set-NetAdapterAdvancedPropertySafe, Invoke-AdapterOffloadToggle, Invoke-AdvancedNetworkPipeline
+Export-ModuleMember -Function Get-SharedNicRegistryPaths, Invoke-NagleRegistryUpdate, Invoke-NicPowerRegistryTweaks, Invoke-MsiModeOnce, Convert-LinkSpeedToBits, Set-NetAdapterAdvancedPropertySafe, Invoke-AdapterOffloadToggle, Invoke-AdvancedNetworkPipeline, Get-NetworkRegistryDefaults

@@ -199,20 +199,16 @@ function Set-TcpIpAdvancedParameters {
     try {
         $buildNumber = [Environment]::OSVersion.Version.Build
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
-        $values = @{
-            DefaultTTL          = 64
-            Tcp1323Opts         = 1
-            TcpMaxDupAcks       = 2
-            MaxUserPort         = 65534
-            TcpTimedWaitDelay   = 30
-        }
+        $defaults = Get-NetworkRegistryDefaults -BuildNumber $buildNumber
+        $values = if ($defaults) { $defaults.TcpParameters } else { @{} }
 
-        if ($buildNumber -ge 16299) {
-            $values['SackOpts'] = 0
-        } else {
-            Write-Host "  [!] SackOpts skipped for build $buildNumber to maintain compatibility." -ForegroundColor Yellow
-            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
-                Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "SackOpts tweak skipped: OS build $buildNumber below 16299"
+        if ($defaults -and $defaults.TcpSkipped) {
+            foreach ($skip in $defaults.TcpSkipped) {
+                $reason = if ($skip.Reason) { $skip.Reason } else { "Compatibility safeguard for build $buildNumber." }
+                Write-Host "  [!] $($skip.Name) skipped: $reason" -ForegroundColor Yellow
+                if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                    Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "$($skip.Name) tweak skipped: $reason"
+                }
             }
         }
 
@@ -328,11 +324,15 @@ function Optimize-LanmanServer {
     try {
         $runContext = Get-RunContext -Context $Context
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters'
-        $values = @{
-            autodisconnect = 0
-            Size           = 3
-            EnableOplocks  = 0
-            IRPStackSize   = 20
+        $defaults = Get-NetworkRegistryDefaults
+        $values = if ($defaults) { $defaults.LanmanServer } else { @{} }
+        if (-not $values -or $values.Count -eq 0) {
+            $values = @{
+                autodisconnect = 0
+                Size           = 3
+                EnableOplocks  = 0
+                IRPStackSize   = 20
+            }
         }
 
         foreach ($entry in $values.GetEnumerator()) {

@@ -14,6 +14,18 @@ function Get-HardwareProfile {
         if ($logger) { Write-Log -Message $warning -Level 'Warning' }
     }
 
+    $onBatteryPower = $false
+    if ($battery) {
+        $batterySample = @($battery) | Select-Object -First 1
+        try {
+            $status = $batterySample.BatteryStatus
+            if ($null -ne $status) {
+                $statusCode = [int]$status
+                $onBatteryPower = @(1, 4, 5, 11) -contains $statusCode
+            }
+        } catch { }
+    }
+
     $system = $null
     try {
         $system = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
@@ -58,6 +70,7 @@ function Get-HardwareProfile {
 
     [pscustomobject]@{
         IsLaptop       = $battery -ne $null
+        OnBatteryPower = $onBatteryPower
         TotalMemoryGB  = $memoryGB
         MemoryCategory = if ($memoryGB -lt 6) { 'Low' } else { 'Normal' }
         HasSSD         = $hasSSD
