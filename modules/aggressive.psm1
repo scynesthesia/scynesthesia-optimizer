@@ -35,6 +35,7 @@ function Invoke-AggressiveTweaks {
     $context = Get-RunContext -Context $Context
     $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     Write-Section "Additional tweaks for slow PCs (more aggressive)"
+    $appxPackages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
 
     $hibernationWarning = "WARNING: Disabling hibernation on laptops will disable Fast Startup and may prevent the system from saving state if the battery dies."
     $hibernationPrompt = if ($HardwareProfile.IsLaptop) {
@@ -75,11 +76,11 @@ function Invoke-AggressiveTweaks {
     Write-Host "  [+] Additional debloat for slow PCs"
     $extra = Get-AppRemovalListFromConfig -Key "AggressiveTweaksRemove" -Context $context
     foreach ($a in $extra) {
-        $pkg = Get-AppxPackage -AllUsers -Name $a -ErrorAction SilentlyContinue
+        $pkg = $appxPackages | Where-Object { $_.Name -eq $a }
         if ($pkg) {
             Write-Host "    [+] Removing $a"
             try {
-                Get-AppxPackage -AllUsers -Name $a | Remove-AppxPackage -ErrorAction SilentlyContinue
+                $pkg | Remove-AppxPackage -ErrorAction SilentlyContinue
             } catch {
                 $FailedPackages.Value += $a
                 Write-Host "    [SKIPPED] $a" -ForegroundColor DarkGray
@@ -167,9 +168,7 @@ function Invoke-AggressiveTweaks {
     }
 
     if (Get-Confirmation "Do you use Copilot? If not, uninstall it?" 'n') {
-        $copilotPkgs = @()
-        $copilotPkgs += Get-AppxPackage -AllUsers -Name "Microsoft.Copilot" -ErrorAction SilentlyContinue
-        $copilotPkgs += Get-AppxPackage -AllUsers -Name "*Copilot*" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*Copilot*' }
+        $copilotPkgs = $appxPackages | Where-Object { $_.Name -like 'Microsoft.Copilot' -or $_.Name -like '*Copilot*' }
 
         if ($copilotPkgs.Count -eq 0) {
             Write-Host "  [ ] Copilot is not installed."

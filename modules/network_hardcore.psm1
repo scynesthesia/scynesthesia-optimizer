@@ -617,6 +617,8 @@ function Set-NicRegistryHardcore {
 
         $nagleResult = Invoke-NagleRegistryUpdate -Context (Get-RunContext -Context $Context) -Adapters ($nicPaths | ForEach-Object { $_.Adapter }) -LoggerPrefix '[NetworkHardcore]' -InvokeOnceId 'Nagle:Tcp'
 
+        $adaptersPendingReset = @()
+
         foreach ($item in $nicPaths) {
             $adapterName = $item.Adapter.Name
             $adapterProfile = Get-HardcoreAdapterProfile -Adapter $item.Adapter
@@ -685,6 +687,7 @@ function Set-NicRegistryHardcore {
             }
 
             if ($adapterChanged) {
+                $script:NicRegistryTweaksApplied = $true
                 $allowAggressiveReset = $true
                 if ($adapterProfile.IsFragile) {
                     $warning = "High-risk Wi-Fi chipset detected on $adapterName. Interrupt/offload resets can cause driver lockups or require a full reboot."
@@ -696,26 +699,33 @@ function Set-NicRegistryHardcore {
                 }
 
                 if ($allowAggressiveReset) {
-                    try {
-                        & cmd.exe /c 'netsh int ip reset' 2>&1 | Out-Null
-                        & cmd.exe /c 'netsh winsock reset' 2>&1 | Out-Null
-                        Write-Host "    [+] Network stack cache cleared (IP/Winsock reset)" -ForegroundColor Green
-                    } catch {
-                        Invoke-ErrorHandler -Context "Resetting network stack for $adapterName" -ErrorRecord $_
+                    $adaptersPendingReset += [pscustomobject]@{
+                        Name    = $adapterName
+                        Adapter = $item.Adapter
                     }
-
-                    try {
-                        Disable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
-                        Start-Sleep -Seconds 3
-                        Enable-NetAdapter -Name $adapterName -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
-                        Write-Host "    [+] Adapter reset to reload driver settings" -ForegroundColor Green
-                    } catch {
-                        Invoke-ErrorHandler -Context "Resetting adapter $adapterName" -ErrorRecord $_
-                    }
-                    $script:NicRegistryTweaksApplied = $true
                 } else {
                     Write-Host "    [!] Registry tweaks applied without forcing resets; reboot or manual adapter toggle may be required for $adapterName." -ForegroundColor Yellow
-                    $script:NicRegistryTweaksApplied = $true
+                }
+            }
+        }
+
+        if ($adaptersPendingReset.Count -gt 0) {
+            try {
+                & cmd.exe /c 'netsh int ip reset' 2>&1 | Out-Null
+                & cmd.exe /c 'netsh winsock reset' 2>&1 | Out-Null
+                Write-Host "  [+] Network stack cache cleared (IP/Winsock reset)" -ForegroundColor Green
+            } catch {
+                Invoke-ErrorHandler -Context 'Resetting network stack' -ErrorRecord $_
+            }
+
+            foreach ($pending in ($adaptersPendingReset | Sort-Object -Property Name -Unique)) {
+                try {
+                    Disable-NetAdapter -Name $pending.Name -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
+                    Start-Sleep -Seconds 3
+                    Enable-NetAdapter -Name $pending.Name -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
+                    Write-Host "    [+] Adapter reset to reload driver settings ($($pending.Name))" -ForegroundColor Green
+                } catch {
+                    Invoke-ErrorHandler -Context "Resetting adapter $($pending.Name)" -ErrorRecord $_
                 }
             }
         }
