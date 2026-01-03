@@ -350,6 +350,18 @@ function Write-EndOfSessionSummary {
         Write-Host "[ ] No guard-enforced skips recorded." -ForegroundColor DarkGray
     }
 
+    $highRiskStatuses = @()
+    foreach ($item in $declined) { $highRiskStatuses += "Declined: $item" }
+    foreach ($item in $guards) { $highRiskStatuses += "Blocked: $item" }
+    if ($highRiskStatuses.Count -gt 0) {
+        Write-Host "[!] High-risk items requiring follow-up:" -ForegroundColor Yellow
+        foreach ($item in ($highRiskStatuses | Select-Object -Unique)) {
+            Write-Host "    - $item" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[ ] No high-risk prompts were declined or blocked." -ForegroundColor DarkGray
+    }
+
     $rollbackNote = "Service/netsh changes rely on the network backup at $networkBackupPath for restoration via the Rollback or Network menu."
     if ($serviceChanges -gt 0 -or $netshChanges -gt 0) {
         Write-Host "[Reminder] $rollbackNote" -ForegroundColor Magenta
