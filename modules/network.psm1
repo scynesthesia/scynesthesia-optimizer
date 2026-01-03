@@ -180,22 +180,32 @@ function Disable-NetBIOS {
 
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
-    foreach ($adapter in $adapters) {
-        try {
-            $cim = Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter "Index=$($adapter.ifIndex)" -ErrorAction Stop
+    try {
+        $cimLookup = @{}
+        Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter "IPEnabled=True" -ErrorAction Stop |
+            ForEach-Object { $cimLookup[$_.Index] = $_ }
+
+        $adapters | ForEach-Object {
+            $adapter = $_
+            $cim = $cimLookup[$adapter.ifIndex]
             if (-not $cim) { continue }
-            $result = Invoke-CimMethod -InputObject $cim -MethodName SetTcpipNetbios -Arguments @{ TcpipNetbiosOptions = 2 } -ErrorAction Stop
-            if ($result.ReturnValue -eq 0) {
-                Write-Host "  [+] NetBIOS disabled on $($adapter.Name)." -ForegroundColor Green
-                if ($logger) {
-                    Write-Log "[Network] NetBIOS disabled on $($adapter.Name) via SetTcpipNetbios." 
+
+            try {
+                $result = Invoke-CimMethod -InputObject $cim -MethodName SetTcpipNetbios -Arguments @{ TcpipNetbiosOptions = 2 } -ErrorAction Stop
+                if ($result.ReturnValue -eq 0) {
+                    Write-Host "  [+] NetBIOS disabled on $($adapter.Name)." -ForegroundColor Green
+                    if ($logger) {
+                        Write-Log "[Network] NetBIOS disabled on $($adapter.Name) via SetTcpipNetbios." 
+                    }
+                } else {
+                    Write-Host "  [!] NetBIOS change on $($adapter.Name) returned code $($result.ReturnValue)." -ForegroundColor Yellow
                 }
-            } else {
-                Write-Host "  [!] NetBIOS change on $($adapter.Name) returned code $($result.ReturnValue)." -ForegroundColor Yellow
+            } catch {
+                Invoke-ErrorHandler -Context "Disabling NetBIOS on $($adapter.Name)" -ErrorRecord $_
             }
-        } catch {
-            Invoke-ErrorHandler -Context "Disabling NetBIOS on $($adapter.Name)" -ErrorRecord $_
         }
+    } catch {
+        Invoke-ErrorHandler -Context 'Retrieving adapter configurations for NetBIOS' -ErrorRecord $_
     }
 }
 
@@ -453,31 +463,35 @@ function Enable-RSS {
     }
 
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-    foreach ($adapter in $adapters) {
-        try {
-            $rssData = Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetAdapterRssSettingData' -Filter "Name='$($adapter.Name)'" -ErrorAction SilentlyContinue
-        } catch {
-            Invoke-ErrorHandler -Context "Checking RSS support on $($adapter.Name)" -ErrorRecord $_
-            continue
-        }
+    try {
+        $rssLookup = @{}
+        Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName 'MSFT_NetAdapterRssSettingData' -ErrorAction Stop |
+            ForEach-Object { $rssLookup[$_.Name] = $_ }
 
-        if (-not $rssData) {
-            Write-Host "  [i] RSS not supported/configurable for adapter '$($adapter.Name)'. Skipping RSS tweak." -ForegroundColor DarkGray
-            if ($logger) {
-                Write-Log "[Network] RSS not supported/configurable for adapter '$($adapter.Name)'." -Level 'Warning'
-            }
-            continue
-        }
+        $adapters | ForEach-Object {
+            $adapter = $_
+            $rssData = $rssLookup[$adapter.Name]
 
-        try {
-            Enable-NetAdapterRss -Name $adapter.Name -ErrorAction Stop | Out-Null
-            Write-Host "  [+] RSS enabled on $($adapter.Name)." -ForegroundColor Green
-            if ($logger) {
-                Write-Log "[Network] RSS enabled on $($adapter.Name)."
+            if (-not $rssData) {
+                Write-Host "  [i] RSS not supported/configurable for adapter '$($adapter.Name)'. Skipping RSS tweak." -ForegroundColor DarkGray
+                if ($logger) {
+                    Write-Log "[Network] RSS not supported/configurable for adapter '$($adapter.Name)'." -Level 'Warning'
+                }
+                continue
             }
-        } catch {
-            Invoke-ErrorHandler -Context "Enabling RSS on $($adapter.Name)" -ErrorRecord $_
+
+            try {
+                Enable-NetAdapterRss -Name $adapter.Name -ErrorAction Stop | Out-Null
+                Write-Host "  [+] RSS enabled on $($adapter.Name)." -ForegroundColor Green
+                if ($logger) {
+                    Write-Log "[Network] RSS enabled on $($adapter.Name)."
+                }
+            } catch {
+                Invoke-ErrorHandler -Context "Enabling RSS on $($adapter.Name)" -ErrorRecord $_
+            }
         }
+    } catch {
+        Invoke-ErrorHandler -Context 'Enumerating adapters for RSS' -ErrorRecord $_
     }
 }
 
