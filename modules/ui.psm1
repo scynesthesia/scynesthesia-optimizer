@@ -393,6 +393,20 @@ function Invoke-ErrorHandler {
     $remediation = if ($hintMessages) { $hintMessages -join ' ' } else { 'Review the log entry for details and retry.' }
     $valueDisplay = Format-RegistryDataForLog -Data $Value
 
+    $logReference = if ($global:ScynesthesiaLogPath) { $global:ScynesthesiaLogPath } else { $script:DefaultLogPath }
+    $logLineNumber = $null
+    try {
+        if ($logReference) {
+            $logLineNumber = if (Test-Path -Path $logReference) {
+                [int]([System.IO.File]::ReadLines($logReference).Count + 1)
+            } else {
+                1
+            }
+        }
+    } catch {
+        $logLineNumber = $null
+    }
+
     $structured = [ordered]@{
         operation   = $Context
         path        = if ($Path) { $Path } else { '<unknown>' }
@@ -405,9 +419,13 @@ function Invoke-ErrorHandler {
         line        = $invocation?.ScriptLineNumber
     }
 
+    if ($logLineNumber) {
+        $structured['log_line'] = $logLineNumber
+    }
+
     Write-Log -Message "Operation failed: $Context" -Level 'Error' -Data $structured -NoConsole
 
-    $logReference = if ($global:ScynesthesiaLogPath) { $global:ScynesthesiaLogPath } else { $script:DefaultLogPath }
+    $logLocation = if ($logLineNumber) { "$logReference (line $logLineNumber)" } else { $logReference }
     $block = @(
         ''
         '=== Operation Error ==='
@@ -424,9 +442,14 @@ function Invoke-ErrorHandler {
 
     $block += @(
         "Remediation: $remediation"
-        "Log entry  : $logReference"
-        '========================'
+        "Log entry  : $logLocation"
     )
+
+    if ($logLineNumber) {
+        $block += "Transcript: Review around line $logLineNumber for the full failure context."
+    }
+
+    $block += '========================'
 
     foreach ($line in $block) { Write-Host $line -ForegroundColor Yellow }
 }
