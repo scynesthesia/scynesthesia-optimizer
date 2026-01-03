@@ -38,6 +38,25 @@ function Optimize-GamingScheduler {
     }
 }
 
+# Description: Detects thin-and-light laptops that are more sensitive to aggressive power overrides.
+# Parameters: HardwareProfile - Object returned by Get-HardwareProfile.
+# Returns: Boolean indicating whether a conservative preset should be used.
+function Test-ThinAndLightHardware {
+    param(
+        [Parameter(Mandatory)]
+        $HardwareProfile
+    )
+
+    if (-not $HardwareProfile) { return $false }
+    $isLaptop = $HardwareProfile.IsLaptop
+    if (-not $isLaptop) { return $false }
+
+    $memoryIsTight = $HardwareProfile.TotalMemoryGB -lt 16
+    $ssdOnly = $HardwareProfile.HasSSD -and -not $HardwareProfile.HasHDD
+
+    return $isLaptop -and ($memoryIsTight -or $ssdOnly)
+}
+
 
 # Description: Retrieves or creates the custom 'Scynesthesia Gaming Mode' power plan.
 # Parameters: None.
@@ -107,9 +126,13 @@ function Invoke-CustomGamingPowerSettings {
 
     $hardwareProfile = Get-HardwareProfile
     $isLaptop = $hardwareProfile -and $hardwareProfile.IsLaptop
+    $isThinAndLight = Test-ThinAndLightHardware -HardwareProfile $hardwareProfile
     if ($isLaptop) {
         Write-Host "  [!] Laptop detected: these settings increase power draw and temperatures." -ForegroundColor Yellow
         Write-Host "      Recommended only while plugged into AC power." -ForegroundColor Yellow
+    }
+    if ($isThinAndLight) {
+        Write-Host "  [!] Thin-and-light hardware detected: scaling back USB/PCIe overrides to reduce throttling risk." -ForegroundColor Yellow
     }
 
     $onBatteryPower = $hardwareProfile -and $hardwareProfile.OnBatteryPower
@@ -143,14 +166,16 @@ function Invoke-CustomGamingPowerSettings {
             powercfg /setacvalueindex $gamingGuid SUB_PROCESSOR 36687f9e-e3a5-4dbf-b1dc-15eb381c6863 0
 
             # 3) USB selective suspend OFF
+            $usbSelectiveSuspend = if ($isThinAndLight) { 1 } else { 0 }
             powercfg /setacvalueindex $gamingGuid `
                 2a737441-1930-4402-8d77-b2bebba308a3 `
-                48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0
+                48e6b7a6-50f5-4782-a5d4-53bb8f07e226 $usbSelectiveSuspend
 
             # 4) PCIe Link State OFF
+            $pcieLinkState = if ($isThinAndLight) { 1 } else { 0 }
             powercfg /setacvalueindex $gamingGuid `
                 501a4d13-42af-4429-9fd1-a8218c268e20 `
-                ee12f906-d277-404b-b6da-e5fa1a576df5 0
+                ee12f906-d277-404b-b6da-e5fa1a576df5 $pcieLinkState
 
             powercfg /setactive $gamingGuid
 
