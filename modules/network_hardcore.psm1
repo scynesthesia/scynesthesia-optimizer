@@ -188,6 +188,61 @@ function Get-NicLegacyDriverAssessment {
     return $result
 }
 
+# Description: Determines whether low-level socket tweaks should be skipped for compatibility.
+# Parameters: BuildNumber - Current OS build; Adapters - Optional list of adapters for fragility detection.
+# Returns: Collection of objects with Name/Reason for each skipped tweak.
+function Get-LowLevelSocketTweakSkips {
+    param(
+        [int]$BuildNumber,
+        [object[]]$Adapters
+    )
+
+    $skips = New-Object System.Collections.Generic.List[pscustomobject]
+    $addSkip = {
+        param($name, $reason)
+        if (-not ($skips | Where-Object { $_.Name -eq $name })) {
+            $skips.Add([pscustomobject]@{ Name = $name; Reason = $reason }) | Out-Null
+        }
+    }
+
+    if ($BuildNumber -lt 10240) {
+        & $addSkip 'DefaultTTL' "OS build $BuildNumber predates hardened Windows 10 socket defaults; leaving DefaultTTL untouched for VPN stability."
+        & $addSkip 'TcpMaxDupAcks' "OS build $BuildNumber predates hardened Windows 10 socket defaults; leaving TcpMaxDupAcks untouched for VPN stability."
+    }
+
+    $vpnAdapters = @()
+    try {
+        $vpnAdapters = Get-NetAdapter -ErrorAction SilentlyContinue |
+            Where-Object { $_.Status -eq 'Up' -and $_.InterfaceDescription -match '(?i)(vpn|tap|wireguard|secure socket tunneling|anyconnect|openvpn)' }
+    } catch { }
+    if ($vpnAdapters -and $vpnAdapters.Count -gt 0) {
+        $vpnNames = ($vpnAdapters | Select-Object -ExpandProperty Name) -join ', '
+        $reason = "Active VPN/virtual tunneling adapters detected ($vpnNames); skipping socket TTL/dup-ack tweaks to avoid encapsulation regressions."
+        & $addSkip 'DefaultTTL' $reason
+        & $addSkip 'TcpMaxDupAcks' $reason
+    }
+
+    $fragileAdapters = @()
+    foreach ($adapter in ($Adapters | Where-Object { $_ })) {
+        try {
+            $profile = Get-HardcoreAdapterProfile -Adapter $adapter
+            $legacy = Get-NicLegacyDriverAssessment -Adapter $adapter
+            if (($profile -and $profile.IsFragile) -or ($legacy -and $legacy.IsLegacy)) {
+                $fragileAdapters += $adapter
+            }
+        } catch { }
+    }
+
+    if ($fragileAdapters.Count -gt 0) {
+        $fragileNames = ($fragileAdapters | Select-Object -ExpandProperty Name -ErrorAction SilentlyContinue) -join ', '
+        $reason = "Fragile Wi-Fi/legacy NICs detected ($fragileNames); low-level socket tweaks left at defaults to avoid driver regressions."
+        & $addSkip 'DefaultTTL' $reason
+        & $addSkip 'TcpMaxDupAcks' $reason
+    }
+
+    return $skips
+}
+
 # Description: Applies advanced TCP/IP registry parameters for performance tuning.
 # Parameters: Context - Optional run context for reboot tracking; FailureTracker - Optional tracker for critical registry failures.
 # Returns: None. Sets reboot flag after changes.
@@ -198,17 +253,28 @@ function Set-TcpIpAdvancedParameters {
     )
     try {
         $buildNumber = [Environment]::OSVersion.Version.Build
+        $adapters = @()
+        try {
+            $adapters = Get-EligibleNetAdapters
+        } catch { }
         $path = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
         $defaults = Get-NetworkRegistryDefaults -BuildNumber $buildNumber
         $values = if ($defaults) { $defaults.TcpParameters } else { @{} }
 
+        $skips = New-Object System.Collections.Generic.List[pscustomobject]
         if ($defaults -and $defaults.TcpSkipped) {
-            foreach ($skip in $defaults.TcpSkipped) {
-                $reason = if ($skip.Reason) { $skip.Reason } else { "Compatibility safeguard for build $buildNumber." }
-                Write-Host "  [!] $($skip.Name) skipped: $reason" -ForegroundColor Yellow
-                if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
-                    Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "$($skip.Name) tweak skipped: $reason"
-                }
+            $defaults.TcpSkipped | ForEach-Object { $skips.Add($_) | Out-Null }
+        }
+        $socketSkips = Get-LowLevelSocketTweakSkips -BuildNumber $buildNumber -Adapters $adapters
+        foreach ($skip in $socketSkips) { $skips.Add($skip) | Out-Null }
+        foreach ($skip in $skips) {
+            if ($values.Contains($skip.Name)) {
+                $values.Remove($skip.Name)
+            }
+            $reason = if ($skip.Reason) { $skip.Reason } else { "Compatibility safeguard for build $buildNumber." }
+            Write-Host "  [!] $($skip.Name) skipped: $reason" -ForegroundColor Yellow
+            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "$($skip.Name) tweak skipped: $reason"
             }
         }
 
