@@ -499,11 +499,13 @@ function Run-SafePreset {
 
     Write-Section "Starting Preset 1: Safe"
     $restoreStatus = New-RestorePointSafe
-    if (-not $restoreStatus.Created) {
-        Write-Warning "Restore point not created. Safe preset will continue without a rollback checkpoint."
-        Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Safe preset" | Out-Null
-    } else {
-        Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Safe preset" | Out-Null
+    Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Safe preset" | Out-Null
+    if (-not ($restoreStatus -and $restoreStatus.Created)) {
+        $continueWithoutRestore = Get-Confirmation -Question "No se pudo crear un punto de restauración. ¿Deseas continuar bajo tu propio riesgo?" -Default 'n'
+        if (-not $continueWithoutRestore) {
+            Write-Host "[!] Safe preset aborted by user because a restore point could not be created." -ForegroundColor Yellow
+            return
+        }
     }
     Clear-TempFiles -Context $script:Context
 
