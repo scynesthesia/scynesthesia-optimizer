@@ -25,6 +25,7 @@ function New-RunContext {
         RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
         ServiceRollbackActions = [System.Collections.Generic.List[object]]::new()
         NetshRollbackActions = [System.Collections.Generic.List[object]]::new()
+        NetworkHardwareRollbackActions = [System.Collections.Generic.List[object]]::new()
         NonRegistryChanges = @{
             ServiceState = @{}
             NetshGlobal  = @{}
@@ -234,6 +235,14 @@ function Initialize-RollbackCollections {
         }
     }
 
+    if (-not $runContext.PSObject.Properties.Name.Contains('NetworkHardwareRollbackActions') -or -not $runContext.NetworkHardwareRollbackActions) {
+        if ($runContext.PSObject.Properties.Name.Contains('NetworkHardwareRollbackActions')) {
+            $runContext.NetworkHardwareRollbackActions = [System.Collections.Generic.List[object]]::new()
+        } else {
+            $runContext | Add-Member -Name NetworkHardwareRollbackActions -MemberType NoteProperty -Value ([System.Collections.Generic.List[object]]::new())
+        }
+    }
+
     return $runContext
 }
 
@@ -331,11 +340,17 @@ function Save-RollbackState {
         $netshRecords = @($runContext.NetshRollbackActions)
     }
 
+    $networkHardwareRecords = @()
+    if ($runContext.NetworkHardwareRollbackActions) {
+        $networkHardwareRecords = @($runContext.NetworkHardwareRollbackActions)
+    }
+
     $payload = [pscustomobject]@{
         LastUpdated = (Get-Date).ToString('o')
         Registry    = $registryRecords
         Services    = $serviceRecords
         Netsh       = $netshRecords
+        NetworkHardware = $networkHardwareRecords
     }
 
     try {
@@ -392,6 +407,11 @@ function Restore-RollbackState {
             $netshRecords = @($data.Netsh)
         }
 
+        $networkHardwareRecords = @()
+        if ($data -and $data.PSObject.Properties.Name -contains 'NetworkHardware' -and $data.NetworkHardware) {
+            $networkHardwareRecords = @($data.NetworkHardware)
+        }
+
         $list = [System.Collections.Generic.List[object]]::new()
         foreach ($record in $registryRecords) { [void]$list.Add($record) }
 
@@ -401,10 +421,14 @@ function Restore-RollbackState {
         $netshList = [System.Collections.Generic.List[object]]::new()
         foreach ($netRecord in $netshRecords) { [void]$netshList.Add($netRecord) }
 
+        $hardwareList = [System.Collections.Generic.List[object]]::new()
+        foreach ($hwRecord in $networkHardwareRecords) { [void]$hardwareList.Add($hwRecord) }
+
         $runContext = Initialize-RollbackCollections -Context $Context
         $runContext.RegistryRollbackActions = $list
         $runContext.ServiceRollbackActions = $serviceList
         $runContext.NetshRollbackActions = $netshList
+        $runContext.NetworkHardwareRollbackActions = $hardwareList
         return $true
     } catch {
         Write-Warning "Failed to restore rollback actions from $targetPath: $($_.Exception.Message)"
