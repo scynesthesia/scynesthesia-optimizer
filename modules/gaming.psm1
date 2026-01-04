@@ -63,7 +63,20 @@ function Test-ThinAndLightHardware {
     $memoryIsTight = $HardwareProfile.TotalMemoryGB -lt 16
     $ssdOnly = $HardwareProfile.HasSSD -and -not $HardwareProfile.HasHDD
 
-    return $isLaptop -and ($memoryIsTight -or $ssdOnly)
+    return $isLaptop -and ($memoryIsTight -or $ssdOnly -or (Test-ModernStandbySupported))
+}
+
+# Description: Detects Modern Standby (S0) capability to guard aggressive power overrides on laptops.
+# Parameters: None.
+# Returns: Boolean indicating Modern Standby support.
+function Test-ModernStandbySupported {
+    try {
+        $output = & powercfg /a 2>$null
+        if (-not $output) { return $false }
+        return ($output -join "`n") -match '(?i)standby \\(s0'
+    } catch {
+        return $false
+    }
 }
 
 
@@ -136,12 +149,16 @@ function Invoke-CustomGamingPowerSettings {
     $hardwareProfile = Get-HardwareProfile
     $isLaptop = $hardwareProfile -and $hardwareProfile.IsLaptop
     $isThinAndLight = Test-ThinAndLightHardware -HardwareProfile $hardwareProfile
+    $hasModernStandby = Test-ModernStandbySupported
     if ($isLaptop) {
         Write-Host "  [!] Laptop detected: these settings increase power draw and temperatures." -ForegroundColor Yellow
         Write-Host "      Recommended only while plugged into AC power." -ForegroundColor Yellow
     }
     if ($isThinAndLight) {
         Write-Host "  [!] Thin-and-light hardware detected: scaling back USB/PCIe overrides to reduce throttling risk." -ForegroundColor Yellow
+    }
+    if ($hasModernStandby) {
+        Write-Host "  [!] Modern Standby (S0) support detected: keeping some power safeguards to avoid firmware lockups." -ForegroundColor Yellow
     }
 
     $onBatteryPower = $hardwareProfile -and $hardwareProfile.OnBatteryPower
@@ -174,14 +191,14 @@ function Invoke-CustomGamingPowerSettings {
             powercfg /setacvalueindex $gamingGuid SUB_PROCESSOR 0cc5b647-c1df-4637-891a-dec35c318583 100
             powercfg /setacvalueindex $gamingGuid SUB_PROCESSOR 36687f9e-e3a5-4dbf-b1dc-15eb381c6863 0
 
-            # 3) USB selective suspend OFF
-            $usbSelectiveSuspend = if ($isThinAndLight) { 1 } else { 0 }
+            # 3) USB selective suspend OFF (kept on for thin-and-light/Modern Standby)
+            $usbSelectiveSuspend = if ($isThinAndLight -or $hasModernStandby) { 1 } else { 0 }
             powercfg /setacvalueindex $gamingGuid `
                 2a737441-1930-4402-8d77-b2bebba308a3 `
                 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 $usbSelectiveSuspend
 
-            # 4) PCIe Link State OFF
-            $pcieLinkState = if ($isThinAndLight) { 1 } else { 0 }
+            # 4) PCIe Link State OFF (kept on for thin-and-light/Modern Standby)
+            $pcieLinkState = if ($isThinAndLight -or $hasModernStandby) { 1 } else { 0 }
             powercfg /setacvalueindex $gamingGuid `
                 501a4d13-42af-4429-9fd1-a8218c268e20 `
                 ee12f906-d277-404b-b6da-e5fa1a576df5 $pcieLinkState
@@ -470,6 +487,8 @@ function Manage-GameQoS {
     Write-Section "Interactive QoS Rules (Expedited Forwarding)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     Write-Host "Tip: You can find the executable name under Task Manager > Details while the game is running." -ForegroundColor DarkGray
+    $invalidChars = [regex]::Escape(([string]::Join('', [System.IO.Path]::GetInvalidFileNameChars())))
+    $invalidPattern = "[${invalidChars}]"
 
     $qwaveServices = @('QWAVE', 'SDRSVC')
     $qwaveConfigured = $false
@@ -505,16 +524,29 @@ function Manage-GameQoS {
     }
 
     while ($true) {
-        $ruleName = Read-Host "Name of the rule (e.g., Fortnite, CS2):"
+        $ruleName = (Read-Host "Name of the rule (e.g., Fortnite, CS2):").Trim()
         if ([string]::IsNullOrWhiteSpace($ruleName)) {
             Write-Host "  [ ] No rule name provided. Exiting QoS manager." -ForegroundColor DarkGray
             break
         }
 
-        $executable = Read-Host "Executable name (e.g., FortniteClient-Win64-Shipping.exe):"
+        if ($ruleName -match $invalidPattern) {
+            Write-Host "  [!] Rule name contains invalid characters. Use letters, numbers, spaces, dots, dashes or underscores only." -ForegroundColor Yellow
+            continue
+        }
+
+        $executable = (Read-Host "Executable name (e.g., FortniteClient-Win64-Shipping.exe):").Trim()
         if ([string]::IsNullOrWhiteSpace($executable)) {
             Write-Host "  [ ] No executable provided. Exiting QoS manager." -ForegroundColor DarkGray
             break
+        }
+        if ($executable -match $invalidPattern -or $executable -match '[\\/]' ) {
+            Write-Host "  [!] Executable name contains invalid characters or path separators. Provide only the file name (e.g., game.exe)." -ForegroundColor Yellow
+            continue
+        }
+        if (-not ($executable -match '(?i)\.exe$')) {
+            Write-Host "  [!] Executable does not end with .exe; QoS rules may not apply. Enter a valid executable file name." -ForegroundColor Yellow
+            continue
         }
 
         $rulePath = "HKLM:\\Software\\Policies\\Microsoft\\Windows\\QoS\\$ruleName"
