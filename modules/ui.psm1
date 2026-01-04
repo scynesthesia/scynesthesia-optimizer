@@ -559,6 +559,60 @@ function Add-RegistryPermissionFailure {
     return $true
 }
 
+# Description: Produces a user-facing reason for why a registry write failed based on the result metadata.
+# Parameters: Result - Result object produced by Set-RegistryValueSafe.
+# Returns: String describing the likely reason for the failure.
+function Get-RegistryFailureReason {
+    param([pscustomobject]$Result)
+
+    if (-not $Result) { return 'Registry write failed for an unspecified reason.' }
+
+    $category = if ($Result.PSObject.Properties.Name -contains 'ErrorCategory') { $Result.ErrorCategory } else { $null }
+    switch ($category) {
+        'PermissionDenied' { return 'Blocked by permissions or Group Policy restrictions.' }
+        'PathResolution'   { return 'Registry hive or key not available on this system.' }
+        'InvalidData'      { return 'Registry rejected the requested data or type.' }
+        'MissingValueName' { return 'Registry value name was missing or invalid.' }
+        default            { return 'Registry access failed (see log for details).' }
+    }
+}
+
+# Description: Records a failed high-impact registry write in the session summary and surfaces the cause.
+# Parameters: Context - Run context used for summary tracking; Result - Result object produced by Set-RegistryValueSafe; OperationLabel - Friendly description for the attempted tweak.
+# Returns: Boolean indicating whether a failure was logged.
+function Register-HighImpactRegistryFailure {
+    param(
+        [pscustomobject]$Context,
+        [pscustomobject]$Result,
+        [string]$OperationLabel
+    )
+
+    if (-not $Result -or $Result.Success) { return $false }
+
+    $operation = if (-not [string]::IsNullOrWhiteSpace($OperationLabel)) {
+        $OperationLabel
+    } elseif ($Result.PSObject.Properties.Name -contains 'Operation' -and -not [string]::IsNullOrWhiteSpace($Result.Operation)) {
+        $Result.Operation
+    } else {
+        "$($Result.Path) -> $($Result.Name)"
+    }
+
+    $reason = Get-RegistryFailureReason -Result $Result
+    $message = "$operation skipped: $reason"
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    if ($logger) {
+        Write-Log "[RegistryGuard] $message" -Level 'Warning'
+    }
+    Write-Host "  [!] $message" -ForegroundColor Yellow
+
+    if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+        Add-SessionSummaryItem -Context $Context -Bucket 'FailedHighImpact' -Message $message
+    }
+
+    return $true
+}
+
 # Description: Safely creates or updates a registry value with validation, logging, rollback capture, and optional result reporting.
 # Parameters: Path - Registry path; Name - Value name; Value - Data to set; Type - Registry value type; Critical - Stop on error when specified; Context - optional run context that can hold RegistryRollbackActions; ReturnResult - emits a result object with Success/WasCreated/ErrorCategory.
 # Returns: Nothing by default; when -ReturnResult is passed, returns a PSCustomObject with Success, WasCreated, ErrorCategory, Path, and Name.
@@ -862,4 +916,4 @@ function Write-OutcomeSummary {
     }
 }
 
-Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary, New-RegistryFailureTracker, Register-RegistryResult, Write-RegistryFailureSummary, Add-RegistryPermissionFailure, Test-RegistryResultForPresetAbort
+Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary, New-RegistryFailureTracker, Register-RegistryResult, Write-RegistryFailureSummary, Add-RegistryPermissionFailure, Test-RegistryResultForPresetAbort, Get-RegistryFailureReason, Register-HighImpactRegistryFailure

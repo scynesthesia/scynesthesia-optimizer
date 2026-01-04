@@ -164,11 +164,11 @@ function Invoke-PerformanceBaseline {
         Set-RebootRequired -Context $Context | Out-Null
     }
     if (-not $prefetchSuccess) {
-        Write-Host "  [!] Prefetcher policy could not be updated." -ForegroundColor Yellow
+        Register-HighImpactRegistryFailure -Context $Context -Result $prefetcherResult -OperationLabel 'Configure prefetcher policy' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $prefetcherResult -PresetName $presetLabel -OperationLabel 'Configure prefetcher policy' -Critical) { return $true }
     }
     if (-not $superfetchSuccess) {
-        Write-Host "  [!] Superfetch policy could not be updated." -ForegroundColor Yellow
+        Register-HighImpactRegistryFailure -Context $Context -Result $superfetchResult -OperationLabel 'Configure superfetch policy' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $superfetchResult -PresetName $presetLabel -OperationLabel 'Configure superfetch policy' -Critical) { return $true }
     }
 
@@ -406,7 +406,7 @@ function Invoke-MpoVisualFixDisable {
         Set-RebootRequired -Context $Context | Out-Null
         Write-Host "  [+] MPO disabled for stability." -ForegroundColor Gray
     } else {
-        Write-Host "  [!] Failed to disable MPO (permissions required?)." -ForegroundColor Yellow
+        Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Disable MPO overlay test mode' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Disable MPO overlay test mode' -Critical) { return $true }
     }
     return $false
@@ -432,7 +432,7 @@ function Invoke-HagsPerformanceEnablement {
         Set-RebootRequired -Context $Context | Out-Null
         Write-Host "  [+] HAGS enabled for performance." -ForegroundColor Gray
     } else {
-        Write-Host "  [!] Failed to enable HAGS (permission denied?)." -ForegroundColor Yellow
+        Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Enable HAGS' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Enable HAGS' -Critical) { return $true }
     }
     return $false
@@ -458,7 +458,7 @@ function Invoke-PowerThrottlingDisablement {
         Set-RebootRequired -Context $Context | Out-Null
         Write-Host "  [+] Global power throttling disabled." -ForegroundColor Gray
     } else {
-        Write-Host "  [!] Failed to disable power throttling (permission denied?)." -ForegroundColor Yellow
+        Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Disable power throttling' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Disable power throttling' -Critical) { return $true }
     }
     return $false
@@ -484,7 +484,7 @@ function Invoke-PagingExecutivePerformance {
         Set-RebootRequired -Context $Context | Out-Null
         Write-Host "  [+] Kernel paging disabled (kept in RAM)." -ForegroundColor Gray
     } else {
-        Write-Host "  [!] Failed to disable kernel paging (permission denied?)." -ForegroundColor Yellow
+        Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Disable kernel paging' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Disable kernel paging' -Critical) { return $true }
     }
     return $false

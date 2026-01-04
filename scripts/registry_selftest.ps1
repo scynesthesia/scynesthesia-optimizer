@@ -36,7 +36,18 @@ try {
 
     foreach ($test in $tests) {
         Write-Host "[+] Writing $($test.Name) as $($test.Type)" -ForegroundColor Cyan
-        Set-RegistryValueSafe -Path $testPath -Name $test.Name -Value $test.Value -Type $test.Type -Context $context -Critical
+        $writeResult = Set-RegistryValueSafe -Path $testPath -Name $test.Name -Value $test.Value -Type $test.Type -Context $context -Critical -ReturnResult -OperationLabel "Self-test: $($test.Name)"
+        if (-not ($writeResult -and $writeResult.Success)) {
+            $reason = Get-RegistryFailureReason -Result $writeResult
+            Write-Host "    [!] Write failed for $($test.Name): $reason" -ForegroundColor Yellow
+            $results += [pscustomobject]@{
+                Name         = $test.Name
+                ExpectedType = $test.Type.ToString()
+                ActualType   = '(write failed)'
+                Matches      = $false
+            }
+            continue
+        }
 
         $valueName = if ($test.Name -eq '(default)') { '' } else { $test.Name }
         $readValue = $regKey.GetValue($valueName, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)

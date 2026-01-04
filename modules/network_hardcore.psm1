@@ -277,7 +277,7 @@ function Set-TcpIpAdvancedParameters {
                     Write-Host "  [+] $($entry.Key) set to $($entry.Value) in TCP parameters." -ForegroundColor Green
                     $anySuccess = $true
                 } else {
-                    Write-Host "  [!] Failed to set $($entry.Key) to $($entry.Value) in TCP parameters." -ForegroundColor Yellow
+                    Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel "TCP parameter: $($entry.Key)" | Out-Null
                 }
                 if ($abort) { break }
             } catch {
@@ -347,7 +347,7 @@ function Set-WinsockOptimizations {
                     Write-Host "  [+] $($entry.Key) set to $($entry.Value) for Winsock." -ForegroundColor Green
                     $anySuccess = $true
                 } else {
-                    Write-Host "  [!] Failed to set $($entry.Key) for Winsock." -ForegroundColor Yellow
+                    Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel "Winsock parameter: $($entry.Key)" | Out-Null
                 }
                 if ($abort) { break }
             } catch {
@@ -397,7 +397,7 @@ function Optimize-LanmanServer {
                 if ($result -and $result.Success) {
                     Write-Host "  [+] $($entry.Key) set to $($entry.Value) for LanmanServer." -ForegroundColor Green
                 } else {
-                    Write-Host "  [!] Failed to set $($entry.Key) for LanmanServer." -ForegroundColor Yellow
+                    Register-HighImpactRegistryFailure -Context $runContext -Result $result -OperationLabel "LanmanServer: $($entry.Key)" | Out-Null
                 }
             } catch {
                 Invoke-ErrorHandler -Context "Setting LanmanServer $($entry.Key)" -ErrorRecord $_
@@ -708,7 +708,7 @@ function Set-NicRegistryHardcore {
                             Write-Host "    [+] $($_.Key) set to $($_.Value)" -ForegroundColor Green
                             $adapterChanged = $true
                         } else {
-                            Write-Host "    [!] Failed to set $($_.Key) on $adapterName" -ForegroundColor Yellow
+                            Register-HighImpactRegistryFailure -Context $runContext -Result $result -OperationLabel "NIC hardcore: $($_.Key)" | Out-Null
                         }
                     } catch {
                         Invoke-ErrorHandler -Context "Setting $($_.Key) on $adapterName" -ErrorRecord $_
@@ -890,7 +890,7 @@ function Set-WakeOnLanHardcore {
                         if ($result -and $result.Success) {
                             Write-Host "      [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
                         } else {
-                            Write-Host "      [!] Failed to set $($entry.Key) to $($entry.Value)." -ForegroundColor Yellow
+                            Register-HighImpactRegistryFailure -Context $runContext -Result $result -OperationLabel "WOL hardening: $($entry.Key)" | Out-Null
                         }
                     } catch {
                         Invoke-ErrorHandler -Context "Setting $($entry.Key) on $adapterName (WOL)" -ErrorRecord $_

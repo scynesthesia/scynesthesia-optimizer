@@ -127,7 +127,10 @@ function Invoke-NetworkThrottlingShared {
             Set-RebootRequired -Context $context | Out-Null
         }
     } else {
-        Write-Host "  [!] $FailureMessage" -ForegroundColor Yellow
+        Register-HighImpactRegistryFailure -Context $context -Result $result -OperationLabel $OperationLabel | Out-Null
+        if (-not [string]::IsNullOrWhiteSpace($FailureMessage)) {
+            Write-Host "  [!] $FailureMessage" -ForegroundColor Yellow
+        }
     }
 
     return $result
@@ -171,7 +174,7 @@ function Invoke-ServiceProviderPrioritiesShared {
                     Write-Log "$LoggerPrefix ServiceProvider $($entry.Key) set to $($entry.Value)."
                 }
             } else {
-                Write-Host "  [!] Failed to set $($entry.Key) in ServiceProvider." -ForegroundColor Yellow
+                Register-HighImpactRegistryFailure -Context $runContext -Result $result -OperationLabel "ServiceProvider: $($entry.Key)" | Out-Null
             }
             if ($abort) { break }
         } catch {
@@ -353,7 +356,7 @@ function Invoke-NicPowerRegistryTweaks {
                     if ($logger) { Write-Log "$LoggerPrefix $adapterName PnPCapabilities set to $PnPCapabilitiesValue." }
                     $adapterChanged = $true
                 } else {
-                    Write-Host "    [!] Failed to set PnPCapabilities for $adapterName (permission issue?)." -ForegroundColor Yellow
+                    Register-HighImpactRegistryFailure -Context $context -Result $pnPResult -OperationLabel "$LoggerPrefix $adapterName PnPCapabilities" | Out-Null
                 }
             }
         } catch {
@@ -374,7 +377,7 @@ function Invoke-NicPowerRegistryTweaks {
                         if ($logger) { Write-Log "$LoggerPrefix $adapterName $($entry.Key) set to $($entry.Value)." }
                         $adapterChanged = $true
                     } else {
-                        Write-Host "    [!] Failed to set $($entry.Key) for $adapterName (permission issue?)." -ForegroundColor Yellow
+                        Register-HighImpactRegistryFailure -Context $context -Result $valueResult -OperationLabel "$LoggerPrefix $adapterName $($entry.Key)" | Out-Null
                     }
                 }
             } catch {

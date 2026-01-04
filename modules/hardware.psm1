@@ -154,7 +154,7 @@ function Enable-MsiModeSafe {
                         }
                         $touched++
                     } else {
-                        Write-Host "  [!] Failed to enable MSI for: $($dev.FriendlyName)" -ForegroundColor Yellow
+                        Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel "Enable MSI for $($dev.FriendlyName)" | Out-Null
                     }
                 } else {
                     Write-Host "  [=] MSI already active for: $($dev.FriendlyName)" -ForegroundColor DarkGray
