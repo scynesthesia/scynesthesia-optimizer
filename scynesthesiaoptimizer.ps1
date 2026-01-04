@@ -2,6 +2,12 @@
 # Scynesthesia Windows Optimizer v1.0
 # Run this script as Administrator.
 
+# Allow optional debug behaviors.
+[CmdletBinding()]
+param(
+    [switch]$DebugModules
+)
+
 # ---------- 1. ADMIN CHECK ----------
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
     ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -42,8 +48,23 @@ try {
         }
 
         $moduleFileName = [System.IO.Path]::GetFileName($resolvedPath)
-        Import-Module $resolvedPath -Force -ErrorAction Stop
-        Write-Host "[OK] Module loaded: $moduleFileName" -ForegroundColor Green
+        $moduleName = [System.IO.Path]::GetFileNameWithoutExtension($moduleFileName)
+        $loadedModule = Get-Module -Name $moduleName -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $resolvedPath }
+
+        if ($loadedModule -and -not $DebugModules) {
+            Write-Host "[SKIP] Module already loaded: $moduleFileName (use -DebugModules to reload)" -ForegroundColor Yellow
+            continue
+        }
+
+        $isReloading = $DebugModules -and $loadedModule
+        if ($DebugModules) {
+            Import-Module $resolvedPath -Force -ErrorAction Stop
+            $status = if ($isReloading) { "reloaded (debug)" } else { "loaded (debug)" }
+            Write-Host "[OK] Module $status: $moduleFileName" -ForegroundColor Green
+        } else {
+            Import-Module $resolvedPath -ErrorAction Stop
+            Write-Host "[OK] Module loaded: $moduleFileName" -ForegroundColor Green
+        }
     }
 
     Write-Host "Modules loaded successfully." -ForegroundColor Green
