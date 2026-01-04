@@ -458,4 +458,95 @@ function Invoke-GamingOptimizations {
     Write-Host "[+] Global Gaming Optimizations complete." -ForegroundColor Magenta
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Disable-GameDVR, Set-FsoGlobalOverride, Invoke-GamingOptimizations
+# Description: Interactive creator for per-game QoS rules using DSCP 46 (Expedited Forwarding).
+# Parameters: Context - Run context for rollback tracking.
+# Returns: None. Registers registry and service changes for rollback via the provided context.
+function Manage-GameQoS {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "Interactive QoS Rules (Expedited Forwarding)"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    Write-Host "Tip: You can find the executable name under Task Manager > Details while the game is running." -ForegroundColor DarkGray
+
+    $qwaveServices = @('QWAVE', 'SDRSVC')
+    $qwaveConfigured = $false
+    foreach ($svcName in $qwaveServices) {
+        $service = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if (-not $service) { continue }
+        $qwaveConfigured = $true
+
+        try {
+            Add-ServiceRollbackAction -Context $Context -ServiceName $service.Name -StartupType $service.StartType.ToString() -Status $service.Status.ToString() | Out-Null
+        } catch { }
+
+        try {
+            if ($service.StartType.ToString() -ne 'Automatic') {
+                Set-Service -Name $service.Name -StartupType Automatic -ErrorAction Stop
+            }
+            if ($service.Status -ne 'Running') {
+                Start-Service -Name $service.Name -ErrorAction SilentlyContinue
+            }
+
+            $message = "[QoS] $($service.DisplayName) ensured on Automatic start."
+            Write-Host "  [+] $message" -ForegroundColor Cyan
+            if ($logger) { Write-Log $message }
+        } catch {
+            Invoke-ErrorHandler -Context "Configuring service $($service.Name)" -ErrorRecord $_
+        }
+
+        break
+    }
+
+    if (-not $qwaveConfigured) {
+        Write-Host "  [!] qWave service not found; unable to set Automatic startup." -ForegroundColor Yellow
+    }
+
+    while ($true) {
+        $ruleName = Read-Host "Name of the rule (e.g., Fortnite, CS2):"
+        if ([string]::IsNullOrWhiteSpace($ruleName)) {
+            Write-Host "  [ ] No rule name provided. Exiting QoS manager." -ForegroundColor DarkGray
+            break
+        }
+
+        $executable = Read-Host "Executable name (e.g., FortniteClient-Win64-Shipping.exe):"
+        if ([string]::IsNullOrWhiteSpace($executable)) {
+            Write-Host "  [ ] No executable provided. Exiting QoS manager." -ForegroundColor DarkGray
+            break
+        }
+
+        $rulePath = "HKLM:\\Software\\Policies\\Microsoft\\Windows\\QoS\\$ruleName"
+        $settings = @(
+            @{ Name = 'Version'; Value = '1.0' },
+            @{ Name = 'App Name'; Value = $executable },
+            @{ Name = 'Protocol'; Value = '*' },
+            @{ Name = 'Local Port'; Value = '*' },
+            @{ Name = 'Local IP'; Value = '*' },
+            @{ Name = 'Remote Port'; Value = '*' },
+            @{ Name = 'Remote IP'; Value = '*' },
+            @{ Name = 'DSCP Value'; Value = '46' }
+        )
+
+        $stringType = [Microsoft.Win32.RegistryValueKind]::String
+        $results = foreach ($entry in $settings) {
+            Set-RegistryValueSafe -Path $rulePath -Name $entry.Name -Value $entry.Value -Type $stringType -Context $Context -Critical -ReturnResult -OperationLabel "QoS rule '$ruleName' -> $($entry.Name)"
+        }
+
+        $failed = $results | Where-Object { -not ($_ -and $_.Success) }
+        if (-not $failed) {
+            Write-Host "  [+] QoS rule '$ruleName' for $executable created with DSCP 46." -ForegroundColor Magenta
+            if ($logger) {
+                Write-Log "[QoS] Rule '$ruleName' created for $executable (DSCP 46, wildcard endpoints)."
+            }
+        } else {
+            foreach ($result in $failed) {
+                Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $result.Operation | Out-Null
+            }
+            Write-Host "  [!] QoS rule '$ruleName' encountered errors. Check permissions or policy scope." -ForegroundColor Yellow
+        }
+    }
+}
+
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Disable-GameDVR, Set-FsoGlobalOverride, Invoke-GamingOptimizations, Manage-GameQoS
