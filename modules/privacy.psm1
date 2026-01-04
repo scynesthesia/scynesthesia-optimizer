@@ -59,6 +59,7 @@ function Invoke-PrivacyTelemetrySafe {
     )
     foreach ($entry in $criticalResults) {
         if (-not ($entry.Result -and $entry.Result.Success)) {
+            Register-HighImpactRegistryFailure -Context $context -Result $entry.Result -OperationLabel $entry.Label | Out-Null
             if (Test-RegistryResultForPresetAbort -Result $entry.Result -PresetName $presetLabel -OperationLabel $entry.Label -Critical) { return $true }
         }
     }
@@ -115,6 +116,7 @@ function Invoke-PrivacyTelemetrySafe {
 
     $powerShellTelemetryResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\PowerShellCore\Telemetry" "EnableTelemetry" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable PowerShell telemetry'
     if (-not ($powerShellTelemetryResult -and $powerShellTelemetryResult.Success)) {
+        Register-HighImpactRegistryFailure -Context $context -Result $powerShellTelemetryResult -OperationLabel 'Disable PowerShell telemetry' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $powerShellTelemetryResult -PresetName $presetLabel -OperationLabel 'Disable PowerShell telemetry' -Critical) { return $true }
     }
 
@@ -169,6 +171,7 @@ function Invoke-PreferencesSafe {
     }
 
     if (-not ($crashControlResult -and $crashControlResult.Success)) {
+        Register-HighImpactRegistryFailure -Context $context -Result $crashControlResult -OperationLabel 'Show crash control parameters' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $crashControlResult -PresetName $presetLabel -OperationLabel 'Show crash control parameters' -Critical) { return $true }
     }
 

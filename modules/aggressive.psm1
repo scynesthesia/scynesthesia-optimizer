@@ -72,7 +72,7 @@ function Invoke-AggressiveTweaks {
     Write-Host "  [+] Blocking background apps"
     $backgroundAppsResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsRunInBackground" 2 -Context $context -Critical -ReturnResult -OperationLabel 'Block background apps'
     if (-not ($backgroundAppsResult -and $backgroundAppsResult.Success)) {
-        Write-Host "  [!] Unable to block background apps (permission issue?)." -ForegroundColor Yellow
+        Register-HighImpactRegistryFailure -Context $context -Result $backgroundAppsResult -OperationLabel 'Block background apps' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $backgroundAppsResult -PresetName $presetLabel -OperationLabel 'Block background apps' -Critical) { return $true }
     }
 

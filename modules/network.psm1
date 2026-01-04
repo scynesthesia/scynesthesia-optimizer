@@ -127,7 +127,7 @@ function Set-IPvPreferenceIPv4First {
                 Write-Log "[Network] IPv4 preference set (DisabledComponents=0x20)."
             }
         } else {
-            Write-Host "      [!] Failed to record IPv4 preference in the registry." -ForegroundColor Yellow
+            Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Prefer IPv4 over IPv6' | Out-Null
         }
         if ($abort) {
             Write-RegistryFailureSummary -Tracker $FailureTracker
@@ -154,7 +154,7 @@ function Disable-LLMNR {
             Write-Log "[Network] Disabled LLMNR (EnableMulticast=0 under DNSClient policy)."
         }
     } else {
-        Write-Host "  [!] Failed to disable LLMNR (permission issue?)." -ForegroundColor Yellow
+        Register-HighImpactRegistryFailure -Context $context -Result $result -OperationLabel 'Disable LLMNR' | Out-Null
     }
 }
 
@@ -217,7 +217,7 @@ function Disable-NetworkTelemetry {
                 Write-Log "[Network] Telemetry collection disabled (AllowTelemetry=0)."
             }
         } else {
-            Write-Host "  [!] Failed to disable telemetry collection (permission issue?)." -ForegroundColor Yellow
+            Register-HighImpactRegistryFailure -Context $context -Result $result -OperationLabel 'Disable network telemetry' | Out-Null
         }
         foreach ($svc in 'DiagTrack','dmwappushservice') {
             try {
@@ -255,7 +255,7 @@ function Disable-DeliveryOptimization {
                 Write-Log "[Network] Delivery Optimization disabled (DODownloadMode=0)."
             }
         } else {
-            Write-Host "  [!] Failed to disable Delivery Optimization (permission issue?)." -ForegroundColor Yellow
+            Register-HighImpactRegistryFailure -Context $context -Result $result -OperationLabel 'Disable Delivery Optimization' | Out-Null
         }
 
         try {
@@ -290,7 +290,7 @@ function Set-ReservableBandwidth {
             Write-Log "[Network] Reservable bandwidth limit set to 0% (NonBestEffortLimit=0)."
         }
     } else {
-        Write-Host "  [!] Failed to set reservable bandwidth (permission issue?)." -ForegroundColor Yellow
+        Register-HighImpactRegistryFailure -Context $context -Result $result -OperationLabel 'Set reservable bandwidth to 0%' | Out-Null
     }
 }
 
@@ -312,7 +312,12 @@ function Disable-RemoteAssistance {
                 Write-Log "[Network] Remote Assistance disabled (fAllowToGetHelp=0)."
             }
         } else {
-            Write-Host "  [!] Remote Assistance keys could not be fully updated." -ForegroundColor Yellow
+            if (-not ($raResult -and $raResult.Success)) {
+                Register-HighImpactRegistryFailure -Context $context -Result $raResult -OperationLabel 'Disable Remote Assistance (Control)' | Out-Null
+            }
+            if (-not ($tsResult -and $tsResult.Success)) {
+                Register-HighImpactRegistryFailure -Context $context -Result $tsResult -OperationLabel 'Disable Remote Assistance (Policy)' | Out-Null
+            }
         }
     } catch {
         Invoke-ErrorHandler -Context 'Disabling Remote Assistance' -ErrorRecord $_

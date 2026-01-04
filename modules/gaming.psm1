@@ -29,7 +29,16 @@ function Optimize-GamingScheduler {
                 Write-Log "[Gaming] Foreground game priorities set (GPU Priority=8, Priority=6, Scheduling/SFIO=High)."
             }
         } else {
-            Write-Host "  [!] Scheduler priorities could not be fully applied (permission issue?)." -ForegroundColor Yellow
+            foreach ($entry in @(
+                @{ Result = $gpuPriority; Label = 'Gaming scheduler GPU priority' },
+                @{ Result = $priority; Label = 'Gaming scheduler priority' },
+                @{ Result = $schedCategory; Label = 'Gaming scheduler category' },
+                @{ Result = $sfioPriority; Label = 'Gaming scheduler SFIO priority' }
+            )) {
+                if (-not ($entry.Result -and $entry.Result.Success)) {
+                    Register-HighImpactRegistryFailure -Context $Context -Result $entry.Result -OperationLabel $entry.Label | Out-Null
+                }
+            }
         }
 
         Set-RebootRequired -Context $Context | Out-Null
@@ -252,7 +261,7 @@ function Set-UsbPowerManagementHardcore {
 
                 Set-RebootRequired -Context $Context | Out-Null
             } else {
-                Write-Host "  [!] Failed to adjust USB hub '$($hub.Name)' power flags." -ForegroundColor Yellow
+                Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel "USB hub power override: $($hub.Name)" | Out-Null
             }
         } catch {
             Invoke-ErrorHandler -Context "Setting USB power flags on $($hub.Name)" -ErrorRecord $_
@@ -286,7 +295,7 @@ function Optimize-HidLatency {
                 Write-Host "  [+] $($entry.Name) set to 100." -ForegroundColor Green
                 if ($logger) { Write-Log "[Gaming] $($entry.Name) set to 100 for HID latency optimization." }
             } else {
-                Write-Host "  [!] Failed to set $($entry.Name) (permission issue?)." -ForegroundColor Yellow
+                Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel "Set $($entry.Name) to 100" | Out-Null
             }
         } catch {
             Invoke-ErrorHandler -Context "Setting $($entry.Name) for HID latency" -ErrorRecord $_
@@ -327,7 +336,7 @@ function Optimize-ProcessorScheduling {
 
             Set-RebootRequired -Context $Context | Out-Null
         } else {
-            Write-Host "  [!] Processor scheduling tweak could not be applied." -ForegroundColor Yellow
+            Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Set Win32PrioritySeparation to 0x28' | Out-Null
         }
     } else {
         Write-Host "  [ ] Processor scheduling left unchanged." -ForegroundColor DarkGray
@@ -359,6 +368,9 @@ function Set-FsoGlobalOverride {
                 }
             } else {
                 Write-Host "  [!] Fullscreen Optimization changes could not be fully applied." -ForegroundColor Yellow
+                if (-not ($allowGameDvr -and $allowGameDvr.Success)) {
+                    Register-HighImpactRegistryFailure -Context $Context -Result $allowGameDvr -OperationLabel 'Disable GameDVR policy' | Out-Null
+                }
             }
         } else {
             $fseBehavior = Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Restore GameDVR_FSEBehaviorMode'
@@ -371,6 +383,9 @@ function Set-FsoGlobalOverride {
                 }
             } else {
                 Write-Host "  [!] Fullscreen Optimizations could not be restored completely." -ForegroundColor Yellow
+                if (-not ($allowGameDvr -and $allowGameDvr.Success)) {
+                    Register-HighImpactRegistryFailure -Context $Context -Result $allowGameDvr -OperationLabel 'Restore GameDVR policy' | Out-Null
+                }
             }
         }
 

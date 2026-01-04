@@ -118,10 +118,11 @@ function Initialize-SessionSummaryTracker {
             Applied            = [System.Collections.Generic.List[string]]::new()
             DeclinedHighImpact = [System.Collections.Generic.List[string]]::new()
             GuardedBlocks      = [System.Collections.Generic.List[string]]::new()
+            FailedHighImpact   = [System.Collections.Generic.List[string]]::new()
         })
     }
 
-    foreach ($key in @('Applied','DeclinedHighImpact','GuardedBlocks')) {
+    foreach ($key in @('Applied','DeclinedHighImpact','GuardedBlocks','FailedHighImpact')) {
         if (-not ($context.SessionSummary.$key)) {
             $context.SessionSummary.$key = [System.Collections.Generic.List[string]]::new()
         }
@@ -133,7 +134,7 @@ function Initialize-SessionSummaryTracker {
 function Add-SessionSummaryItem {
     param(
         [pscustomobject]$Context,
-        [ValidateSet('Applied','DeclinedHighImpact','GuardedBlocks')]
+        [ValidateSet('Applied','DeclinedHighImpact','GuardedBlocks','FailedHighImpact')]
         [string]$Bucket,
         [Parameter(Mandatory)][string]$Message
     )
@@ -350,9 +351,20 @@ function Write-EndOfSessionSummary {
         Write-Host "[ ] No guard-enforced skips recorded." -ForegroundColor DarkGray
     }
 
+    $failedHighImpact = if ($summary -and $summary.FailedHighImpact) { @($summary.FailedHighImpact | Where-Object { $_ } | Select-Object -Unique) } else { @() }
+    if ($failedHighImpact.Count -gt 0) {
+        Write-Host "[X] High-impact tweaks skipped due to write failures:" -ForegroundColor Yellow
+        foreach ($item in $failedHighImpact) {
+            Write-Host "    - $item" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[ ] No high-impact registry failures recorded." -ForegroundColor DarkGray
+    }
+
     $highRiskStatuses = @()
     foreach ($item in $declined) { $highRiskStatuses += "Declined: $item" }
     foreach ($item in $guards) { $highRiskStatuses += "Blocked: $item" }
+    foreach ($item in $failedHighImpact) { $highRiskStatuses += "Failed: $item" }
     if ($highRiskStatuses.Count -gt 0) {
         Write-Host "[!] High-risk items requiring follow-up:" -ForegroundColor Yellow
         foreach ($item in ($highRiskStatuses | Select-Object -Unique)) {
@@ -421,6 +433,7 @@ function Invoke-SafeOptionalPrompts {
                 Write-Host "[OK] $($opt.Description) applied." -ForegroundColor Green
             } else {
                 if ($opt.Critical) {
+                    Register-HighImpactRegistryFailure -Context $script:Context -Result $result -OperationLabel $opt.Description | Out-Null
                     if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel $opt.Description -Critical) { return $true }
                 }
                 Write-Host "[!] $($opt.Description) could not be applied (check permissions)." -ForegroundColor Yellow
