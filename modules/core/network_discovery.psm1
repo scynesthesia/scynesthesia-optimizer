@@ -78,9 +78,28 @@ function Get-NicRegistryMap {
     } catch {
         $isUnauthorized = ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException])
         if ($isUnauthorized -and $AllowOwnershipFallback) {
+            $advancedPropertyUsable = $false
+            $advancedCmd = Get-Command Get-NetAdapterAdvancedProperty -ErrorAction SilentlyContinue
+            if ($advancedCmd -and $adapters -and $adapters.Count -gt 0) {
+                try {
+                    Get-NetAdapterAdvancedProperty -Name $adapters[0].Name -ErrorAction Stop | Out-Null
+                    $advancedPropertyUsable = $true
+                } catch { }
+            }
+
+            if ($advancedPropertyUsable) {
+                $message = "Access denied reading $classPath; skipping ACL changes because adapter advanced properties are available. Falling back to driver-exposed properties instead of registry edits."
+                Write-Host "  [!] $message" -ForegroundColor Yellow
+                if ($logger) { Write-Log "$prefix $message" -Level 'Warning' }
+                if ($AccessDeniedFlag) { $AccessDeniedFlag.Value = $true }
+                return @()
+            }
+
             $ownershipAdjusted = $false
             $originalOwner = $null
             $ownerRef = $null
+            $accessRule = $null
+            $ruleApplied = $false
             try {
                 $adminsSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
                 $acl = Get-Acl -Path $classPath -ErrorAction Stop
@@ -88,9 +107,10 @@ function Get-NicRegistryMap {
                 if ($acl.Owner -ne $adminsSid.Value) {
                     $acl.SetOwner($adminsSid)
                 }
-                $rule = New-Object System.Security.AccessControl.RegistryAccessRule($adminsSid, 'ReadKey', 'ContainerInherit', 'None', 'Allow')
-                $acl.SetAccessRule($rule)
+                $accessRule = New-Object System.Security.AccessControl.RegistryAccessRule($adminsSid, 'ReadKey', 'ContainerInherit', 'None', 'Allow')
+                $acl.SetAccessRule($accessRule)
                 Set-Acl -Path $classPath -AclObject $acl -ErrorAction Stop
+                $ruleApplied = $true
                 $ownershipAdjusted = $true
                 Write-Host "  [i] Temporary ownership granted on $classPath for NIC discovery." -ForegroundColor Cyan
                 try {
@@ -105,12 +125,19 @@ function Get-NicRegistryMap {
             try {
                 $entries = Get-ChildItem -Path $classPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^\d{4}$' }
             } finally {
-                if ($ownershipAdjusted -and $ownerRef) {
+                if ($ruleApplied -or ($ownershipAdjusted -and $ownerRef)) {
                     try {
                         $acl = Get-Acl -Path $classPath -ErrorAction Stop
-                        $acl.SetOwner($ownerRef)
+                        if ($ruleApplied -and $accessRule) {
+                            $null = $acl.RemoveAccessRule($accessRule)
+                        }
+                        if ($ownerRef) {
+                            $acl.SetOwner($ownerRef)
+                        }
                         Set-Acl -Path $classPath -AclObject $acl -ErrorAction Stop
-                        Write-Host "  [i] Restored original ownership on $classPath after discovery." -ForegroundColor Cyan
+                        if ($ownershipAdjusted -and $ownerRef) {
+                            Write-Host "  [i] Restored original ownership on $classPath after discovery." -ForegroundColor Cyan
+                        }
                     } catch { }
                 }
             }
