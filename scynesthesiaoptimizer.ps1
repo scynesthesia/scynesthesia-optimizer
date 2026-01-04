@@ -5,7 +5,8 @@
 # Allow optional debug behaviors.
 [CmdletBinding()]
 param(
-    [switch]$DebugModules
+    [switch]$DebugModules,
+    [switch]$UnsafeMode
 )
 
 # ---------- 1. ADMIN CHECK ----------
@@ -92,6 +93,7 @@ $script:Context.ServiceRollbackActions = if ($Context.ServiceRollbackActions) { 
 $script:Context.NetshRollbackActions = if ($Context.NetshRollbackActions) { $Context.NetshRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
 $script:Context.NetworkHardwareRollbackActions = if ($Context.NetworkHardwareRollbackActions) { $Context.NetworkHardwareRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
 $script:Logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+$script:UnsafeMode = $UnsafeMode
 
 # Periodically persist rollback entries so they can survive unexpected termination.
 $script:RollbackPersistTimer = [System.Timers.Timer]::new()
@@ -193,6 +195,8 @@ function Set-HighImpactBlock {
     $script:HighImpactBlockReason = if ($Reason) { $Reason } else { "A restore point could not be created." }
     Write-Warning "[Safety] $($script:HighImpactBlockReason)"
     Write-Warning "[Safety] Aggressive and Hardcore changes are blocked until System Restore is enabled and a restore point is created. Only Safe tweaks are available."
+
+    Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "High-impact actions blocked: $($script:HighImpactBlockReason)"
 }
 
 function Handle-RestorePointGate {
@@ -532,13 +536,38 @@ function Run-SafePreset {
 
     Write-Section "Starting Preset 1: Safe"
     $restoreStatus = New-RestorePointSafe
-    Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Safe preset" | Out-Null
-    if (-not ($restoreStatus -and $restoreStatus.Created)) {
-        $continueWithoutRestore = Get-Confirmation -Question "No se pudo crear un punto de restauración. ¿Deseas continuar bajo tu propio riesgo?" -Default 'n'
-        if (-not $continueWithoutRestore) {
-            Write-Host "[!] Safe preset aborted by user because a restore point could not be created." -ForegroundColor Yellow
+    $restoreGatePassed = Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Safe preset"
+    if ($script:Logger) {
+        Write-Log -Message "Restore point gate evaluated." -Level (if ($restoreGatePassed) { 'Info' } else { 'Warning' }) -Data @{
+            preset         = 'Safe'
+            restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
+            restoreEnabled = if ($null -ne $restoreStatus) { [bool]$restoreStatus.Enabled } else { $null }
+            unsafeMode     = [bool]$script:UnsafeMode
+            gatePassed     = [bool]$restoreGatePassed
+        }
+    }
+
+    if (-not $restoreGatePassed) {
+        $proceedUnsafely = $false
+        if ($script:UnsafeMode) {
+            $proceedUnsafely = Get-Confirmation -Question "A restore point could not be created. Continue in UNSAFE mode anyway?" -Default 'n'
+            if ($script:Logger) {
+                Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level (if ($proceedUnsafely) { 'Warning' } else { 'Info' }) -Data @{
+                    preset         = 'Safe'
+                    unsafeMode     = [bool]$script:UnsafeMode
+                    userConfirmed  = [bool]$proceedUnsafely
+                    restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
+                }
+            }
+        }
+
+        if (-not $proceedUnsafely) {
+            Write-Warning "[Safety] Safe preset aborted because a restore point is required. Re-run with -UnsafeMode to override."
+            Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "Safe preset blocked: restore point unavailable (UnsafeMode=$($script:UnsafeMode))"
             return
         }
+
+        Write-Warning "[Safety] Proceeding without a restore point due to -UnsafeMode." 
     }
     Clear-TempFiles -Context $script:Context
 
@@ -597,9 +626,38 @@ function Run-PCSlowPreset {
 
     Write-Section "Starting Preset 2: Slow PC / Aggressive"
     $restoreStatus = New-RestorePointSafe
-    if (-not (Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Aggressive preset")) {
-        Write-Warning "[Safety] Aggressive preset aborted because no restore point is available."
-        return
+    $restoreGatePassed = Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Aggressive preset"
+    if ($script:Logger) {
+        Write-Log -Message "Restore point gate evaluated." -Level (if ($restoreGatePassed) { 'Info' } else { 'Warning' }) -Data @{
+            preset         = 'Aggressive'
+            restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
+            restoreEnabled = if ($null -ne $restoreStatus) { [bool]$restoreStatus.Enabled } else { $null }
+            unsafeMode     = [bool]$script:UnsafeMode
+            gatePassed     = [bool]$restoreGatePassed
+        }
+    }
+
+    if (-not $restoreGatePassed) {
+        $proceedUnsafely = $false
+        if ($script:UnsafeMode) {
+            $proceedUnsafely = Get-Confirmation -Question "A restore point could not be created. Continue in UNSAFE mode anyway?" -Default 'n'
+            if ($script:Logger) {
+                Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level (if ($proceedUnsafely) { 'Warning' } else { 'Info' }) -Data @{
+                    preset         = 'Aggressive'
+                    unsafeMode     = [bool]$script:UnsafeMode
+                    userConfirmed  = [bool]$proceedUnsafely
+                    restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
+                }
+            }
+        }
+
+        if (-not $proceedUnsafely) {
+            Write-Warning "[Safety] Aggressive preset aborted because a restore point is required. Re-run with -UnsafeMode to override."
+            Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "Aggressive preset blocked: restore point unavailable (UnsafeMode=$($script:UnsafeMode))"
+            return
+        }
+
+        Write-Warning "[Safety] Proceeding without a restore point due to -UnsafeMode."
     }
     Clear-TempFiles -Context $script:Context
 
