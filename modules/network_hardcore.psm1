@@ -1196,14 +1196,35 @@ function Invoke-MtuToAdapters {
                 Write-Log "[NetworkHardcore] MTU set to $Mtu on $($adapter.Name) (IPv4)."
             }
 
-            $connectivityOk = $true
+            $connectivityOk = $false
+            $payloadSize = [math]::Max($Mtu - 28, 0)
+            $connectivityTargets = New-Object System.Collections.Generic.List[string]
+
             try {
-                $payloadSize = [math]::Max($Mtu - 28, 0)
-                $connectivityResult = Test-MtuSize -PayloadSize $payloadSize -Target '1.1.1.1'
-                $connectivityOk = ($connectivityResult -and $connectivityResult.Success)
-            } catch {
-                Invoke-ErrorHandler -Context "Validating connectivity after MTU change on $($adapter.Name)" -ErrorRecord $_
-                $connectivityOk = $false
+                $gateway = Get-NetRoute -InterfaceIndex $adapter.ifIndex -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty NextHop -ErrorAction SilentlyContinue | Where-Object { $_ -and $_ -ne '0.0.0.0' } | Select-Object -First 1
+                if ($gateway) { $connectivityTargets.Add("$gateway") | Out-Null }
+            } catch { }
+
+            try {
+                $dnsServers = Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty ServerAddresses -ErrorAction SilentlyContinue
+                foreach ($dns in ($dnsServers | Where-Object { $_ })) { $connectivityTargets.Add("$dns") | Out-Null }
+            } catch { }
+
+            foreach ($fallbackTarget in @('1.1.1.1','8.8.8.8')) { $connectivityTargets.Add($fallbackTarget) | Out-Null }
+            $connectivityTargets = $connectivityTargets | Where-Object { $_ } | Select-Object -Unique
+
+            foreach ($target in $connectivityTargets) {
+                try {
+                    $connectivityResult = Test-MtuSize -PayloadSize $payloadSize -Target $target
+                    if ($connectivityResult -and $connectivityResult.Success) {
+                        $connectivityOk = $true
+                        break
+                    }
+                } catch {
+                    Invoke-ErrorHandler -Context "Validating connectivity after MTU change on $($adapter.Name) with target $target" -ErrorRecord $_
+                }
             }
 
             if (-not $connectivityOk -and $originalMtu) {
