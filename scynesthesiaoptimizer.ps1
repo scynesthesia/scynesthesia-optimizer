@@ -25,6 +25,10 @@ try {
     $modulesRoot = Join-Path $scriptRoot 'modules'
     $moduleMapPath = Join-Path $modulesRoot 'modules.map.psd1'
 
+    if (-not $script:ModuleHashCache) {
+        $script:ModuleHashCache = @{}
+    }
+
     if (-not (Test-Path $moduleMapPath)) {
         throw "Module map not found: $moduleMapPath"
     }
@@ -52,20 +56,29 @@ try {
         $moduleName = [System.IO.Path]::GetFileNameWithoutExtension($moduleFileName)
         $loadedModule = Get-Module -Name $moduleName -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $resolvedPath }
 
-        if ($loadedModule -and -not $DebugModules) {
-            Write-Host "[SKIP] Module already loaded: $moduleFileName (use -DebugModules to reload)" -ForegroundColor Yellow
+        $moduleHash = (Get-FileHash -Path $resolvedPath -Algorithm SHA256 -ErrorAction Stop).Hash
+        $cachedHash = $script:ModuleHashCache[$resolvedPath]
+        $moduleChanged = $cachedHash -and ($cachedHash -ne $moduleHash)
+        $shouldForceReload = $DebugModules -or $moduleChanged
+
+        if ($loadedModule -and -not $shouldForceReload) {
+            if (-not $cachedHash) { $script:ModuleHashCache[$resolvedPath] = $moduleHash }
+            Write-Host "[SKIP] Module already loaded: $moduleFileName (hash unchanged)" -ForegroundColor Yellow
             continue
         }
 
-        $isReloading = $DebugModules -and $loadedModule
-        if ($DebugModules) {
-            Import-Module $resolvedPath -Force -ErrorAction Stop
-            $status = if ($isReloading) { "reloaded (debug)" } else { "loaded (debug)" }
-            Write-Host "[OK] Module $status: $moduleFileName" -ForegroundColor Green
+        $importParams = @{ Path = $resolvedPath; ErrorAction = 'Stop' }
+        if ($shouldForceReload) { $importParams.Force = $true }
+
+        Import-Module @importParams
+        $script:ModuleHashCache[$resolvedPath] = $moduleHash
+
+        $status = if ($loadedModule) {
+            if ($DebugModules) { "reloaded (debug)" } elseif ($moduleChanged) { "reloaded (updated)" } else { "reloaded" }
         } else {
-            Import-Module $resolvedPath -ErrorAction Stop
-            Write-Host "[OK] Module loaded: $moduleFileName" -ForegroundColor Green
+            "loaded"
         }
+        Write-Host "[OK] Module $status: $moduleFileName" -ForegroundColor Green
     }
 
     Write-Host "Modules loaded successfully." -ForegroundColor Green
@@ -87,11 +100,10 @@ $Context.RollbackPersistencePath = Get-RollbackPersistencePath
 Restore-RollbackState -Context $Context -Path $Context.RollbackPersistencePath | Out-Null
 $script:RollbackPersistencePath = $Context.RollbackPersistencePath
 $script:Context = $Context
-Reset-NeedsReboot -Context $Context | Out-Null
-$script:Context.RegistryRollbackActions = if ($Context.RegistryRollbackActions) { $Context.RegistryRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
-$script:Context.ServiceRollbackActions = if ($Context.ServiceRollbackActions) { $Context.ServiceRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
-$script:Context.NetshRollbackActions = if ($Context.NetshRollbackActions) { $Context.NetshRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
-$script:Context.NetworkHardwareRollbackActions = if ($Context.NetworkHardwareRollbackActions) { $Context.NetworkHardwareRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
+$script:Context.RegistryRollbackActions = if ($null -ne $Context.RegistryRollbackActions) { $Context.RegistryRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
+$script:Context.ServiceRollbackActions = if ($null -ne $Context.ServiceRollbackActions) { $Context.ServiceRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
+$script:Context.NetshRollbackActions = if ($null -ne $Context.NetshRollbackActions) { $Context.NetshRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
+$script:Context.NetworkHardwareRollbackActions = if ($null -ne $Context.NetworkHardwareRollbackActions) { $Context.NetworkHardwareRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
 $script:Logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 $script:UnsafeMode = $UnsafeMode
 
