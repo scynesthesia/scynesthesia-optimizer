@@ -2,6 +2,9 @@
 if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
 }
+if (-not (Get-Module -Name 'context' -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $PSScriptRoot 'core/context.psm1') -Force -Scope Local
+}
 if (-not (Get-Module -Name 'network_discovery' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/network_discovery.psm1') -Force -Scope Local
 }
@@ -1052,12 +1055,23 @@ function Find-OptimalMtu {
         $best = $low
         $step = 1
         $success = $false
+        $maxPingRetries = 3
 
         while ($low -le $high) {
             $mid = [int](($low + $high) / 2)
             $mtuCandidate = $mid + 28
             Write-Host "  [>] MTU test step ${step}: payload $mid bytes (candidate MTU $mtuCandidate)" -ForegroundColor Cyan
-            $testResult = Test-MtuSize -PayloadSize $mid -Target $selectedTarget
+            $attempt = 0
+            $testResult = $null
+            do {
+                $attempt++
+                $testResult = Test-MtuSize -PayloadSize $mid -Target $selectedTarget
+                if ($testResult.Success -or $testResult.Fragmented) { break }
+                if ($attempt -lt $maxPingRetries) {
+                    Write-Host "      ~ Ping attempt $attempt/$maxPingRetries failed without fragmentation; retrying to rule out jitter." -ForegroundColor Gray
+                }
+            } while ($attempt -lt $maxPingRetries)
+
             if ($testResult.Success) {
                 $best = $mid
                 $success = $true
@@ -1082,6 +1096,12 @@ function Find-OptimalMtu {
         }
 
         $mtu = $best + 28
+        if ($mtu -lt 1400) {
+            $fallbackMtu = 1500
+            Write-Host "  [!] Discovered MTU $mtu is below the 1400-byte safety threshold. Retaining default MTU $fallbackMtu." -ForegroundColor Yellow
+            return [pscustomobject]@{ Mtu = $fallbackMtu; WasFallback = $true }
+        }
+
         Write-Host "  [+] Optimal MTU discovered: $mtu bytes" -ForegroundColor Green
         return [pscustomobject]@{ Mtu = $mtu; WasFallback = $false }
     } catch {
@@ -1096,10 +1116,49 @@ function Find-OptimalMtu {
 function Invoke-MtuToAdapters {
     param(
         [Parameter(Mandatory)][int]$Mtu,
-        [System.Collections.IEnumerable]$Adapters
+        [System.Collections.IEnumerable]$Adapters,
+        [pscustomobject]$Context
     )
+
+    $runContext = $null
+    try {
+        if ($Context) {
+            $runContext = Initialize-RollbackCollections -Context (Get-RunContext -Context $Context)
+        }
+    } catch { }
+
     foreach ($adapter in $Adapters) {
         try {
+            $originalMtu = $null
+            try {
+                $currentInterface = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction Stop
+                $originalMtu = $currentInterface.NlMtu
+            } catch { }
+
+            if ($runContext -and $originalMtu) {
+                $existingRecord = $runContext.NetworkHardwareRollbackActions | Where-Object {
+                    ($_.InterfaceIndex -eq $adapter.ifIndex) -or ($_.Name -eq $adapter.Name)
+                } | Select-Object -First 1
+
+                if (-not $existingRecord) {
+                    $record = [pscustomobject]@{
+                        Name                 = $adapter.Name
+                        InterfaceDescription = $adapter.InterfaceDescription
+                        InterfaceIndex       = $adapter.ifIndex
+                        MacAddress           = $adapter.MacAddress
+                        Properties           = @{}
+                        OriginalNlMtu        = $originalMtu
+                    }
+                    [void]$runContext.NetworkHardwareRollbackActions.Add($record)
+                } else {
+                    if (-not ($existingRecord.PSObject.Properties.Name -contains 'OriginalNlMtu')) {
+                        $existingRecord | Add-Member -Name OriginalNlMtu -MemberType NoteProperty -Value $originalMtu
+                    } elseif (-not $existingRecord.OriginalNlMtu) {
+                        $existingRecord.OriginalNlMtu = $originalMtu
+                    }
+                }
+            }
+
             Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu $Mtu -AddressFamily IPv4 -ErrorAction Stop | Out-Null
             Write-Host "  [+] MTU $Mtu applied to $($adapter.Name) (IPv4)." -ForegroundColor Green
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
@@ -1493,7 +1552,7 @@ function Invoke-NetworkTweaksHardcore {
         if ($mtuResult.WasFallback) {
             Write-Host "  [ ] Applying safe MTU fallback of $($mtuResult.Mtu) to avoid fragmentation issues." -ForegroundColor Gray
         }
-        Invoke-MtuToAdapters -Mtu $mtuResult.Mtu -Adapters @($adapters)
+        Invoke-MtuToAdapters -Mtu $mtuResult.Mtu -Adapters @($adapters) -Context $Context
     }
 
     Set-TcpCongestionProvider -Context $Context
