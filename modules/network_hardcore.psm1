@@ -1117,8 +1117,18 @@ function Invoke-MtuToAdapters {
     param(
         [Parameter(Mandatory)][int]$Mtu,
         [System.Collections.IEnumerable]$Adapters,
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [hashtable]$AdapterProfiles,
+        [hashtable]$LegacyAssessments
     )
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $mtuSafetyThreshold = 1400
+    if ($Mtu -lt $mtuSafetyThreshold) {
+        Write-Host "  [ ] MTU $Mtu is below the $mtuSafetyThreshold-byte safety threshold; skipping MTU changes." -ForegroundColor Gray
+        if ($logger) { Write-Log "[NetworkHardcore] MTU change skipped because $Mtu is below safety threshold $mtuSafetyThreshold." -Level 'Warning' }
+        return
+    }
 
     $runContext = $null
     try {
@@ -1128,6 +1138,27 @@ function Invoke-MtuToAdapters {
     } catch { }
 
     foreach ($adapter in $Adapters) {
+        $profile = $null
+        if ($AdapterProfiles -and $AdapterProfiles.ContainsKey($adapter.ifIndex)) {
+            $profile = $AdapterProfiles[$adapter.ifIndex]
+        }
+
+        $legacyInfo = $null
+        if ($LegacyAssessments -and $LegacyAssessments.ContainsKey($adapter.ifIndex)) {
+            $legacyInfo = $LegacyAssessments[$adapter.ifIndex]
+        }
+
+        $skipForRisk = ($profile -and $profile.IsFragile) -or ($legacyInfo -and $legacyInfo.IsLegacy)
+        if ($skipForRisk) {
+            $reasonParts = @()
+            if ($profile -and $profile.IsFragile) { $reasonParts += 'fragile wireless hardware' }
+            if ($legacyInfo -and $legacyInfo.IsLegacy) { $reasonParts += "legacy driver (${legacyInfo.Reason})" }
+            $reason = ($reasonParts -join '; ')
+            Write-Host "  [ ] Skipping MTU change on $($adapter.Name) due to $reason." -ForegroundColor Gray
+            if ($logger) { Write-Log "[NetworkHardcore] MTU skipped on $($adapter.Name): $reason." -Level 'Warning' }
+            continue
+        }
+
         try {
             $originalMtu = $null
             try {
@@ -1163,6 +1194,26 @@ function Invoke-MtuToAdapters {
             Write-Host "  [+] MTU $Mtu applied to $($adapter.Name) (IPv4)." -ForegroundColor Green
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
                 Write-Log "[NetworkHardcore] MTU set to $Mtu on $($adapter.Name) (IPv4)."
+            }
+
+            $connectivityOk = $true
+            try {
+                $payloadSize = [math]::Max($Mtu - 28, 0)
+                $connectivityResult = Test-MtuSize -PayloadSize $payloadSize -Target '1.1.1.1'
+                $connectivityOk = ($connectivityResult -and $connectivityResult.Success)
+            } catch {
+                Invoke-ErrorHandler -Context "Validating connectivity after MTU change on $($adapter.Name)" -ErrorRecord $_
+                $connectivityOk = $false
+            }
+
+            if (-not $connectivityOk -and $originalMtu) {
+                try {
+                    Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu $originalMtu -AddressFamily IPv4 -ErrorAction Stop | Out-Null
+                    Write-Host "  [!] Connectivity check failed after MTU change on $($adapter.Name); rolled back to $originalMtu." -ForegroundColor Yellow
+                    if ($logger) { Write-Log "[NetworkHardcore] Rolled back MTU on $($adapter.Name) to $originalMtu after failed connectivity check." -Level 'Warning' }
+                } catch {
+                    Invoke-ErrorHandler -Context "Rolling back MTU on $($adapter.Name)" -ErrorRecord $_
+                }
             }
         } catch {
             Invoke-ErrorHandler -Context "Applying MTU to $($adapter.Name)" -ErrorRecord $_
@@ -1435,14 +1486,25 @@ function Invoke-NetworkTweaksHardcore {
     }
 
     $legacyAssessments = @()
+    $adapterProfiles = @{ }
     foreach ($adapter in $adapters) {
         $assessment = Get-NicLegacyDriverAssessment -Adapter $adapter
         if ($assessment) {
             $legacyAssessments += $assessment
         }
+
+        try {
+            $adapterProfiles[$adapter.ifIndex] = Get-HardcoreAdapterProfile -Adapter $adapter
+        } catch { }
     }
     $legacyFlagged = $legacyAssessments | Where-Object { $_.IsLegacy }
     $legacyInstanceIds = $legacyFlagged | Where-Object { $_.InstanceId } | Select-Object -ExpandProperty InstanceId -Unique
+    $legacyAssessmentMap = @{}
+    foreach ($item in $legacyAssessments) {
+        if ($item.Adapter -and $null -ne $item.Adapter.ifIndex -and -not $legacyAssessmentMap.ContainsKey($item.Adapter.ifIndex)) {
+            $legacyAssessmentMap[$item.Adapter.ifIndex] = $item
+        }
+    }
     foreach ($item in $legacyFlagged) {
         $legacyMessage = "Legacy Driver Check: $($item.Adapter.Name) flagged ($($item.Reason)). Interrupt Moderation and MSI Mode changes will be skipped for this adapter."
         Write-Host "  [!] $legacyMessage" -ForegroundColor Yellow
@@ -1547,12 +1609,32 @@ function Invoke-NetworkTweaksHardcore {
         Remove-Item -Path $netshScriptPath -ErrorAction SilentlyContinue
     }
 
-    $mtuResult = Find-OptimalMtu
-    if ($mtuResult -and $mtuResult.Mtu) {
-        if ($mtuResult.WasFallback) {
-            Write-Host "  [ ] Applying safe MTU fallback of $($mtuResult.Mtu) to avoid fragmentation issues." -ForegroundColor Gray
+    $wifiAdapters = @($adapters | Where-Object { $adapterProfiles.ContainsKey($_.ifIndex) -and $adapterProfiles[$_.ifIndex].IsWifi })
+    $wiredAdapters = @($adapters | Where-Object { -not ($adapterProfiles.ContainsKey($_.ifIndex) -and $adapterProfiles[$_.ifIndex].IsWifi) })
+
+    $mtuAdapters = @()
+    if ($wiredAdapters.Count -gt 0) {
+        $mtuAdapters += $wiredAdapters
+    }
+    if ($wifiAdapters.Count -gt 0) {
+        if (Get-Confirmation "Include Wi-Fi adapters in MTU discovery and changes? This can destabilize some drivers." 'n') {
+            $mtuAdapters += $wifiAdapters
+        } else {
+            Write-Host "  [ ] Wi-Fi adapters excluded from MTU discovery and application by default." -ForegroundColor Gray
         }
-        Invoke-MtuToAdapters -Mtu $mtuResult.Mtu -Adapters @($adapters) -Context $Context
+    }
+
+    if ($mtuAdapters.Count -gt 0) {
+        $mtuResult = Find-OptimalMtu
+        if ($mtuResult -and $mtuResult.Mtu) {
+            if ($mtuResult.WasFallback) {
+                Write-Host "  [ ] Applying safe MTU fallback of $($mtuResult.Mtu) to avoid fragmentation issues." -ForegroundColor Gray
+            }
+
+            Invoke-MtuToAdapters -Mtu $mtuResult.Mtu -Adapters $mtuAdapters -Context $Context -AdapterProfiles $adapterProfiles -LegacyAssessments $legacyAssessmentMap
+        }
+    } else {
+        Write-Host "  [ ] Skipping MTU discovery and application because only wireless adapters were detected and Wi-Fi opt-in was declined." -ForegroundColor Gray
     }
 
     Set-TcpCongestionProvider -Context $Context
