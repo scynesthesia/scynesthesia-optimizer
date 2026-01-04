@@ -13,17 +13,7 @@ if (-not (Get-Module -Name 'network_shared' -ErrorAction SilentlyContinue)) {
 # Parameters: None.
 # Returns: Collection of eligible adapters or empty array on failure.
 function Get-EligibleNetAdapters {
-    try {
-        $adapters = Get-NetAdapter -Physical -ErrorAction Stop |
-            Where-Object {
-                $_.Status -eq 'Up' -and
-                $_.InterfaceDescription -notmatch '(?i)virtual|vmware|hyper-v|loopback|vpn|tap|wireguard|bluetooth'
-            }
-        return $adapters
-    } catch {
-        Invoke-ErrorHandler -Context 'Retrieving physical network adapters' -ErrorRecord $_
-        return @()
-    }
+    return Get-SharedPhysicalAdapters -RequireUp -LoggerPrefix '[NetworkHardcore]' -ErrorContext 'Retrieving physical network adapters'
 }
 
 # Description: Determines whether the current PowerShell session is elevated.
@@ -612,7 +602,7 @@ function Get-NicRegistryPaths {
         return @()
     }
 
-    return Get-SharedNicRegistryPaths -AdapterResolver { Get-EligibleNetAdapters } -AllowOwnershipFallback -LoggerPrefix '[NetworkHardcore]' -AccessDeniedFlag ([ref]$script:NicRegistryAccessDenied)
+    return Get-SharedNicRegistryDiscovery -RequireUp -AllowOwnershipFallback -LoggerPrefix '[NetworkHardcore]' -AccessDeniedFlag ([ref]$script:NicRegistryAccessDenied)
 }
 
 # Description: Applies hardcore NIC registry tweaks for power, wake, and latency behaviors.
