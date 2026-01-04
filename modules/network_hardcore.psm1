@@ -1055,6 +1055,11 @@ function Find-OptimalMtu {
         $gateway = & $getDefaultGateway
         $dnsCandidates = & $getDnsTargets
         $candidateTargets = New-Object System.Collections.Generic.List[string]
+        $probeStart = Get-Date
+        $maxProbeDuration = [TimeSpan]::FromSeconds(25)
+        $isProbeTimedOut = {
+            return ((Get-Date) - $probeStart) -gt $maxProbeDuration
+        }
         $addCandidate = {
             param($value)
             if ($null -ne $value -and "$value" -ne '') { $candidateTargets.Add("$value") | Out-Null }
@@ -1069,6 +1074,10 @@ function Find-OptimalMtu {
 
         $baseSuccess = $false
         foreach ($candidate in $candidateTargets) {
+            if (& $isProbeTimedOut) {
+                Write-Host "  [!] MTU probe timed out while selecting target. Using safe MTU fallback of 1500." -ForegroundColor Yellow
+                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = 'Probe timeout' }
+            }
             $probe = & $testBasicPing $candidate
             if ($probe.Success) {
                 if ($candidate -ne $Target) {
@@ -1084,6 +1093,11 @@ function Find-OptimalMtu {
             }
         }
 
+        if (& $isProbeTimedOut) {
+            Write-Host "  [!] MTU probe exceeded ${($maxProbeDuration.TotalSeconds)}s. Using safe default 1500." -ForegroundColor Yellow
+            return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = 'Probe timeout' }
+        }
+
         if (-not $baseSuccess) {
             Write-Host "  [!] ISP/Router blocks DF packets; using safe MTU fallback of 1500." -ForegroundColor Yellow
             return [pscustomobject]@{ Mtu = 1500; WasFallback = $true }
@@ -1097,6 +1111,10 @@ function Find-OptimalMtu {
         $maxPingRetries = 3
 
         while ($low -le $high) {
+            if (& $isProbeTimedOut) {
+                Write-Host "  [!] MTU probe exceeded ${($maxProbeDuration.TotalSeconds)}s. Using safe default 1500." -ForegroundColor Yellow
+                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = 'Probe timeout' }
+            }
             $mid = [int](($low + $high) / 2)
             $mtuCandidate = $mid + 28
             Write-Host "  [>] MTU test step ${step}: payload $mid bytes (candidate MTU $mtuCandidate)" -ForegroundColor Cyan
@@ -1518,6 +1536,18 @@ function Invoke-NetworkTweaksHardcore {
     if ($null -eq $Context) {
         $Context = New-RunContext
     }
+
+    # Capture IPv6 state for rollback before making optional changes.
+    $ipv6Bindings = @()
+    try {
+        $ipv6Bindings = Get-NetAdapterBinding -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue |
+            Select-Object -Property Name, Enabled
+    } catch { }
+    $ipv6WasEnabled = ($ipv6Bindings | Where-Object { $_.Enabled -eq $true }).Count -gt 0
+    try {
+        Add-NetshRollbackAction -Context $Context -Setting 'IPv6State' -Value (if ($ipv6WasEnabled) { 'enabled' } else { 'disabled' }) | Out-Null
+        Add-NetshRollbackAction -Context $Context -Setting 'IPv6Bindings' -Value $ipv6Bindings | Out-Null
+    } catch { }
 
     Write-Host "  [i] Scynesthesia prioriza IPv4, pero puedes apagar IPv6 por completo para eliminar ruido residual del stack (reversible)." -ForegroundColor Cyan
     if (Get-Confirmation "¿Desactivar IPv6 por completo para rendimiento extremo? (A+ en Bufferbloat)" 'n') {
