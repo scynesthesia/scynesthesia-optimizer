@@ -288,6 +288,21 @@ function Set-TcpIpAdvancedParameters {
             }
         }
 
+        try {
+            $ndisPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\Ndis\Parameters'
+            $rssBaseCpuValue = 1
+            $rssBaseCpuResult = Set-RegistryValueSafe -Path $ndisPath -Name 'RssBaseCpu' -Value $rssBaseCpuValue -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Critical -ReturnResult
+            Register-RegistryResult -Tracker $FailureTracker -Result $rssBaseCpuResult -Critical | Out-Null
+            if ($rssBaseCpuResult -and $rssBaseCpuResult.Success) {
+                Write-Host "  [+] RssBaseCpu fijado en $rssBaseCpuValue para aislar IRQs del núcleo 0." -ForegroundColor Green
+                $anySuccess = $true
+            } else {
+                Register-HighImpactRegistryFailure -Context $Context -Result $rssBaseCpuResult -OperationLabel 'RssBaseCpu hardening' | Out-Null
+            }
+        } catch {
+            Invoke-ErrorHandler -Context 'Setting RssBaseCpu' -ErrorRecord $_
+        }
+
         if ($FailureTracker -and $FailureTracker.Abort) {
             return
         }
@@ -387,11 +402,16 @@ function Optimize-LanmanServer {
         $values = if ($defaults) { $defaults.LanmanServer } else { @{} }
         if (-not $values -or $values.Count -eq 0) {
             $values = @{
-                autodisconnect = 0
-                Size           = 3
-                EnableOplocks  = 0
-                IRPStackSize   = 20
+                autodisconnect       = 0
+                Size                 = 3
+                EnableOplocks        = 0
+                IRPStackSize         = 20
+                SharingViolationDelay   = 0
+                SharingViolationRetries = 0
             }
+        } else {
+            if (-not $values.ContainsKey('SharingViolationDelay')) { $values['SharingViolationDelay'] = 0 }
+            if (-not $values.ContainsKey('SharingViolationRetries')) { $values['SharingViolationRetries'] = 0 }
         }
 
         foreach ($entry in $values.GetEnumerator()) {
@@ -667,6 +687,20 @@ function Set-NicRegistryHardcore {
             'RxAbsIntDelay'= '0'
         }
 
+        $nicHardeningCandidates = @{
+            'JumboPacket'          = '1514'
+            'FatChannelIntolerant' = '0'
+            'TransmitBuffers'      = '4096'
+            'ReceiveBuffers'       = '512'
+        }
+
+        $nicHardeningValues = @{}
+        foreach ($entry in $nicHardeningCandidates.GetEnumerator()) {
+            if (-not $powerOffloadRemaining.ContainsKey($entry.Key) -and -not $interruptDelays.ContainsKey($entry.Key)) {
+                $nicHardeningValues[$entry.Key] = $entry.Value
+            }
+        }
+
         $powerOffloadRemaining = @{}
         foreach ($entry in $powerOffload.GetEnumerator()) {
             if (-not $sharedPowerFlags.ContainsKey($entry.Key) -or $sharedPowerFlags[$entry.Key] -ne $entry.Value) {
@@ -689,6 +723,11 @@ function Set-NicRegistryHardcore {
             }
             foreach ($entry in $interruptDelays.GetEnumerator()) {
                 $targetValues[$entry.Key] = $entry.Value
+            }
+            foreach ($entry in $nicHardeningValues.GetEnumerator()) {
+                if (-not $targetValues.ContainsKey($entry.Key)) {
+                    $targetValues[$entry.Key] = $entry.Value
+                }
             }
 
             $existingProperties = $null
@@ -1390,6 +1429,36 @@ function Set-TcpCongestionProvider {
     }
 }
 
+# Description: Disables legacy IPv6 tunneling mechanisms (Teredo/ISATAP) via netsh.
+# Parameters: None.
+# Returns: None. Writes status messages for each action.
+function Disable-NetworkTunneling {
+    try {
+        Write-Host "  [>] Desactivando túneles heredados (Teredo/ISATAP)..." -ForegroundColor Magenta
+        $commands = @(
+            @{ Command = 'int teredo set state disabled'; Description = 'Teredo deshabilitado' },
+            @{ Command = 'int isatap set state disabled'; Description = 'ISATAP deshabilitado' }
+        )
+
+        foreach ($entry in $commands) {
+            try {
+                $output = & cmd.exe /c "netsh $($entry.Command)" 2>&1
+                $exitCode = $LASTEXITCODE
+                if ($exitCode -eq 0) {
+                    Write-Host "  [+] $($entry.Description)." -ForegroundColor Green
+                } else {
+                    Write-Host "  [!] netsh devolvió $exitCode al aplicar $($entry.Description)." -ForegroundColor Yellow
+                    if ($output) { Write-Host $output -ForegroundColor Yellow }
+                }
+            } catch {
+                Invoke-ErrorHandler -Context "Aplicando $($entry.Description)" -ErrorRecord $_
+            }
+        }
+    } catch {
+        Invoke-ErrorHandler -Context 'Deshabilitando túneles de red heredados' -ErrorRecord $_
+    }
+}
+
 # Description: Applies advanced network optimizations including registry, driver, MTU, and congestion tweaks.
 # Parameters: Context - Optional run context for reboot tracking.
 # Returns: None. Sets reboot flag due to extensive changes.
@@ -1450,6 +1519,23 @@ function Invoke-NetworkTweaksHardcore {
         $Context = New-RunContext
     }
 
+    Write-Host "  [i] Scynesthesia prioriza IPv4, pero puedes apagar IPv6 por completo para eliminar ruido residual del stack (reversible)." -ForegroundColor Cyan
+    if (Get-Confirmation "¿Desactivar IPv6 por completo para rendimiento extremo? (A+ en Bufferbloat)" 'n') {
+        try {
+            $output = & cmd.exe /c 'netsh int ipv6 set state disabled' 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  [+] IPv6 deshabilitado globalmente." -ForegroundColor Green
+            } else {
+                Write-Host "  [!] netsh devolvió $LASTEXITCODE al desactivar IPv6." -ForegroundColor Yellow
+                if ($output) { Write-Host $output -ForegroundColor Yellow }
+            }
+        } catch {
+            Invoke-ErrorHandler -Context 'Desactivando IPv6 global' -ErrorRecord $_
+        }
+    } else {
+        Write-Host "  [ ] IPv6 permanece habilitado (stack priorizado a IPv4 por Scynesthesia)." -ForegroundColor Magenta
+    }
+
     $failureTracker = New-RegistryFailureTracker -Name 'Network (Hardcore)'
 
     Set-TcpIpAdvancedParameters -Context $Context -FailureTracker $failureTracker
@@ -1461,6 +1547,7 @@ function Invoke-NetworkTweaksHardcore {
     if ($failureTracker.Abort) { Write-RegistryFailureSummary -Tracker $failureTracker; return }
     Optimize-LanmanServer -Context $Context
     Set-NetshHardcoreGlobals -Context $Context
+    Disable-NetworkTunneling
 
     $adapters = Get-EligibleNetAdapters
     if ($adapters.Count -eq 0) {
