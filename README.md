@@ -5,118 +5,103 @@
 ![Language](https://img.shields.io/badge/UI-English-3CB371)
 ![Status](https://img.shields.io/badge/Focus-Performance%20%7C%20Stability%20%7C%20Privacy-8A2BE2)
 
-A professional-grade, modular PowerShell 5.1 suite for Windows 10/11 that tunes performance, trims latency for gaming, and debloats safely. Scynesthesia pairs **hardware-aware logic** with **guided menus** so you can optimize confidently without breaking your OS.
+An authoritative, security-first, performance-obsessed PowerShell 5.1 suite for Windows 10/11. Scynesthesia Optimizer is a **modular Windows hardening and latency-tuning environment**, not a disposable batch script. It prioritizes reversibility, telemetry awareness, and predictable frametimes for gaming, streaming, and low-jitter networking.
+
+> [!NOTE]
+> All prompts and outputs are in English. Run from an **elevated PowerShell 5.1** session; elevation is requested if missing.
 
 ---
 
-## Overview
-Scynesthesia Optimizer is built for power users, creators, and competitive gamers who want **lower latency, leaner services, and consistent stability** without sacrificing restore options. The toolkit is organized into specialized modules (.psm1) that can run independently or through the guided launcher. Every change is gated by safety rails such as restore points, hardware detection, and reversible tweaks.
+## Run once (quick start)
+Execute directly—no manual cloning required.
 
-### Philosophy: Performance Without Regret
-- **Safety first**: creates restore points, uses non-destructive debloat lists, and favors reversible settings.
-- **Hardware-aware**: adapts to laptops/desktops, storage type, and device capabilities for MSI mode and power tuning.
-- **Modular by design**: focused modules let you run only what you need and extend the toolkit without editing the core.
-- **Focused UX**: all menus and prompts are provided in US English for clarity.
-
----
-
-## Core Modules
-| Area | What it covers | Example actions |
-| --- | --- | --- |
-| **Performance** | Kernel timers, MPO, HAGS, power throttling | Adjusts scheduler balance, toggles Hardware Accelerated GPU Scheduling, tunes power limits for foreground tasks |
-| **Network & Hardcore** | TCP tuning, MTU discovery, bufferbloat mitigation | Enables RSS/CTCP, discovers optimal MTU, sets `TCPNoDelay`/`TcpAckFrequency`, applies hardcore NIC power overrides |
-| **Gaming** | Input latency, scheduler priorities, FSO overrides | Tunes HID/USB polling latency, boosts game process priority, disables Fullscreen Optimizations for targeted titles |
-| **Services & Debloat** | Service silencing, telemetry opt-out, OEM cleanup | Disables noisy telemetry services, trims OEM bloat via curated lists, manages SysMain/hibernation by device type |
-| **Software & Updates** | Winget integration, update posture | Installs/removes software through winget, switches Windows Update to **Notify Only** to avoid surprise reboots |
-| **UI Tweaks** | Explorer and shell ergonomics | Restores classic context menu, adds **Take Ownership**, applies "Explorer Pro" options for faster navigation |
-
----
-
-## Key Features
-- **Modular architecture**: self-contained `.psm1` modules (performance, network, gaming, debloat, UI, repair) that can be run individually or through the main menu.
-- **Streamlined experience**: US English prompts, summaries, and confirmations throughout the CLI.
-- **Safety-first workflow**: restore point creation, optional backups, and hardware-aware branching to avoid risky tweaks on laptops or legacy drivers.
-- **"Unbreakable" logic**: prefers reversible registry edits, non-destructive app lists, and explicit user confirmations for hardcore or experimental lanes.
-- **Latency-aware defaults**: profiles optimized for consistent frametimes, predictable input response, and low network jitter.
-
----
-
-## Installation & Usage
-> Run from an **elevated PowerShell 5.1** session on Windows 10/11. The script will request admin if not already elevated.
-
-### One-liner (recommended)
 ```powershell
 start powershell -ArgumentList '-NoExit -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; irm https://raw.githubusercontent.com/scynesthesia/scynesthesia-optimizer/main/setup.ps1 | iex"'
 ```
 
-### Local clone
-```powershell
-# Clone
- git clone https://github.com/scynesthesia/scynesthesia-optimizer.git
- cd scynesthesia-optimizer
+> [!WARNING]
+> Network and registry changes require admin rights. A restore point is created before impactful actions when supported.
 
-# Launch the menu
- Set-ExecutionPolicy Bypass -Scope Process
- ./scynesthesiaoptimizer.ps1
+### Local workflow
+```powershell
+git clone https://github.com/scynesthesia/scynesthesia-optimizer.git
+cd scynesthesia-optimizer
+Set-ExecutionPolicy Bypass -Scope Process
+./scynesthesiaoptimizer.ps1
 ```
 
-### Requirements
-- PowerShell **5.1**
-- Windows **10/11**
-- Administrator privileges (for system-level tweaks, restore points, and winget installations)
+---
+
+## Architecture
+- **Modular PowerShell suite**: Windows 10/11 modules live in `modules/` and are dynamically loaded via `modules.map.psd1` to keep dependencies explicit and discoverable.
+- **Central `$Context`**: tracks persistence, hardware detection, prior state, and rollback metadata so modules can safely undo or summarize actions.
+- **Guided entry points**: `setup.ps1` bootstraps securely; `scynesthesiaoptimizer.ps1` routes to profiles and modules without editing core files.
+- **Non-destructive defaults**: registry writes go through guarded helpers, and hardware-aware branches avoid unsafe tweaks on unsupported systems.
 
 ---
 
-## Guided Experience
-1. Select a **profile**: Safe, Aggressive, Gaming, Network/Hardcore, or Repair.
-2. Confirm optional modules (e.g., hardcore network lane, MSI mode, debloat depth).
-3. Review summary prompts before applying changes.
+## Pillars
+
+### Network Hardcore
+- BBR support and TCP hygiene tuned for modern stacks.
+- Binary-search MTU discovery with safe fallbacks and rollback context captured.
+- Bufferbloat mitigation plus RSS base CPU pinning.
+- Optional IPv6 disablement logged to `$Context` for reliable reversal.
+
+### Gaming & Low Latency
+- Interactive QoS manager with DSCP 46 defaults for latency-critical traffic.
+- qWave autostart and network service alignment for games.
+- CPU/GPU priority helpers, HID/latency tweaks, and MSI awareness.
+- Game overlay silencing (GameDVR off) to keep render latency predictable.
+
+### Hardware Intelligence
+- Detects laptops and thin-and-light devices to keep defaults non-destructive.
+- Modern Standby awareness and battery safeguards before applying power or NIC overrides.
+- Applies aggressive modes only when thermals and power profiles allow safe operation.
+
+### Safety & Recovery
+- Restore points prior to high-impact changes when available.
+- `Set-RegistryValueSafe` for registry writes and sanity checks.
+- Network rollback actions captured in `$Context` alongside summaries for traceability.
+- Session summaries enumerate what changed and how to undo it.
 
 ---
 
-## Profiles at a Glance
-| Profile | Purpose | Notable actions |
-| --- | --- | --- |
-| **Safe** | Conservative defaults for daily use | Restore point, privacy hardening, safe debloat, hardware-aware SysMain/hibernation, keeps visuals intact |
-| **Aggressive** | Lean background footprint | Everything in Safe plus deeper debloat, faster service shutdown, disables background apps/visual effects |
-| **Gaming** | Low-latency add-on | Scheduler priority bias for games, Scynesthesia Gaming Mode power plan, HID/USB latency tweaks, MSI mode where supported |
-| **Network** | Latency-focused networking | RSS/CTCP, DNS hardening, Nagle off, MTU validation, bufferbloat mitigation |
-| **Hardcore Network** | Experimental edge | Dynamic MTU discovery via fragmentation tests, PnPCapabilities overrides, advanced TCP parameters |
+## Design philosophy: why safety-first matters for power users
+- **Predictable reversibility** beats raw aggressiveness; every hardcore toggle is paired with a documented rollback path.
+- **Hardware-awareness** prevents laptop battery damage and thermal runaway on thin devices.
+- **Performance with auditability**: session summaries and guarded helpers make tweaks explainable and repeatable.
 
-> Profiles are additive: apply **Safe** or **Aggressive**, then layer **Gaming** and **Network/Hardcore** modules as needed.
-
----
-
-## Safety Nets & Revert Paths
-- **Restore points**: created before impactful changes for quick rollback.
-- **Config-driven debloat**: app lists live in `config/apps.json`; edit or trim entries before running.
-- **Power plans reset**: `powercfg /restoredefaultschemes` restores stock plans if you want to undo gaming modes.
-- **Service toggles**: many services are disabled, not removed, making them easy to re-enable.
+| Gaming lane | Hardcore network lane |
+| --- | --- |
+| Prioritizes DSCP 46, HID latency, and foreground scheduler boosts | Pushes MTU/BBR/queue depth to the edge with rollback breadcrumbs |
+| Keeps visual fidelity unless explicitly disabled | Trades cosmetics for determinism; favors packet discipline over comfort |
+| Ideal for competitive play and streaming | Ideal for lab-grade jitter chasing with documented exit ramps |
 
 ---
 
-## Quick Module Map
-- `setup.ps1`: remote installer and bootstrapper.
-- `scynesthesiaoptimizer.ps1`: entry point and menu router.
-- `modules/`: specialized `.psm1` modules (performance, network, gaming, debloat, privacy, UI, repair, aggressive profiles).
-- `config/`: editable configs such as `apps.json` for debloat scope.
+## Safety & recovery practices
+- Restore points and reversible registry edits come first; destructive actions are avoided by default.
+- Non-destructive debloat lists and service toggles favor disablement over removal.
+- Network tweaks (MTU, IPv6, NIC power states) are tracked for explicit rollback instructions.
+
+> [!TIP]
+> If something feels off, rerun the optimizer, review the session summary, and select the rollback options captured in `$Context`.
 
 ---
 
-## Contributing
-Contributions are welcome in **English**. Please:
-1. Fork and work on a feature branch.
-2. Keep new tweaks modular within `modules/` and respect the safety/restore workflow.
-3. Document new flags or app list changes in comments or the README.
-4. Test on Windows (PowerShell 5.1) and include notes on the profiles/modules exercised.
+## Community extensibility
+1. Add a new module under `modules/` and export functions you want the launcher to surface.
+2. Register the module in `modules.map.psd1` so it can be discovered and loaded dynamically.
+3. Follow existing coding style: guarded registry writes, `$Context` updates for persistence/rollback, and English-only prompts.
+4. Keep changes modular—avoid editing core scripts unless you are extending routing or context behavior.
+5. Test on Windows 10/11 with PowerShell 5.1 and note which profiles/modules you exercised.
 
 ---
+
+## Support & issue reporting
+- Open an issue with your Windows build, PowerShell version, selected profile/module, and whether hardcore networking was enabled.
+- Contributions are welcome in English and should document any new flags or safety considerations.
 
 ## License
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
-
----
-
-## Support
-- Open an issue for bugs or feature requests; include PowerShell version, Windows build, and which modules you ran.
-- PR discussions are welcome in English.
