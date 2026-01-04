@@ -68,6 +68,7 @@ Reset-NeedsReboot -Context $Context | Out-Null
 $script:Context.RegistryRollbackActions = if ($Context.RegistryRollbackActions) { $Context.RegistryRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
 $script:Context.ServiceRollbackActions = if ($Context.ServiceRollbackActions) { $Context.ServiceRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
 $script:Context.NetshRollbackActions = if ($Context.NetshRollbackActions) { $Context.NetshRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
+$script:Context.NetworkHardwareRollbackActions = if ($Context.NetworkHardwareRollbackActions) { $Context.NetworkHardwareRollbackActions } else { [System.Collections.Generic.List[object]]::new() }
 $script:Logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
 # Periodically persist rollback entries so they can survive unexpected termination.

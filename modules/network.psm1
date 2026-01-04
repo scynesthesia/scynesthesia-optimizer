@@ -805,6 +805,123 @@ function Restore-NetshGlobalsFromMap {
     return $applied
 }
 
+# Captures adapter-level hardware settings used by network tweaks for rollback.
+function Save-NetworkHardwareSnapshot {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Context
+    )
+
+    $runContext = Initialize-RollbackCollections -Context (Get-RunContext -Context $Context)
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $adapters = Get-SharedPhysicalAdapters -RequireUp -LoggerPrefix '[Network]' -ErrorContext 'Capturing network hardware snapshot'
+    if (-not $adapters -or $adapters.Count -eq 0) {
+        Write-Host "[Rollback] No active physical adapters detected for snapshot." -ForegroundColor Yellow
+        return @()
+    }
+
+    $targets = @('Interrupt Moderation', 'Flow Control', 'Priority & VLAN', 'Receive Side Scaling')
+    $snapshotList = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($adapter in $adapters) {
+        $propertyMap = [ordered]@{}
+        try {
+            $advanced = Get-NetAdapterAdvancedProperty -Name $adapter.Name -ErrorAction Stop
+            foreach ($target in $targets) {
+                $match = $advanced | Where-Object { $_.DisplayName -eq $target } | Select-Object -First 1
+                if ($match -and -not $propertyMap.Contains($target)) {
+                    $propertyMap[$target] = $match.DisplayValue
+                }
+            }
+        } catch {
+            if ($logger) {
+                Write-Log "[Rollback] Failed to snapshot adapter properties for $($adapter.Name): $($_.Exception.Message)" -Level 'Warning'
+            }
+        }
+
+        $snapshot = [pscustomobject]@{
+            Name                 = $adapter.Name
+            InterfaceDescription = $adapter.InterfaceDescription
+            InterfaceIndex       = $adapter.ifIndex
+            MacAddress           = $adapter.MacAddress
+            Properties           = $propertyMap
+        }
+
+        [void]$snapshotList.Add($snapshot)
+    }
+
+    $runContext.NetworkHardwareRollbackActions = $snapshotList
+    $capturedAdapters = $snapshotList.Count
+    Write-Host "[Rollback] Captured network hardware snapshot for $capturedAdapters adapter(s)." -ForegroundColor Cyan
+    if ($logger) {
+        Write-Log "[Rollback] Captured network hardware snapshot" -Data @{ AdapterCount = $capturedAdapters }
+    }
+
+    return $snapshotList
+}
+
+# Restores adapter hardware settings captured by Save-NetworkHardwareSnapshot.
+function Restore-NetworkHardwareSnapshot {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Context
+    )
+
+    $runContext = Initialize-RollbackCollections -Context (Get-RunContext -Context $Context)
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $snapshots = @()
+    if ($runContext.PSObject.Properties.Name -contains 'NetworkHardwareRollbackActions' -and $runContext.NetworkHardwareRollbackActions) {
+        $snapshots = @($runContext.NetworkHardwareRollbackActions)
+    }
+
+    if (-not $snapshots -or $snapshots.Count -eq 0) {
+        Write-Host "[Rollback] No network hardware snapshot available to restore." -ForegroundColor Gray
+        return 0
+    }
+
+    $propertiesRestored = 0
+    $touchedAdapters = New-Object System.Collections.Generic.HashSet[string]
+
+    foreach ($snapshot in $snapshots) {
+        if (-not $snapshot -or -not $snapshot.Name) { continue }
+        $propertySource = $snapshot.Properties
+        if (-not $propertySource) { continue }
+
+        $entries = @()
+        if ($propertySource -is [hashtable]) {
+            $entries = $propertySource.GetEnumerator()
+        } elseif ($propertySource.PSObject -and $propertySource.PSObject.Properties) {
+            $entries = $propertySource.PSObject.Properties | Where-Object { $_ }
+        }
+
+        foreach ($entry in $entries) {
+            $key = $entry.Name
+            $value = $entry.Value
+            if (-not $key) { continue }
+            $changed = Set-NetAdapterAdvancedPropertySafe -AdapterName $snapshot.Name -DisplayName $key -DisplayValue $value
+            if ($changed -ne $false) {
+                $propertiesRestored++
+                [void]$touchedAdapters.Add($snapshot.Name)
+            }
+        }
+    }
+
+    if ($propertiesRestored -gt 0) {
+        Write-Host "[Rollback] Restored $propertiesRestored adapter property value(s) across $($touchedAdapters.Count) adapter(s)." -ForegroundColor Cyan
+    } else {
+        Write-Host "[Rollback] Network hardware snapshot applied without changes." -ForegroundColor Gray
+    }
+
+    if ($logger) {
+        Write-Log "[Rollback] Applied network hardware snapshot" -Data @{
+            PropertiesRestored = $propertiesRestored
+            AdaptersTouched    = $touchedAdapters.Count
+        }
+    }
+
+    return $propertiesRestored
+}
+
 # Description: Saves current network-related registry and firewall settings to a JSON backup with a pre-check for writable storage.
 # Parameters: None.
 # Returns: PSCustomObject with Success flag, HardStop indicator, file path, and optional registry rollback snippet. Writes backup file to ProgramData when possible.
@@ -1450,6 +1567,13 @@ function Invoke-GlobalRollback {
     }
 
     Restore-NetworkBackupState -Context $runContext -FallbackNetshGlobals $fallbackNetsh -FallbackServiceStates $fallbackServices
+    try {
+        Restore-NetworkHardwareSnapshot -Context $runContext | Out-Null
+    } catch {
+        if ($logger) {
+            Write-Log "[Rollback] Failed to restore network hardware snapshot: $($_.Exception.Message)" -Level 'Warning'
+        }
+    }
 }
 
-Export-ModuleMember -Function Invoke-NetworkTweaksSafe, Invoke-NetworkTweaksAggressive, Invoke-NetworkTweaksGaming, Set-NetworkDnsSafe, Save-NetworkBackupState, Restore-NetworkBackupState, Invoke-GlobalRollback
+Export-ModuleMember -Function Invoke-NetworkTweaksSafe, Invoke-NetworkTweaksAggressive, Invoke-NetworkTweaksGaming, Set-NetworkDnsSafe, Save-NetworkBackupState, Restore-NetworkBackupState, Invoke-GlobalRollback, Save-NetworkHardwareSnapshot, Restore-NetworkHardwareSnapshot

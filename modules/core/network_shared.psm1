@@ -763,6 +763,23 @@ function Invoke-AdvancedNetworkPipeline {
         $primary = $resolvedAdapters | Select-Object -First 1
     }
 
+    $hardwareSnapshotCount = 0
+    try {
+        if ($context.PSObject.Properties.Name -contains 'NetworkHardwareRollbackActions' -and $context.NetworkHardwareRollbackActions) {
+            $hardwareSnapshotCount = $context.NetworkHardwareRollbackActions.Count
+        }
+    } catch { }
+
+    if ($hardwareSnapshotCount -le 0) {
+        try {
+            Save-NetworkHardwareSnapshot -Context $context | Out-Null
+        } catch {
+            if ($logger) {
+                Write-Log "$LoggerPrefix Failed to capture adapter hardware snapshot before $ProfileName: $($_.Exception.Message)" -Level 'Warning'
+            }
+        }
+    }
+
     $result = [ordered]@{
         Ran      = $true
         Msi      = $null
