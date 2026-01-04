@@ -1012,7 +1012,8 @@ function Test-MtuSize {
 # Returns: Integer MTU size when successful, otherwise null.
 function Find-OptimalMtu {
     param(
-        [string]$Target = '1.1.1.1'
+        [string]$Target = '1.1.1.1',
+        [int]$MaxProbeSeconds = 25
     )
     try {
         $buildNumber = [Environment]::OSVersion.Version.Build
@@ -1056,7 +1057,8 @@ function Find-OptimalMtu {
         $dnsCandidates = & $getDnsTargets
         $candidateTargets = New-Object System.Collections.Generic.List[string]
         $probeStart = Get-Date
-        $maxProbeDuration = [TimeSpan]::FromSeconds(25)
+        $effectiveSeconds = if ($MaxProbeSeconds -gt 0) { $MaxProbeSeconds } else { 25 }
+        $maxProbeDuration = [TimeSpan]::FromSeconds($effectiveSeconds)
         $isProbeTimedOut = {
             return ((Get-Date) - $probeStart) -gt $maxProbeDuration
         }
@@ -1076,7 +1078,7 @@ function Find-OptimalMtu {
         foreach ($candidate in $candidateTargets) {
             if (& $isProbeTimedOut) {
                 Write-Host "  [!] MTU probe timed out while selecting target. Using safe MTU fallback of 1500." -ForegroundColor Yellow
-                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = 'Probe timeout' }
+                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = "Probe timeout (${effectiveSeconds}s)" }
             }
             $probe = & $testBasicPing $candidate
             if ($probe.Success) {
@@ -1095,7 +1097,7 @@ function Find-OptimalMtu {
 
         if (& $isProbeTimedOut) {
             Write-Host "  [!] MTU probe exceeded ${($maxProbeDuration.TotalSeconds)}s. Using safe default 1500." -ForegroundColor Yellow
-            return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = 'Probe timeout' }
+            return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = "Probe timeout (${effectiveSeconds}s)" }
         }
 
         if (-not $baseSuccess) {
@@ -1113,7 +1115,7 @@ function Find-OptimalMtu {
         while ($low -le $high) {
             if (& $isProbeTimedOut) {
                 Write-Host "  [!] MTU probe exceeded ${($maxProbeDuration.TotalSeconds)}s. Using safe default 1500." -ForegroundColor Yellow
-                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = 'Probe timeout' }
+                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = "Probe timeout (${effectiveSeconds}s)" }
             }
             $mid = [int](($low + $high) / 2)
             $mtuCandidate = $mid + 28

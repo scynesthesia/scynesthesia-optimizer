@@ -489,6 +489,21 @@ function Manage-GameQoS {
     Write-Host "Tip: You can find the executable name under Task Manager > Details while the game is running." -ForegroundColor DarkGray
     $invalidChars = [regex]::Escape(([string]::Join('', [System.IO.Path]::GetInvalidFileNameChars())))
     $invalidPattern = "[${invalidChars}]"
+    $maxRuleLength = 60
+    $maxExeLength = 80
+
+    function Test-ExecutableInPath {
+        param([string]$Name)
+        if ([string]::IsNullOrWhiteSpace($Name)) { return $false }
+        try {
+            $paths = ($env:PATH -split ';') | Where-Object { $_ -and (Test-Path $_) }
+            foreach ($p in $paths) {
+                $candidate = Join-Path $p $Name
+                if (Test-Path -Path $candidate -PathType Leaf) { return $true }
+            }
+        } catch { }
+        return $false
+    }
 
     $qwaveServices = @('QWAVE', 'SDRSVC')
     $qwaveConfigured = $false
@@ -534,6 +549,10 @@ function Manage-GameQoS {
             Write-Host "  [!] Rule name contains invalid characters. Use letters, numbers, spaces, dots, dashes or underscores only." -ForegroundColor Yellow
             continue
         }
+        if ($ruleName.Length -gt $maxRuleLength) {
+            Write-Host "  [!] Rule name is too long ($($ruleName.Length) chars). Please shorten it below $maxRuleLength characters." -ForegroundColor Yellow
+            continue
+        }
 
         $executable = (Read-Host "Executable name (e.g., FortniteClient-Win64-Shipping.exe):").Trim()
         if ([string]::IsNullOrWhiteSpace($executable)) {
@@ -547,6 +566,18 @@ function Manage-GameQoS {
         if (-not ($executable -match '(?i)\.exe$')) {
             Write-Host "  [!] Executable does not end with .exe; QoS rules may not apply. Enter a valid executable file name." -ForegroundColor Yellow
             continue
+        }
+        if ($executable.Length -gt $maxExeLength) {
+            Write-Host "  [!] Executable name is too long ($($executable.Length) chars). Please use a shorter name." -ForegroundColor Yellow
+            continue
+        }
+
+        $exeFound = Test-ExecutableInPath -Name $executable
+        if (-not $exeFound) {
+            if (-not (Get-Confirmation "Executable '$executable' was not found in PATH. Continue anyway?" 'n')) {
+                Write-Host "  [ ] QoS rule not created. Provide a resolvable executable name." -ForegroundColor DarkGray
+                continue
+            }
         }
 
         $rulePath = "HKLM:\\Software\\Policies\\Microsoft\\Windows\\QoS\\$ruleName"

@@ -1510,7 +1510,10 @@ function Restore-NetworkBackupState {
             try {
                 & cmd.exe /c $ipv6Cmd 2>&1 | Out-Null
                 if ($logger) { Write-Log "[Rollback] IPv6 state restored to $targetState." }
-            } catch { }
+            } catch {
+                Write-Host "[!] Failed to restore IPv6 state to $targetState." -ForegroundColor Yellow
+                if ($logger) { Write-Log "[Rollback] Failed to restore IPv6 state to $targetState." -Level 'Warning' }
+            }
         }
         if ($netshGlobals -and $netshGlobals.ContainsKey('IPv6Bindings')) {
             foreach ($binding in $netshGlobals['IPv6Bindings']) {
@@ -1521,7 +1524,10 @@ function Restore-NetworkBackupState {
                     } elseif ($binding.Enabled -eq $false) {
                         Disable-NetAdapterBinding -Name $binding.Name -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue | Out-Null
                     }
-                } catch { }
+                } catch {
+                    Write-Host "[!] Failed to restore IPv6 binding for adapter $($binding.Name)." -ForegroundColor Yellow
+                    if ($logger) { Write-Log "[Rollback] Failed to restore IPv6 binding for adapter $($binding.Name)." -Level 'Warning' }
+                }
             }
         }
     } catch { }
