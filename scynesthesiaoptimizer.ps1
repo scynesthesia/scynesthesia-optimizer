@@ -243,6 +243,64 @@ function Assert-HighImpactAllowed {
     return $false
 }
 
+function Confirm-HighImpactRestoreGate {
+    param(
+        [Parameter(Mandatory)][string]$ActionLabel,
+        [switch]$AllowUnsafeOverride
+    )
+
+    $restoreStatus = New-RestorePointSafe
+    $gatePassed = Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel $ActionLabel
+
+    if ($script:Logger) {
+        Write-Log -Message "Restore point gate evaluated." -Level (if ($gatePassed) { 'Info' } else { 'Warning' }) -Data @{
+            action         = $ActionLabel
+            restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
+            restoreEnabled = if ($null -ne $restoreStatus) { [bool]$restoreStatus.Enabled } else { $null }
+            unsafeMode     = [bool]$script:UnsafeMode
+            gatePassed     = [bool]$gatePassed
+        }
+    }
+
+    if ($gatePassed) {
+        return [pscustomobject]@{
+            Proceed = $true
+            Unsafe  = $false
+            Status  = $restoreStatus
+        }
+    }
+
+    if ($AllowUnsafeOverride -and $script:UnsafeMode) {
+        $proceedUnsafely = Get-Confirmation -Question "A restore point could not be created for $ActionLabel. Continue in UNSAFE mode anyway?" -Default 'n'
+        if ($script:Logger) {
+            Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level (if ($proceedUnsafely) { 'Warning' } else { 'Info' }) -Data @{
+                action         = $ActionLabel
+                unsafeMode     = [bool]$script:UnsafeMode
+                userConfirmed  = [bool]$proceedUnsafely
+                restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
+            }
+        }
+
+        if ($proceedUnsafely) {
+            Write-Warning "[Safety] Proceeding without a restore point due to -UnsafeMode."
+            Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "$ActionLabel forced without restore point (unsafe mode)"
+            return [pscustomobject]@{
+                Proceed = $true
+                Unsafe  = $true
+                Status  = $restoreStatus
+            }
+        }
+    }
+
+    Write-Warning "[Safety] $ActionLabel aborted because a restore point is required. Re-run with -UnsafeMode to override."
+    Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "$ActionLabel blocked: restore point unavailable (UnsafeMode=$($script:UnsafeMode))"
+    return [pscustomobject]@{
+        Proceed = $false
+        Unsafe  = $false
+        Status  = $restoreStatus
+    }
+}
+
 # Description: Displays the application banner with version and active power plan details.
 # Parameters: None.
 # Returns: None.
@@ -797,6 +855,11 @@ function Show-NetworkTweaksMenu {
             }
             '5' {
                 if (-not (Assert-HighImpactAllowed "Hardcore Network Tweaks")) { break }
+                $restoreGate = Confirm-HighImpactRestoreGate -ActionLabel "Hardcore Network Tweaks" -AllowUnsafeOverride
+                if (-not ($restoreGate -and $restoreGate.Proceed)) {
+                    Write-Host "  [ ] Hardcore Network Tweaks skipped because restore point is unavailable." -ForegroundColor Gray
+                    break
+                }
                 if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)?" 'n' -RiskSummary @("Can disrupt adapters during MTU discovery", "netsh changes may destabilize networking until reboot")) {
                     if (-not (Test-Path $backupFile)) {
                         try {
@@ -931,7 +994,8 @@ do {
             Write-Host "[+] Gaming tweaks applied." -ForegroundColor Magenta
 
             $backupFile = "C:\ProgramData\Scynesthesia\network_backup.json"
-            if (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)?" 'n' -RiskSummary @("Can disrupt adapters during MTU discovery", "netsh changes may destabilize networking until reboot")) {
+            $hardcoreGate = Confirm-HighImpactRestoreGate -ActionLabel "Hardcore Network Tweaks (Gaming Mode)" -AllowUnsafeOverride
+            if ($hardcoreGate -and $hardcoreGate.Proceed -and (Get-Confirmation "Apply Hardcore Network Tweaks (Bufferbloat/MTU)?" 'n' -RiskSummary @("Can disrupt adapters during MTU discovery", "netsh changes may destabilize networking until reboot"))) {
                 if (-not (Test-Path $backupFile)) {
                     try {
                         Save-NetworkBackupState
@@ -947,6 +1011,8 @@ do {
                 } catch {
                     Invoke-ErrorHandler -Context "Applying Hardcore Network Tweaks from Gaming preset" -ErrorRecord $_
                 }
+            } elseif (-not ($hardcoreGate -and $hardcoreGate.Proceed)) {
+                Write-Host "  [ ] Hardcore Network Tweaks skipped because restore point is unavailable." -ForegroundColor DarkGray
             } else {
                 Write-Host "  [ ] Hardcore Network Tweaks skipped." -ForegroundColor DarkGray
             }
