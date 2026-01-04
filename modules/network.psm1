@@ -12,24 +12,14 @@ if (-not (Get-Module -Name 'network_shared' -ErrorAction SilentlyContinue)) {
 # Parameters: None.
 # Returns: Collection of adapter objects; returns empty array on failure.
 function Get-PhysicalNetAdapters {
-    try {
-        $adapters = Get-NetAdapter -Physical -ErrorAction Stop |
-            Where-Object {
-                $_.Status -ne 'Disabled' -and
-                $_.InterfaceDescription -notmatch '(?i)virtual|vmware|hyper-v|loopback|vpn|tap|wireguard|bluetooth'
-            }
-        return $adapters
-    } catch {
-        Invoke-ErrorHandler -Context 'Retrieving network adapters' -ErrorRecord $_
-        return @()
-    }
+    return Get-SharedPhysicalAdapters -LoggerPrefix '[Network]' -ErrorContext 'Retrieving network adapters'
 }
 
 # Description: Maps physical adapters to their registry class paths for advanced tweaks.
 # Parameters: None.
 # Returns: Collection of objects containing adapter references and registry paths.
 function Get-NicRegistryPaths {
-    return Get-SharedNicRegistryPaths -AdapterResolver { Get-PhysicalNetAdapters }
+    return Get-SharedNicRegistryDiscovery -LoggerPrefix '[Network]'
 }
 
 # Description: Flushes the DNS cache to clear resolver entries.

@@ -1,5 +1,26 @@
 # Description: Shared helpers for network tweaks reused across presets.
 
+function Get-SharedPhysicalAdapters {
+    param(
+        [switch]$RequireUp,
+        [string]$LoggerPrefix = '[Network]',
+        [string]$ErrorContext = 'Retrieving network adapters'
+    )
+
+    try {
+        $adapters = Get-NetAdapter -Physical -ErrorAction Stop |
+            Where-Object {
+                $statusOk = if ($RequireUp) { $_.Status -eq 'Up' } else { $_.Status -ne 'Disabled' }
+                $statusOk -and $_.InterfaceDescription -notmatch '(?i)virtual|vmware|hyper-v|loopback|vpn|tap|wireguard|bluetooth'
+            }
+
+        return @($adapters)
+    } catch {
+        Invoke-ErrorHandler -Context $ErrorContext -ErrorRecord $_
+        return @()
+    }
+}
+
 function Convert-LinkSpeedToBits {
     param(
         [Parameter(Mandatory)]$LinkSpeed
@@ -196,6 +217,29 @@ function Get-SharedNicRegistryPaths {
             IfIndex = $_.IfIndex
         }
     }
+}
+
+function Get-SharedNicRegistryDiscovery {
+    param(
+        [switch]$RequireUp,
+        [switch]$AllowOwnershipFallback,
+        [string]$LoggerPrefix = '[Network]',
+        [ref]$AccessDeniedFlag
+    )
+
+    $adapterResolver = { Get-SharedPhysicalAdapters -RequireUp:$RequireUp -LoggerPrefix $LoggerPrefix -ErrorContext 'Retrieving physical network adapters' }
+
+    $parameters = @{
+        AdapterResolver        = $adapterResolver
+        AllowOwnershipFallback = $AllowOwnershipFallback
+        LoggerPrefix           = $LoggerPrefix
+    }
+
+    if ($PSBoundParameters.ContainsKey('AccessDeniedFlag')) {
+        $parameters['AccessDeniedFlag'] = $AccessDeniedFlag
+    }
+
+    return Get-SharedNicRegistryPaths @parameters
 }
 
 function Invoke-NagleRegistryUpdate {
@@ -751,4 +795,4 @@ function Invoke-AdvancedNetworkPipeline {
     return [pscustomobject]$result
 }
 
-Export-ModuleMember -Function Get-SharedNicRegistryPaths, Invoke-NagleRegistryUpdate, Invoke-NicPowerRegistryTweaks, Invoke-MsiModeOnce, Convert-LinkSpeedToBits, Set-NetAdapterAdvancedPropertySafe, Invoke-AdapterOffloadToggle, Invoke-AdvancedNetworkPipeline, Get-NetworkRegistryDefaults
+Export-ModuleMember -Function Get-SharedNicRegistryPaths, Invoke-NagleRegistryUpdate, Invoke-NicPowerRegistryTweaks, Invoke-MsiModeOnce, Convert-LinkSpeedToBits, Set-NetAdapterAdvancedPropertySafe, Invoke-AdapterOffloadToggle, Invoke-AdvancedNetworkPipeline, Get-NetworkRegistryDefaults, Get-SharedPhysicalAdapters, Get-SharedNicRegistryDiscovery
