@@ -343,6 +343,48 @@ function Optimize-ProcessorScheduling {
     }
 }
 
+# Description: Disables Game DVR/Bar capture mechanisms to avoid overlay glitches.
+# Parameters: Context - Run context used for rollback tracking.
+# Returns: None. Records registry rollback data for all changes.
+function Disable-GameDVR {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    Write-Section "Disable Game DVR"
+    Write-Host "Silencing Game Bar protocols to prevent visual glitches." -ForegroundColor DarkGray
+
+    $appCapture = Set-RegistryValueSafe -Path "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR" -Name 'AppCaptureEnabled' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $context -ReturnResult -OperationLabel 'Disable Game Bar AppCaptureEnabled'
+    $gameDvrEnabled = Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_Enabled' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $context -ReturnResult -OperationLabel 'Disable GameDVR_Enabled'
+    $allowGameDvr = Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $context -Critical -ReturnResult -OperationLabel 'Disable GameDVR policy'
+
+    $allSucceeded = -not (@($appCapture, $gameDvrEnabled, $allowGameDvr) | Where-Object { -not ($_ -and $_.Success) })
+
+    if ($allSucceeded) {
+        Write-Host "  [+] Game DVR capture and policies disabled." -ForegroundColor Green
+        if ($logger) {
+            Write-Log "[Gaming] Game DVR disabled (AppCaptureEnabled=0, GameDVR_Enabled=0, AllowGameDVR=0)."
+        }
+    } else {
+        foreach ($entry in @(
+            @{ Result = $appCapture; Label = 'Disable Game Bar AppCaptureEnabled' },
+            @{ Result = $gameDvrEnabled; Label = 'Disable GameDVR_Enabled' },
+            @{ Result = $allowGameDvr; Label = 'Disable GameDVR policy' }
+        )) {
+            if (-not ($entry.Result -and $entry.Result.Success)) {
+                if ($entry.Label -eq 'Disable GameDVR policy') {
+                    Register-HighImpactRegistryFailure -Context $context -Result $entry.Result -OperationLabel $entry.Label | Out-Null
+                } else {
+                    Write-Host "  [!] $($entry.Label) could not be applied." -ForegroundColor Yellow
+                }
+            }
+        }
+    }
+}
+
 # Description: Disables Fullscreen Optimizations globally for DX11 input latency gains.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Sets reboot flag after applying registry overrides.
@@ -416,4 +458,4 @@ function Invoke-GamingOptimizations {
     Write-Host "[+] Global Gaming Optimizations complete." -ForegroundColor Magenta
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-FsoGlobalOverride, Invoke-GamingOptimizations
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Disable-GameDVR, Set-FsoGlobalOverride, Invoke-GamingOptimizations
