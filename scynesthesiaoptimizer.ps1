@@ -74,6 +74,7 @@ try {
     } else {
         Write-Error "Error loading modules: $($_.Exception.Message)"
     }
+    Stop-RollbackTimerSafely
     Write-Host "Make sure the 'modules' folder is next to this script."
     Read-Host "Press Enter to exit"
     exit 1
@@ -106,6 +107,16 @@ $script:RollbackPersistSubscription = Register-ObjectEvent -InputObject $script:
     }
 } -ErrorAction SilentlyContinue
 $script:RollbackPersistTimer.Start()
+
+function Stop-RollbackTimerSafely {
+    try {
+        Stop-RollbackPersistenceTimer -Timer $script:RollbackPersistTimer -Subscription $script:RollbackPersistSubscription -SourceIdentifier 'RegistryRollbackPersistence'
+    } catch { }
+
+    if ($script:RollbackPersistTimer) {
+        try { $script:RollbackPersistTimer.Dispose() } catch { }
+    }
+}
 
 # ---------- 4. LOGGING (Transcript and logging initialization.) ----------
 $TranscriptStarted = $false
@@ -913,7 +924,7 @@ try {
     Write-Verbose "Final rollback persistence failed: $($_.Exception.Message)"
 }
 
-Stop-RollbackPersistenceTimer -Timer $script:RollbackPersistTimer -Subscription $script:RollbackPersistSubscription -SourceIdentifier 'RegistryRollbackPersistence'
+Stop-RollbackTimerSafely
 
 Write-EndOfSessionSummary -Context $script:Context
 Write-DebloatRemovalLog -Context $script:Context
