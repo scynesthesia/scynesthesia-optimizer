@@ -35,6 +35,67 @@ function Add-DebloatRemovalLogEntry {
     }
 }
 
+function Get-XboxRelatedPackages {
+    param([System.Collections.IEnumerable]$Packages)
+
+    $patterns = @('^Microsoft\.Xbox', '^Microsoft\.GamingApp', '^Microsoft\.GamePass')
+    $matches = @()
+
+    foreach ($pkg in ($Packages | Where-Object { $_ })) {
+        $name = if ($pkg.PSObject.Properties.Name -contains 'Name') { [string]$pkg.Name } else { [string]$pkg }
+
+        foreach ($pattern in $patterns) {
+            if ($name -match $pattern) {
+                $matches += $pkg
+                break
+            }
+        }
+    }
+
+    return @($matches)
+}
+
+function Confirm-XboxAppRemoval {
+    param(
+        [System.Collections.IEnumerable]$Targets,
+        [pscustomobject]$Context
+    )
+
+    $targetsArray = @($Targets | Where-Object { $_ })
+    $xboxTargets = @(Get-XboxRelatedPackages -Packages $targetsArray)
+
+    $result = [pscustomobject]@{
+        Targets   = $targetsArray
+        Prompted  = $false
+        Consent   = $true
+        XboxNames = @()
+    }
+
+    if (-not $xboxTargets) { return $result }
+
+    $xboxNames = @($xboxTargets | ForEach-Object { $_.Name } | Where-Object { $_ } | Select-Object -Unique)
+    $result.Prompted = $true
+    $result.XboxNames = $xboxNames
+
+    $question = "Xbox/Game Pass apps detected ($($xboxNames -join ', ')). Remove them? This may impact Xbox services and Game Pass."
+    $consent = Get-Confirmation -Question $question -Default 'n' -RiskSummary @("Removing these apps can break Xbox/Game Pass features for this PC.")
+    $result.Consent = $consent
+
+    if ($consent) {
+        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+            Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message "User approved removal of Xbox/Game Pass apps: $($xboxNames -join ', ')."
+        }
+        return $result
+    }
+
+    if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+        Add-SessionSummaryItem -Context $Context -Bucket 'DeclinedHighImpact' -Message "User declined removal of Xbox/Game Pass apps: $($xboxNames -join ', ')."
+    }
+    Write-Host "  [ ] Keeping Xbox/Game Pass apps by user choice." -ForegroundColor DarkGray
+    $result.Targets = @($targetsArray | Where-Object { $xboxNames -notcontains $_.Name })
+    return $result
+}
+
 function Get-InstalledAppxPackages {
     if ($null -eq $script:AppxPackageCache) {
         $script:AppxPackageCache = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
@@ -247,7 +308,16 @@ function Invoke-DebloatSafe {
             if ($match) { $targetNames += $_.Name }
             $match
         })
-    $missing = $AppList | Where-Object { $targetNames -notcontains $_ }
+
+    $confirmation = Confirm-XboxAppRemoval -Targets $targets -Context $context
+    $targets = @($confirmation.Targets)
+    $targetNames = $targets.Name
+    $effectiveAppList = if ($confirmation -and -not $confirmation.Consent -and $confirmation.XboxNames) {
+        $AppList | Where-Object { $confirmation.XboxNames -notcontains $_ }
+    } else {
+        $AppList
+    }
+    $missing = $effectiveAppList | Where-Object { $targetNames -notcontains $_ }
 
     foreach ($name in $missing) {
         Write-Host "  [ ] $name is not installed."
@@ -332,7 +402,16 @@ function Invoke-DebloatAggressive {
             if ($match) { $targetNames += $_.Name }
             $match
         })
-    $missing = $AppList | Where-Object { $targetNames -notcontains $_ }
+
+    $confirmation = Confirm-XboxAppRemoval -Targets $targets -Context $context
+    $targets = @($confirmation.Targets)
+    $targetNames = $targets.Name
+    $effectiveAppList = if ($confirmation -and -not $confirmation.Consent -and $confirmation.XboxNames) {
+        $AppList | Where-Object { $confirmation.XboxNames -notcontains $_ }
+    } else {
+        $AppList
+    }
+    $missing = $effectiveAppList | Where-Object { $targetNames -notcontains $_ }
 
     foreach ($name in $missing) {
         Write-Host "  [ ] $name is not installed."
@@ -383,7 +462,7 @@ function Invoke-DebloatAggressive {
 
     if (Get-Confirmation -Question "Also remove provisioned packages for future users? (More aggressive)" -Default 'n' -RiskSummary @("Removing provisioned packages affects all future user accounts created on this PC")) {
         try {
-            $prov = Get-AppxProvisionedPackage -Online | Where-Object { $AppList -contains $_.PackageName }
+            $prov = Get-AppxProvisionedPackage -Online | Where-Object { $effectiveAppList -contains $_.PackageName }
         } catch {
             $warningMessage = "[Debloat] Failed to enumerate provisioned packages: $($_.Exception.Message). Skipping provisioned removal."
             Write-Host $warningMessage -ForegroundColor Yellow
