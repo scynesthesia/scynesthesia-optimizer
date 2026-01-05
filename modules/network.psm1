@@ -8,6 +8,9 @@ if (-not (Get-Module -Name 'network_discovery' -ErrorAction SilentlyContinue)) {
 if (-not (Get-Module -Name 'network_shared' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/network_shared.psm1') -Force -Scope Local
 }
+if (-not (Get-Command -Name 'Disable-UdpSegmentOffload' -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $PSScriptRoot 'gaming.psm1') -Force -Scope Local
+}
 # Description: Retrieves active physical network adapters excluding virtual or VPN interfaces.
 # Parameters: None.
 # Returns: Collection of adapter objects; returns empty array on failure.
@@ -743,6 +746,9 @@ function Invoke-NetworkTweaksGaming {
     Set-NagleState -Context $Context
     Set-EnergyEfficientEthernet
     Enable-RSS
+    Disable-UdpSegmentOffload -Context $Context
+    Enable-TcpFastOpen -Context $Context
+    Disable-ArpNsOffload -Context $Context
 
     if (Get-Confirmation "Disable interrupt moderation for lowest latency? (Higher CPU usage)" 'n') {
         Set-InterruptModeration
