@@ -207,6 +207,81 @@ function Disable-LLMNR {
     }
 }
 
+# Description: Disables multicast DNS via policy to reduce broadcast noise.
+# Parameters: Context - Run context for logging and registry helpers.
+# Returns: None.
+function Disable-mDNS {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    Write-Host "  [+] Disabling multicast DNS (mDNS)" -ForegroundColor Gray
+    $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "EnableMDNS" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable mDNS'
+    if ($result -and $result.Success) {
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "[Network] Disabled mDNS (EnableMDNS=0 under DNSClient policy)."
+        }
+    } else {
+        Register-HighImpactRegistryFailure -Context $context -Result $result -OperationLabel 'Disable mDNS' | Out-Null
+    }
+}
+
+# Description: Configures IGMPLevel to 0 to suppress multicast participation.
+# Parameters: Context - Run context for logging and registry helpers.
+# Returns: None.
+function Set-IgmpLevel {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    Write-Host "  [+] Setting IGMPLevel to 0" -ForegroundColor Gray
+    $result = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" "IGMPLevel" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Set IGMPLevel to 0'
+    if ($result -and $result.Success) {
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "[Network] IGMPLevel set to 0 for multicast suppression."
+        }
+    } else {
+        Register-HighImpactRegistryFailure -Context $context -Result $result -OperationLabel 'Set IGMPLevel to 0' | Out-Null
+    }
+}
+
+# Description: Disables LLTD Mapper and Responder services.
+# Parameters: Context - Run context for logging/rollback; DiscoveryAlreadyDisabled - Indicates Network Discovery was already disabled.
+# Returns: None.
+function Disable-LLTD {
+    param(
+        [pscustomobject]$Context,
+        [switch]$DiscoveryAlreadyDisabled
+    )
+
+    $context = Get-RunContext -Context $Context
+    Write-Host "  [+] Disabling Link-Layer Topology Discovery (mapper/responder)" -ForegroundColor Gray
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $services = @('lltdsvc','rspndr')
+
+    foreach ($svc in $services) {
+        try {
+            Register-ServiceStateForRollback -Context $context -ServiceName $svc | Out-Null
+            Stop-Service -Name $svc -ErrorAction SilentlyContinue
+            if ($logger) {
+                Write-Log "[Network] Service '$svc' stopped for LLTD shutdown."
+            }
+            Set-Service -Name $svc -StartupType Disabled -ErrorAction SilentlyContinue
+            if ($logger) {
+                Write-Log "[Network] Service '$svc' startup disabled for LLTD shutdown."
+            }
+        } catch {
+            Invoke-ErrorHandler -Context "Disabling service $svc (LLTD)" -ErrorRecord $_
+        }
+    }
+
+    if ($DiscoveryAlreadyDisabled) {
+        Write-Host "      [i] Network Discovery already disabled; LLTD components also turned off for compatibility." -ForegroundColor DarkGray
+    }
+}
+
 # Description: Disables Smart Multi-Homed Name Resolution to reduce DNS leakage.
 # Parameters: Context - Run context for logging and registry helpers.
 # Returns: None.
@@ -620,7 +695,9 @@ function Invoke-NetworkTweaksAggressive {
 
     $context = Get-RunContext -Context $Context
     Write-Section "Network tweaks (Aggressive profile)"
+    $networkDiscoveryDisabled = $false
     Disable-LLMNR -Context $context
+    Disable-mDNS -Context $context
     Disable-DeliveryOptimization -Context $context
 
     if (Get-Confirmation "Disable NetBIOS over TCP/IP? This may break legacy LAN shares and printers." 'n') {
@@ -640,9 +717,13 @@ function Invoke-NetworkTweaksAggressive {
 
     if (Get-Confirmation "Disable Network Discovery entirely? You will stop seeing PCs and shared folders automatically on the network." 'n') {
         Disable-NetworkDiscovery
+        $networkDiscoveryDisabled = $true
     } else {
         Write-Host "  [ ] Network Discovery left enabled." -ForegroundColor Gray
     }
+
+    Disable-LLTD -Context $context -DiscoveryAlreadyDisabled:$networkDiscoveryDisabled
+    Set-IgmpLevel -Context $context
 }
 
 # Description: Applies gaming-focused network tweaks for lower latency.
