@@ -90,6 +90,55 @@ function Set-NetworkDnsSafe {
     }
 }
 
+# Description: Enables DNS over HTTPS policy and seeds trusted resolvers.
+# Parameters: Context - Run context for logging and registry helpers.
+# Returns: None.
+function Set-DnsOverHttps {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    Write-Host "  [+] Enabling DNS over HTTPS policy (AutoDoH)" -ForegroundColor Gray
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DnsClient" "EnableAutoDoh" 2 -Context $context -Critical -ReturnResult -OperationLabel 'Enable DNS over HTTPS'
+    if ($result -and $result.Success) {
+        if ($logger) {
+            Write-Log "[Network] Enabled DNS over HTTPS policy (EnableAutoDoh=2)."
+        }
+    } else {
+        Register-HighImpactRegistryFailure -Context $context -Result $result -OperationLabel 'Enable DNS over HTTPS' | Out-Null
+    }
+
+    $resolvers = @(
+        @{ Server = '1.1.1.1'; Template = 'https://cloudflare-dns.com/dns-query' },
+        @{ Server = '1.0.0.1'; Template = 'https://cloudflare-dns.com/dns-query' },
+        @{ Server = '8.8.8.8'; Template = 'https://dns.google/dns-query' }
+    )
+
+    foreach ($entry in $resolvers) {
+        $server = $entry.Server
+        $template = $entry.Template
+        try {
+            netsh dns add encryption server=$server dohtemplate=$template autoupgrade=yes | Out-Null
+        } catch {
+            try {
+                netsh dns set encryption server=$server dohtemplate=$template autoupgrade=yes | Out-Null
+            } catch {
+                if ($logger) {
+                    Write-Log "[Network] Failed to register DoH resolver $server ($template): $($_.Exception.Message)" -Level 'Warning'
+                }
+                continue
+            }
+        }
+
+        if ($logger) {
+            Write-Log "[Network] Registered DoH resolver $server ($template) with autoupgrade."
+        }
+    }
+}
+
 # Description: Configures TCP autotuning level to normal for compatibility.
 # Parameters: None.
 # Returns: None.
@@ -155,6 +204,26 @@ function Disable-LLMNR {
         }
     } else {
         Register-HighImpactRegistryFailure -Context $context -Result $result -OperationLabel 'Disable LLMNR' | Out-Null
+    }
+}
+
+# Description: Disables Smart Multi-Homed Name Resolution to reduce DNS leakage.
+# Parameters: Context - Run context for logging and registry helpers.
+# Returns: None.
+function Disable-SmartNameResolution {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    Write-Host "  [+] Disabling Smart Multi-Homed Name Resolution" -ForegroundColor Gray
+    $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "DisableSmartNameResolution" 1 -Context $context -Critical -ReturnResult -OperationLabel 'Disable Smart Name Resolution'
+    if ($result -and $result.Success) {
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "[Network] Disabled Smart Multi-Homed Name Resolution (DisableSmartNameResolution=1)."
+        }
+    } else {
+        Register-HighImpactRegistryFailure -Context $context -Result $result -OperationLabel 'Disable Smart Name Resolution' | Out-Null
     }
 }
 
@@ -530,7 +599,9 @@ function Invoke-NetworkTweaksSafe {
         Write-Host "  [ ] DNS settings left unchanged." -ForegroundColor Gray
     }
 
+    Set-DnsOverHttps -Context $Context
     Set-TcpAutotuningNormal
+    Disable-SmartNameResolution -Context $Context
     Set-IPvPreferenceIPv4First -FailureTracker $tracker -Context $Context
     if ($tracker.Abort) {
         Write-RegistryFailureSummary -Tracker $tracker
