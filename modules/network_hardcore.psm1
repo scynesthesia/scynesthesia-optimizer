@@ -32,6 +32,151 @@ function Test-IsAdminSession {
     }
 }
 
+# Description: Detects whether the current machine is server-class to guard RDMA tweaks.
+# Parameters: None.
+# Returns: Boolean indicating likely server hardware/OS.
+function Test-IsServerClassHardware {
+    try {
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
+        if ($os -and ($os.ProductType -eq 2 -or $os.ProductType -eq 3)) {
+            return $true
+        }
+
+        $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+        $serverPcTypes = @(5, 6, 7, 13)
+        if ($cs -and ($serverPcTypes -contains $cs.PCSystemType)) {
+            return $true
+        }
+
+        $model = $null
+        try { $model = $cs.Model } catch { }
+        if ($model -and ($model -match '(?i)poweredge|proliant|thinksystem|primergy|rack(server|station)|supermicro|server')) {
+            return $true
+        }
+    } catch {
+    }
+
+    return $false
+}
+
+# Description: Disables RDMA/NetworkDirect on non-server hardware to avoid compatibility issues.
+# Parameters: Context - Optional run context for logging/summaries.
+# Returns: None.
+function Disable-NetworkDirect {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $setOffload = Get-Command -Name 'Set-NetOffloadGlobalSetting' -ErrorAction SilentlyContinue
+    $getOffload = Get-Command -Name 'Get-NetOffloadGlobalSetting' -ErrorAction SilentlyContinue
+    if (-not $setOffload -or -not $getOffload) {
+        Write-Host "  [ ] NetworkDirect toggle not available on this OS." -ForegroundColor DarkGray
+        return
+    }
+
+    $isServerClass = Test-IsServerClassHardware
+    if ($isServerClass) {
+        Write-Host "  [ ] NetworkDirect preserved: server-class hardware detected." -ForegroundColor Gray
+        return
+    }
+
+    $current = $null
+    try { $current = Get-NetOffloadGlobalSetting -ErrorAction Stop } catch { }
+    if ($current -and $current.NetworkDirect -match '(?i)disabled') {
+        Write-Host "  [=] NetworkDirect already disabled globally." -ForegroundColor DarkGray
+        return
+    }
+
+    try {
+        Set-NetOffloadGlobalSetting -NetworkDirect Disabled -ErrorAction Stop | Out-Null
+        Write-Host "  [+] NetworkDirect (RDMA) disabled globally on non-server hardware." -ForegroundColor Green
+        if ($logger) { Write-Log "[NetworkHardcore] NetworkDirect disabled globally for non-server hardware." }
+        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+            Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'NetworkDirect disabled globally'
+        }
+    } catch {
+        Invoke-ErrorHandler -Context 'Disabling NetworkDirect globally' -ErrorRecord $_
+    }
+}
+
+# Description: Disables packet coalescing to avoid artificial latency from driver aggregation.
+# Parameters: Context - Optional run context for logging/summaries.
+# Returns: None.
+function Disable-PacketCoalescing {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $setOffload = Get-Command -Name 'Set-NetOffloadGlobalSetting' -ErrorAction SilentlyContinue
+    $getOffload = Get-Command -Name 'Get-NetOffloadGlobalSetting' -ErrorAction SilentlyContinue
+    if (-not $setOffload -or -not $getOffload) {
+        Write-Host "  [ ] Packet coalescing toggle not available on this OS." -ForegroundColor DarkGray
+        return
+    }
+
+    $current = $null
+    try { $current = Get-NetOffloadGlobalSetting -ErrorAction Stop } catch { }
+    if ($current -and $current.PacketCoalescing -match '(?i)disabled') {
+        Write-Host "  [=] Packet coalescing already disabled globally." -ForegroundColor DarkGray
+        return
+    }
+
+    try {
+        Set-NetOffloadGlobalSetting -PacketCoalescing Disabled -ErrorAction Stop | Out-Null
+        Write-Host "  [+] Packet coalescing disabled globally." -ForegroundColor Green
+        if ($logger) { Write-Log "[NetworkHardcore] Packet coalescing disabled globally." }
+        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+            Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'Packet coalescing disabled globally'
+        }
+    } catch {
+        Invoke-ErrorHandler -Context 'Disabling packet coalescing globally' -ErrorRecord $_
+    }
+}
+
+# Description: Enables TCP HyStart when supported to optimize early connection slow start behavior.
+# Parameters: Context - Optional run context for logging/summaries.
+# Returns: None.
+function Enable-TcpHyStart {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $netshOutput = $null
+    try {
+        $netshOutput = netsh int tcp show global 2>&1
+    } catch {
+        Write-Host "  [!] Unable to probe TCP globals for HyStart support." -ForegroundColor Yellow
+        return
+    }
+
+    $text = if ($netshOutput -is [string[]]) { $netshOutput -join "`n" } else { [string]$netshOutput }
+    $hyStartMatch = [regex]::Match($text, '(?im)^\\s*HyStart\\s*:\\s*(?<state>.+)$')
+    if (-not $hyStartMatch.Success) {
+        Write-Host "  [ ] HyStart not exposed by TCP stack; skipping." -ForegroundColor Gray
+        return
+    }
+
+    $currentState = $hyStartMatch.Groups['state'].Value.Trim()
+    if ($currentState -match '(?i)enabled') {
+        Write-Host "  [=] HyStart already enabled." -ForegroundColor DarkGray
+        return
+    }
+
+    try {
+        netsh int tcp set global hystart=enabled | Out-Null
+        Write-Host "  [+] HyStart enabled for faster TCP startup." -ForegroundColor Green
+        if ($logger) { Write-Log "[NetworkHardcore] HyStart enabled via netsh." }
+        if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+            Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'HyStart enabled'
+        }
+    } catch {
+        Invoke-ErrorHandler -Context 'Enabling TCP HyStart' -ErrorRecord $_
+    }
+}
+
 # Description: Classifies adapters for hardcore tweaks, including fragile Wi-Fi detection.
 # Parameters: Adapter - NetAdapter object to evaluate.
 # Returns: Object describing Wi-Fi/fragility status.
@@ -1579,6 +1724,9 @@ function Invoke-NetworkTweaksHardcore {
     if ($failureTracker.Abort) { Write-RegistryFailureSummary -Tracker $failureTracker; return }
     Optimize-LanmanServer -Context $Context
     Set-NetshHardcoreGlobals -Context $Context
+    Disable-NetworkDirect -Context $Context
+    Disable-PacketCoalescing -Context $Context
+    Enable-TcpHyStart -Context $Context
     Disable-NetworkTunneling
 
     $adapters = Get-EligibleNetAdapters
