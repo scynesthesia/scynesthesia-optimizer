@@ -1,4 +1,5 @@
 # Depends on: ui.psm1 (loaded by main script)
+Import-Module (Join-Path $PSScriptRoot 'gaming.psm1') -Force -Scope Local
 if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
 }
@@ -7,9 +8,6 @@ if (-not (Get-Module -Name 'network_discovery' -ErrorAction SilentlyContinue)) {
 }
 if (-not (Get-Module -Name 'network_shared' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/network_shared.psm1') -Force -Scope Local
-}
-if (-not (Get-Command -Name 'Disable-UdpSegmentOffload' -ErrorAction SilentlyContinue)) {
-    Import-Module (Join-Path $PSScriptRoot 'gaming.psm1') -Force -Scope Local
 }
 # Description: Retrieves active physical network adapters excluding virtual or VPN interfaces.
 # Parameters: None.
@@ -1811,4 +1809,4 @@ function Invoke-GlobalRollback {
     }
 }
 
-Export-ModuleMember -Function Invoke-NetworkTweaksSafe, Invoke-NetworkTweaksAggressive, Invoke-NetworkTweaksGaming, Set-NetworkDnsSafe, Save-NetworkBackupState, Restore-NetworkBackupState, Invoke-GlobalRollback, Save-NetworkHardwareSnapshot, Restore-NetworkHardwareSnapshot
+Export-ModuleMember -Function Get-PhysicalNetAdapters, Get-NicRegistryPaths, Invoke-NetworkFlush, Invoke-NetworkFullReset, Set-NetworkDnsSafe, Set-DnsOverHttps, Set-TcpAutotuningNormal, Set-IPvPreferenceIPv4First, Disable-LLMNR, Disable-mDNS, Set-IgmpLevel, Disable-LLTD, Disable-SmartNameResolution, Disable-NetBIOS, Disable-NetworkTelemetry, Disable-DeliveryOptimization, Set-ReservableBandwidth, Disable-RemoteAssistance, Disable-NetworkDiscovery, Set-NetworkThrottling, Set-NagleState, Set-AdapterAdvancedPropertyIfPresent, Set-EnergyEfficientEthernet, Set-NicPowerManagementGaming, Enable-RSS, Set-InterruptModeration, Invoke-NetworkTweaksSafe, Invoke-NetworkTweaksAggressive, Invoke-NetworkTweaksGaming, Convert-NetshGlobalsFromText, Register-NetshGlobalsForRollback, Register-ServiceStateForRollback, Restore-ServiceStatesFromBackup, Restore-NetshGlobalsFromMap, Save-NetworkHardwareSnapshot, Restore-NetworkHardwareSnapshot, Save-NetworkBackupState, Restore-NetworkBackupState, Invoke-GlobalRollback

@@ -1,4 +1,5 @@
 ﻿# Depends on: ui.psm1 (loaded by main script)
+Import-Module (Join-Path $PSScriptRoot 'network.psm1') -Force -Scope Local
 if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
 }
@@ -1936,4 +1937,4 @@ function Invoke-NetworkTweaksHardcore {
     Set-NeedsReboot -Context $Context | Out-Null
 }
 
-Export-ModuleMember -Function Invoke-NetworkTweaksHardcore
+Export-ModuleMember -Function Get-EligibleNetAdapters, Test-IsAdminSession, Test-IsServerClassHardware, Disable-NetworkDirect, Disable-PacketCoalescing, Enable-TcpHyStart, Get-HardcoreAdapterProfile, Get-NicLegacyDriverAssessment, Get-LowLevelSocketTweakSkips, Set-TcpIpAdvancedParameters, Set-NetworkThrottlingHardcore, Set-ServicePriorities, Set-WinsockOptimizations, Optimize-LanmanServer, Set-NetshHardcoreGlobals, Get-NicRegistryPaths, Set-NicRegistryHardcore, Get-PrimaryNetAdapter, Set-WakeOnLanHardcore, Test-MtuSize, Find-OptimalMtu, Invoke-MtuToAdapters, Get-HardwareAgeYears, Suggest-NetworkIrqCores, Set-TcpCongestionProvider, Disable-NetworkTunneling, Invoke-NetworkTweaksHardcore
