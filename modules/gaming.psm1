@@ -455,6 +455,142 @@ function Set-FsoGlobalOverride {
     }
 }
 
+# Description: Disables UDP Segmentation Offload globally and on physical adapters to reduce burst-related latency.
+# Parameters: Context - Run context for rollback/logging helpers.
+# Returns: None. Reports adapters touched and warns when not supported.
+function Disable-UdpSegmentOffload {
+    param(
+        [pscustomobject]$Context
+    )
+
+    Write-Section "UDP Segmentation Offload (USO)"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $adapters = @()
+    try {
+        $adapters = Get-NetAdapter -Physical -ErrorAction Stop | Where-Object { $_.Status -ne 'Disabled' }
+    } catch {
+        Write-Host "  [!] Unable to enumerate physical adapters: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
+    $globalApplied = $false
+    $setNetOffload = Get-Command -Name 'Set-NetOffloadGlobalSetting' -ErrorAction SilentlyContinue
+    if ($setNetOffload) {
+        try {
+            Set-NetOffloadGlobalSetting -UdpSegmentationOffload Disabled -ErrorAction Stop | Out-Null
+            $globalApplied = $true
+            Write-Host "  [+] Global USO disabled." -ForegroundColor Green
+            if ($logger) { Write-Log "[Gaming] UDP Segmentation Offload disabled globally." }
+        } catch {
+            Write-Host "  [!] Could not disable global USO: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  [ ] Global USO toggle unavailable on this platform." -ForegroundColor DarkGray
+    }
+
+    if (-not $adapters -or $adapters.Count -eq 0) {
+        if (-not $globalApplied) {
+            Write-Host "  [!] No eligible adapters found for USO changes." -ForegroundColor Yellow
+        }
+        return
+    }
+
+    $properties = @('UDP Segmentation Offload (IPv4)', 'UDP Segmentation Offload (IPv6)')
+    $touched = New-Object System.Collections.Generic.List[string]
+    foreach ($adapter in $adapters) {
+        foreach ($property in $properties) {
+            try {
+                Set-NetAdapterAdvancedProperty -Name $adapter.Name -DisplayName $property -DisplayValue 'Disabled' -NoRestart -ErrorAction Stop | Out-Null
+                $touched.Add($adapter.Name) | Out-Null
+                Write-Host "  [+] $property disabled on $($adapter.Name)." -ForegroundColor Green
+                if ($logger) { Write-Log "[Gaming] $property disabled on $($adapter.Name)." }
+            } catch {
+                Write-Host "  [ ] $property unsupported on $($adapter.Name): $($_.Exception.Message)" -ForegroundColor DarkGray
+            }
+        }
+    }
+
+    if ($touched.Count -gt 0 -or $globalApplied) {
+        Write-Host "  [+] UDP Segmentation Offload disabled where supported." -ForegroundColor Green
+    } else {
+        Write-Host "  [!] USO could not be disabled on detected adapters." -ForegroundColor Yellow
+    }
+}
+
+# Description: Enables TCP Fast Open to reduce handshake latency for supporting applications.
+# Parameters: Context - Optional run context for rollback/logging.
+# Returns: None. Logs the action and surfaces compatibility warnings.
+function Enable-TcpFastOpen {
+    param(
+        [pscustomobject]$Context
+    )
+
+    Write-Section "TCP Fast Open"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    try {
+        netsh int tcp set global fastopen=enabled | Out-Null
+        Write-Host "  [+] TCP Fast Open enabled in the global stack." -ForegroundColor Green
+        if ($logger) { Write-Log "[Gaming] TCP Fast Open enabled via netsh." }
+    } catch {
+        Write-Host "  [!] Unable to enable TCP Fast Open: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
+# Description: Disables ARP and Neighbor Solicitation offload on physical adapters for steadier packet pacing.
+# Parameters: Context - Optional run context for rollback/logging.
+# Returns: None. Reports adapters touched and warns on unsupported drivers.
+function Disable-ArpNsOffload {
+    param(
+        [pscustomobject]$Context
+    )
+
+    Write-Section "ARP/Neighbor Solicitation Offload"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $adapters = @()
+    try {
+        $adapters = Get-NetAdapter -Physical -ErrorAction Stop | Where-Object { $_.Status -ne 'Disabled' }
+    } catch {
+        Write-Host "  [!] Unable to enumerate physical adapters: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
+    if (-not $adapters -or $adapters.Count -eq 0) {
+        Write-Host "  [!] No eligible adapters found for ARP/NS offload changes." -ForegroundColor Yellow
+        return
+    }
+
+    $touched = New-Object System.Collections.Generic.List[string]
+    foreach ($adapter in $adapters) {
+        $powerManagementApplied = $false
+        try {
+            Set-NetAdapterPowerManagement -Name $adapter.Name -ArpOffload Disabled -NsOffload Disabled -ErrorAction Stop | Out-Null
+            $powerManagementApplied = $true
+            $touched.Add($adapter.Name) | Out-Null
+            Write-Host "  [+] ARP/NS offload disabled via power management on $($adapter.Name)." -ForegroundColor Green
+            if ($logger) { Write-Log "[Gaming] ARP/NS offload disabled on $($adapter.Name) through power management." }
+        } catch {
+            Write-Host "  [ ] Power management ARP/NS offload toggle unsupported on $($adapter.Name): $($_.Exception.Message)" -ForegroundColor DarkGray
+        }
+
+        foreach ($property in @('ARP Offload', 'NS Offload')) {
+            try {
+                Set-NetAdapterAdvancedProperty -Name $adapter.Name -DisplayName $property -DisplayValue 'Disabled' -NoRestart -ErrorAction Stop | Out-Null
+                if (-not $touched.Contains($adapter.Name)) { $touched.Add($adapter.Name) | Out-Null }
+                Write-Host "  [+] $property disabled on $($adapter.Name)." -ForegroundColor Green
+                if ($logger) { Write-Log "[Gaming] $property disabled on $($adapter.Name)." }
+            } catch {
+                if (-not $powerManagementApplied) {
+                    Write-Host "  [ ] $property unsupported on $($adapter.Name): $($_.Exception.Message)" -ForegroundColor DarkGray
+                }
+            }
+        }
+    }
+
+    if ($touched.Count -gt 0) {
+        Write-Host "  [+] ARP/NS offload disabled where supported." -ForegroundColor Green
+    } else {
+        Write-Host "  [!] No ARP/NS offload settings could be changed on detected adapters." -ForegroundColor Yellow
+    }
+}
+
 # Description: Runs the complete Gaming preset sequence following modular standards.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Sequentially applies gaming optimizations and reports completion.
@@ -612,4 +748,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Disable-GameDVR, Set-FsoGlobalOverride, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Invoke-GamingOptimizations, Manage-GameQoS
