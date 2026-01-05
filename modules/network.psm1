@@ -806,6 +806,7 @@ function Convert-NetshGlobalsFromText {
         EcnCapability      = 'ECN Capability\s*:\s*(?<value>.+)'
         Timestamps         = 'RFC 1323 Timestamps\s*:\s*(?<value>.+)'
         InitialRto         = 'Initial RTO\s*:\s*(?<value>.+)'
+        HyStart            = 'HyStart\s*:\s*(?<value>.+)'
     }
 
     foreach ($key in $patterns.Keys) {
@@ -929,6 +930,7 @@ function Restore-NetshGlobalsFromMap {
         EcnCapability      = { param($value) "ecncapability=$value" }
         Timestamps         = { param($value) "timestamps=$value" }
         InitialRto         = { param($value) "initialrto=$value" }
+        HyStart            = { param($value) "hystart=$value" }
     }
 
     foreach ($entry in $GlobalsMap.GetEnumerator()) {
@@ -1222,6 +1224,10 @@ function Save-NetworkBackupState {
             CongestionProvider  = $null
             NetshGlobals        = $null
             TcpGlobalsRaw       = $null
+            OffloadGlobals      = [ordered]@{
+                NetworkDirect    = $null
+                PacketCoalescing = $null
+            }
             RegRollbackSnippet  = $null
         }
     }
@@ -1402,6 +1408,17 @@ function Save-NetworkBackupState {
         }
     } catch { }
 
+    try {
+        $getOffload = Get-Command -Name 'Get-NetOffloadGlobalSetting' -ErrorAction SilentlyContinue
+        if ($getOffload) {
+            $offloadState = Get-NetOffloadGlobalSetting -ErrorAction Stop
+            if ($offloadState) {
+                $backup.Hardcore.OffloadGlobals.NetworkDirect = $offloadState.NetworkDirect
+                $backup.Hardcore.OffloadGlobals.PacketCoalescing = $offloadState.PacketCoalescing
+            }
+        }
+    } catch { }
+
     if ($regRollbackMap.Count -gt 0) {
         $regLines = New-Object System.Collections.Generic.List[string]
         $regLines.Add('Windows Registry Editor Version 5.00') | Out-Null
@@ -1520,6 +1537,13 @@ function Restore-NetworkBackupState {
         }
     }
 
+    $offloadGlobals = $null
+    try {
+        if ($data -and $data.Hardcore -and $data.Hardcore.OffloadGlobals) {
+            $offloadGlobals = $data.Hardcore.OffloadGlobals
+        }
+    } catch { }
+
     try {
         if ($null -ne $data.NetworkThrottlingIndex) {
             New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Force | Out-Null
@@ -1555,6 +1579,26 @@ function Restore-NetworkBackupState {
             if ($logger) { Write-Log "[Backup] Restored NonBestEffortLimit=$($data.QoS.NonBestEffortLimit)" }
         }
     } catch { }
+
+    try {
+        $setOffload = Get-Command -Name 'Set-NetOffloadGlobalSetting' -ErrorAction SilentlyContinue
+        if ($setOffload -and $offloadGlobals) {
+            $parameters = @{}
+            if ($offloadGlobals.PSObject.Properties.Name -contains 'NetworkDirect' -and $null -ne $offloadGlobals.NetworkDirect) {
+                $parameters['NetworkDirect'] = $offloadGlobals.NetworkDirect
+            }
+            if ($offloadGlobals.PSObject.Properties.Name -contains 'PacketCoalescing' -and $null -ne $offloadGlobals.PacketCoalescing) {
+                $parameters['PacketCoalescing'] = $offloadGlobals.PacketCoalescing
+            }
+
+            if ($parameters.Count -gt 0) {
+                Set-NetOffloadGlobalSetting @parameters -ErrorAction Stop | Out-Null
+                if ($logger) { Write-Log "[Backup] Restored NetOffload globals: $($parameters.Keys -join ', ')." }
+            }
+        }
+    } catch {
+        if ($logger) { Write-Log "[Backup] Failed to restore NetOffload globals: $($_.Exception.Message)" -Level 'Warning' }
+    }
 
     try {
         if ($null -ne $data.LLMNR.EnableMulticast) {
