@@ -1684,6 +1684,8 @@ function Invoke-NetworkTweaksHardcore {
         $Context = New-RunContext
     }
 
+    Invoke-NetworkTweaksGaming -Context $Context
+
     # Capture IPv6 state for rollback before making optional changes.
     $ipv6Bindings = @()
     try {

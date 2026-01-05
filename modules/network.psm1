@@ -696,12 +696,13 @@ function Invoke-NetworkTweaksAggressive {
         [pscustomobject]$Context
     )
 
-    $context = Get-RunContext -Context $Context
+    $Context = Get-RunContext -Context $Context
     Write-Section "Network tweaks (Aggressive profile)"
+    Invoke-NetworkTweaksSafe -Context $Context
     $networkDiscoveryDisabled = $false
-    Disable-LLMNR -Context $context
-    Disable-mDNS -Context $context
-    Disable-DeliveryOptimization -Context $context
+    Disable-LLMNR -Context $Context
+    Disable-mDNS -Context $Context
+    Disable-DeliveryOptimization -Context $Context
 
     if (Get-Confirmation "Disable NetBIOS over TCP/IP? This may break legacy LAN shares and printers." 'n') {
         Disable-NetBIOS
@@ -709,11 +710,11 @@ function Invoke-NetworkTweaksAggressive {
         Write-Host "  [ ] NetBIOS left enabled." -ForegroundColor Gray
     }
 
-    Disable-NetworkTelemetry -Context $context
-    Set-ReservableBandwidth -Context $context
+    Disable-NetworkTelemetry -Context $Context
+    Set-ReservableBandwidth -Context $Context
 
     if (Get-Confirmation "Disable Remote Assistance?" 'y') {
-        Disable-RemoteAssistance -Context $context
+        Disable-RemoteAssistance -Context $Context
     } else {
         Write-Host "  [ ] Remote Assistance left enabled." -ForegroundColor Gray
     }
@@ -725,8 +726,8 @@ function Invoke-NetworkTweaksAggressive {
         Write-Host "  [ ] Network Discovery left enabled." -ForegroundColor Gray
     }
 
-    Disable-LLTD -Context $context -DiscoveryAlreadyDisabled:$networkDiscoveryDisabled
-    Set-IgmpLevel -Context $context
+    Disable-LLTD -Context $Context -DiscoveryAlreadyDisabled:$networkDiscoveryDisabled
+    Set-IgmpLevel -Context $Context
 }
 
 # Description: Applies gaming-focused network tweaks for lower latency.
@@ -739,6 +740,7 @@ function Invoke-NetworkTweaksGaming {
     )
 
     Write-Section "Network tweaks (Gaming profile)"
+    Invoke-NetworkTweaksAggressive -Context $Context
     Write-Host "  [i] Applying hardware power optimizations..." -ForegroundColor Gray
     Set-NicPowerManagementGaming -Context $Context
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
