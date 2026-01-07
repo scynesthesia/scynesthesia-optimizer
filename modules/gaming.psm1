@@ -322,6 +322,70 @@ function Optimize-HidLatency {
     Set-RebootRequired -Context $Context | Out-Null
 }
 
+# Description: Sets 1:1 mouse movement by disabling acceleration and setting standard curves.
+# Parameters: Context - Run context for reboot tracking.
+# Returns: None. Records registry rollback data for changes.
+function Optimize-MouseOneToOne {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "Mouse 1:1 Movement"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $mousePath = "HKCU:\\Control Panel\\Mouse"
+    $mouseCurves = @{
+        SmoothMouseXCurve = [byte[]]@(
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x38,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x70,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0xA8,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0xE0,0x00,0x00,0x00,0x00,0x00
+        )
+        SmoothMouseYCurve = [byte[]]@(
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x38,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0x70,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0xA8,0x00,
+            0x00,0x00,0x00,0x00,0x00,0x00,0xE0,0x00
+        )
+    }
+
+    if (Get-Confirmation "Movimiento de ratón 1 a 1 (Eliminar Aceleración)" 'y') {
+        try {
+            $results = @()
+            $results += Set-RegistryValueSafe -Path $mousePath -Name 'MouseSpeed' -Value '0' -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel 'Set MouseSpeed to 0'
+            $results += Set-RegistryValueSafe -Path $mousePath -Name 'MouseThreshold1' -Value '0' -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel 'Set MouseThreshold1 to 0'
+            $results += Set-RegistryValueSafe -Path $mousePath -Name 'MouseThreshold2' -Value '0' -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel 'Set MouseThreshold2 to 0'
+            $results += Set-RegistryValueSafe -Path $mousePath -Name 'MouseSensitivity' -Value '10' -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel 'Set MouseSensitivity to 10'
+
+            foreach ($curve in $mouseCurves.GetEnumerator()) {
+                $results += Set-RegistryValueSafe -Path $mousePath -Name $curve.Key -Value $curve.Value -Type ([Microsoft.Win32.RegistryValueKind]::Binary) -Context $Context -Critical -ReturnResult -OperationLabel "Set $($curve.Key) curve"
+            }
+
+            if ($results | Where-Object { -not $_ -or -not $_.Success }) {
+                foreach ($result in $results) {
+                    if (-not ($result -and $result.Success)) {
+                        Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Mouse 1:1 movement tweak' | Out-Null
+                    }
+                }
+                return
+            }
+
+            Write-Host "  [+] Mouse acceleration disabled for 1:1 movement." -ForegroundColor Green
+            if ($logger) {
+                Write-Log "[Gaming] Mouse 1:1 movement applied (MouseSpeed/Thresholds=0, Sensitivity=10, flat curves)."
+            }
+
+            Set-RebootRequired -Context $Context | Out-Null
+        } catch {
+            Invoke-ErrorHandler -Context "Applying mouse 1:1 movement tweaks" -ErrorRecord $_
+        }
+    } else {
+        Write-Host "  [ ] Mouse movement left unchanged." -ForegroundColor DarkGray
+    }
+}
+
 # Description: Elevates csrss.exe to realtime priority for extreme latency reduction.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Records registry rollback data for changes.
