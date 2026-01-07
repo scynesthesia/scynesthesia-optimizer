@@ -103,5 +103,21 @@ Set-ExecutionPolicy Bypass -Scope Process
 - Open an issue with your Windows build, PowerShell version, selected profile/module, and whether hardcore networking was enabled.
 - Contributions are welcome in English and should document any new flags or safety considerations.
 
+## Troubleshooting
+### Antivirus or endpoint protection false positives
+Because this project modifies system settings and can disable/enable network adapters, some antivirus or EDR tools may flag it as suspicious (false positive). If the optimizer fails to launch, exits unexpectedly, or specific actions are blocked:
+- Temporarily allowlist the folder where you extracted the optimizer (including `scynesthesiaoptimizer.ps1` and `modules/`).
+- Ensure PowerShell is running as Administrator and that script execution is permitted for the current process.
+- Re-run the optimizer after confirming the allowlist, then review the session log for any security-tool blocks.
+
+If you believe your security tool is blocking a legitimate action, capture the log file from `%TEMP%\ScynesthesiaOptimizer` and include it with your issue report.
+
+## Safety improvements (recommended)
+For the most resilient experience, consider the following enhancements:
+1. **Immediate rollback flush after high-impact changes**: persist rollback state right after critical or high-impact operations to reduce crash windows.
+2. **Hardened rollback metadata**: keep failed rollback entries so retries are possible if permissions or registry state change later.
+3. **Network recovery fallback**: if MTU rollback or adapter re-enable fails, offer a guided recovery step (e.g., staged netsh reset and reboot guidance).
+4. **Integrity verification for remote installs**: add hash/signature validation in the installer workflow to reduce supply-chain risk.
+
 ## License
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
