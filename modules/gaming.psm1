@@ -321,6 +321,53 @@ function Optimize-HidLatency {
 
     Set-RebootRequired -Context $Context | Out-Null
 }
+
+# Description: Elevates csrss.exe to realtime priority for extreme latency reduction.
+# Parameters: Context - Run context for reboot tracking.
+# Returns: None. Records registry rollback data for changes.
+function Set-CsrssPriorityHardcore {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "CSRSS Realtime Priority"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $riskSummary = @(
+        "Setting csrss.exe to Realtime priority can cause a system hang or freeze; use only if you accept hard-reset recovery risk."
+    )
+
+    if (Get-Confirmation -Question "Apply realtime priority overrides for csrss.exe?" -Default 'n' -RiskSummary $riskSummary) {
+        try {
+            $perfPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\csrss.exe\\PerfOptions"
+            $cpuPriority = Set-RegistryValueSafe -Path $perfPath -Name 'CpuPriorityClass' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set csrss.exe CpuPriorityClass to Realtime'
+            $ioPriority = Set-RegistryValueSafe -Path $perfPath -Name 'IoPriority' -Value 3 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set csrss.exe IoPriority to High'
+
+            if (($cpuPriority -and $cpuPriority.Success) -and ($ioPriority -and $ioPriority.Success)) {
+                Write-Host "  [+] csrss.exe priority overrides applied (Realtime/High IO)." -ForegroundColor Green
+                if ($logger) {
+                    Write-Log "[Gaming] csrss.exe PerfOptions set (CpuPriorityClass=4, IoPriority=3)."
+                }
+
+                Set-RebootRequired -Context $Context | Out-Null
+            } else {
+                foreach ($entry in @(
+                    @{ Result = $cpuPriority; Label = 'Set csrss.exe CpuPriorityClass to Realtime' },
+                    @{ Result = $ioPriority; Label = 'Set csrss.exe IoPriority to High' }
+                )) {
+                    if (-not ($entry.Result -and $entry.Result.Success)) {
+                        Register-HighImpactRegistryFailure -Context $Context -Result $entry.Result -OperationLabel $entry.Label | Out-Null
+                    }
+                }
+            }
+        } catch {
+            Invoke-ErrorHandler -Context "Setting csrss.exe realtime priority overrides" -ErrorRecord $_
+        }
+    } else {
+        Write-Host "  [ ] csrss.exe priority overrides skipped." -ForegroundColor DarkGray
+    }
+}
 # Description: Tunes processor scheduling registry settings for lower input latency.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Records changes when logger is present.
@@ -605,6 +652,7 @@ function Invoke-GamingOptimizations {
     Optimize-ProcessorScheduling -Context $Context
     Set-UsbPowerManagementHardcore -Context $Context
     Optimize-HidLatency -Context $Context
+    Set-CsrssPriorityHardcore -Context $Context
     Invoke-DriverTelemetry
     Set-FsoGlobalOverride -Context $Context
 
@@ -748,4 +796,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Invoke-GamingOptimizations, Manage-GameQoS
