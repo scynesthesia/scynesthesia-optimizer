@@ -515,6 +515,91 @@ function Set-LatencyToleranceHardcore {
         Write-Host "  [ ] Latency tolerance overrides skipped." -ForegroundColor DarkGray
     }
 }
+
+# Description: Applies NVIDIA driver registry tweaks for latency tolerance and contiguous memory usage.
+# Parameters: Context - Run context for rollback tracking.
+# Returns: None. Records registry rollback data for changes.
+function Set-NvidiaLatencyTweaks {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "NVIDIA Latency Tolerance (Driver)"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $riskSummary = @(
+        "Targets NVIDIA GPU driver registry entries only; changes remove power-saving latency tolerance safeguards and can increase power draw and heat."
+    )
+
+    if (-not (Get-Confirmation -Question "Apply NVIDIA driver latency tolerance and contiguous memory tweaks?" -Default 'n' -RiskSummary $riskSummary)) {
+        Write-Host "  [ ] NVIDIA latency tweaks skipped." -ForegroundColor DarkGray
+        return
+    }
+
+    $classPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}"
+    $nvidiaPaths = @()
+
+    try {
+        $classKeys = Get-ChildItem -Path $classPath -ErrorAction Stop
+    } catch {
+        Invoke-ErrorHandler -Context "Discovering NVIDIA GPU registry keys" -ErrorRecord $_
+        return
+    }
+
+    foreach ($key in $classKeys) {
+        try {
+            $provider = (Get-ItemProperty -Path $key.PSPath -Name 'ProviderName' -ErrorAction Stop).ProviderName
+            if ($provider -match '(?i)nvidia') {
+                $nvidiaPaths += $key.PSPath
+            }
+        } catch {
+            Invoke-ErrorHandler -Context "Reading ProviderName for $($key.PSChildName)" -ErrorRecord $_
+        }
+    }
+
+    if ($nvidiaPaths.Count -eq 0) {
+        Write-Host "  [!] No NVIDIA GPU registry keys found for latency tweaks." -ForegroundColor Yellow
+        return
+    }
+
+    $results = @()
+    $appliedAny = $false
+
+    foreach ($path in $nvidiaPaths) {
+        try {
+            $registryKey = Get-Item -Path $path -ErrorAction Stop
+            $latencyNames = $registryKey.GetValueNames() | Where-Object { $_ -match '^NVIDIA Latency Tolerance' }
+
+            foreach ($name in $latencyNames) {
+                $results += Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set $name to 1"
+            }
+
+            $results += Set-RegistryValueSafe -Path $path -Name 'PreferSystemMemoryContiguous' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set PreferSystemMemoryContiguous to 1'
+            $results += Set-RegistryValueSafe -Path $path -Name 'PciLatencyTimerControl' -Value 32 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set PciLatencyTimerControl to 32'
+
+            if ($logger) {
+                Write-Log "[Gaming] NVIDIA registry tweaks applied at $path (LatencyTolerance, PreferSystemMemoryContiguous, PciLatencyTimerControl=32)."
+            }
+        } catch {
+            Invoke-ErrorHandler -Context "Applying NVIDIA latency tweaks at $path" -ErrorRecord $_
+        }
+    }
+
+    foreach ($result in $results) {
+        if ($result -and $result.Success) {
+            $appliedAny = $true
+        } else {
+            $label = if ($result -and $result.Operation) { $result.Operation } else { 'NVIDIA driver registry tweak' }
+            Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $label | Out-Null
+        }
+    }
+
+    if ($appliedAny) {
+        Write-Host "  [+] NVIDIA latency tolerance tweaks applied." -ForegroundColor Green
+        Set-RebootRequired -Context $Context | Out-Null
+    }
+}
 # Description: Tunes processor scheduling registry settings for lower input latency.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Records changes when logger is present.
@@ -824,6 +909,7 @@ function Invoke-GamingOptimizations {
     Optimize-HidLatency -Context $Context
     Set-CsrssPriorityHardcore -Context $Context
     Set-LatencyToleranceHardcore -Context $Context
+    Set-NvidiaLatencyTweaks -Context $Context
     Invoke-DriverTelemetry
     Set-FsoGlobalOverride -Context $Context
 
@@ -967,4 +1053,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
