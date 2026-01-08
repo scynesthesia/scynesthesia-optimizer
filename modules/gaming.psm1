@@ -702,6 +702,28 @@ function Disable-ArpNsOffload {
     }
 }
 
+# Description: Ensures Windows Game Mode auto-priority is enabled for scheduler improvements.
+# Parameters: Context - Run context for rollback tracking.
+# Returns: None. Records registry rollback data for the change.
+function Enable-WindowsGameMode {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "Windows Game Mode (Kernel Priority Enhancement)"
+    Write-Host "Game Mode helps Windows prioritize game threads and quiet background processes for smoother scheduling." -ForegroundColor DarkGray
+
+    $gameBarPath = "HKCU:\\Software\\Microsoft\\GameBar"
+    $result = Set-RegistryValueSafe -Path $gameBarPath -Name 'AllowAutoGameMode' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Enable Windows Game Mode'
+
+    if ($result -and $result.Success) {
+        Write-Host "  [+] Windows Game Mode auto-priority enabled." -ForegroundColor Green
+    } else {
+        Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Enable Windows Game Mode' | Out-Null
+    }
+}
+
 # Description: Runs the complete Gaming preset sequence following modular standards.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Sequentially applies gaming optimizations and reports completion.
@@ -712,6 +734,7 @@ function Invoke-GamingOptimizations {
     )
 
     Optimize-GamingScheduler -Context $Context
+    Enable-WindowsGameMode -Context $Context
     Invoke-CustomGamingPowerSettings -Context $Context
     Optimize-ProcessorScheduling -Context $Context
     Set-UsbPowerManagementHardcore -Context $Context
@@ -860,4 +883,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
