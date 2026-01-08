@@ -432,6 +432,89 @@ function Set-CsrssPriorityHardcore {
         Write-Host "  [ ] csrss.exe priority overrides skipped." -ForegroundColor DarkGray
     }
 }
+
+# Description: Forces latency tolerance values to minimums for power and graphics subsystems.
+# Parameters: Context - Run context for reboot tracking.
+# Returns: None. Records registry rollback data for changes.
+function Set-LatencyToleranceHardcore {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "Latency Tolerance (Sub-millisecond Precision)"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $riskSummary = @(
+        "Forces the graphics kernel and power subsystem to operate without power-saving latency margins, which can increase power draw and heat."
+    )
+
+    if (Get-Confirmation -Question "Force minimum latency tolerance values for power and graphics subsystems?" -Default 'n' -RiskSummary $riskSummary) {
+        try {
+            $results = @()
+
+            $dxgKrnlPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\DXGKrnl"
+            foreach ($name in @(
+                'MonitorLatencyTolerance',
+                'MonitorLatencyToleranceMsec',
+                'MonitorRefreshLatencyTolerance',
+                'MonitorRefreshLatencyToleranceMsec',
+                'MonitorLatencyTolerancePerfOverride'
+            )) {
+                $results += Set-RegistryValueSafe -Path $dxgKrnlPath -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set DXGKrnl $name to 1"
+            }
+
+            $powerPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Power"
+            foreach ($name in @(
+                'ExitLatency',
+                'ExitLatencyCheckEnabled',
+                'ExitLatencyControl',
+                'ExitLatencyTolerance',
+                'IdleDuration',
+                'IdleTimeout',
+                'LatencyTolerance',
+                'LatencyToleranceDefault',
+                'LatencyToleranceFallback',
+                'LatencyTolerancePerfOverride',
+                'LatencyToleranceVSyncEnabled',
+                'RtlLatencyTolerance'
+            )) {
+                $results += Set-RegistryValueSafe -Path $powerPath -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set Power $name to 1"
+            }
+
+            $graphicsPowerPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\\Power"
+            foreach ($name in @(
+                'DefaultD3TransitionLatencyActivelyUsed',
+                'DefaultD3TransitionLatencyIdle',
+                'DefaultD3TransitionLatencyInCoolingMode',
+                'DefaultD3TransitionLatencyOnD3Cold',
+                'DefaultD3TransitionLatencyOnD3Hot'
+            )) {
+                $results += Set-RegistryValueSafe -Path $graphicsPowerPath -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set GraphicsDrivers Power $name to 1"
+            }
+
+            if ($results | Where-Object { -not ($_ -and $_.Success) }) {
+                foreach ($result in $results) {
+                    if (-not ($result -and $result.Success)) {
+                        Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $result.Operation | Out-Null
+                    }
+                }
+                return
+            }
+
+            Write-Host "  [+] Latency tolerance registry overrides applied." -ForegroundColor Green
+            if ($logger) {
+                Write-Log "[Gaming] Latency tolerance values forced to 1 for DXGKrnl/Power/GraphicsDrivers."
+            }
+
+            Set-RebootRequired -Context $Context | Out-Null
+        } catch {
+            Invoke-ErrorHandler -Context "Applying latency tolerance registry overrides" -ErrorRecord $_
+        }
+    } else {
+        Write-Host "  [ ] Latency tolerance overrides skipped." -ForegroundColor DarkGray
+    }
+}
 # Description: Tunes processor scheduling registry settings for lower input latency.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Records changes when logger is present.
@@ -740,6 +823,7 @@ function Invoke-GamingOptimizations {
     Set-UsbPowerManagementHardcore -Context $Context
     Optimize-HidLatency -Context $Context
     Set-CsrssPriorityHardcore -Context $Context
+    Set-LatencyToleranceHardcore -Context $Context
     Invoke-DriverTelemetry
     Set-FsoGlobalOverride -Context $Context
 
@@ -883,4 +967,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
