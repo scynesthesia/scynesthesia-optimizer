@@ -17,14 +17,15 @@ function Optimize-GamingScheduler {
 
     if (Get-Confirmation "Prioritize GPU/CPU for foreground games?" 'y') {
         $gamesPath = "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
-        $priorityControlPath = "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl"
+        $ioSystemPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\I/O System"
+        $kernelVelocityPath = "HKLM:\SYSTEM\CurrentControlSet\Control\KernelVelocity"
 
         $gpuPriority = Set-RegistryValueSafe $gamesPath "GPU Priority" 8 -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler GPU priority'
         $priority = Set-RegistryValueSafe $gamesPath "Priority" 6 -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler priority'
         $schedCategory = Set-RegistryValueSafe $gamesPath "Scheduling Category" "High" ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler category'
         $sfioPriority = Set-RegistryValueSafe $gamesPath "SFIO Priority" "High" ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler SFIO priority'
-        $passivePriority = Set-RegistryValueSafe -Path $priorityControlPath -Name "PassiveIntRealTimeWorkerPriority" -Value 18 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set PassiveIntRealTimeWorkerPriority to 18'
-        $disableFgBoost = Set-RegistryValueSafe -Path $priorityControlPath -Name "DisableFGBoostDecay" -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable foreground boost decay'
+        $passivePriority = Set-RegistryValueSafe -Path $ioSystemPath -Name "PassiveIntRealTimeWorkerPriority" -Value 18 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set PassiveIntRealTimeWorkerPriority to 18'
+        $disableFgBoost = Set-RegistryValueSafe -Path $kernelVelocityPath -Name "DisableFGBoostDecay" -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable foreground boost decay'
 
         if (($gpuPriority -and $gpuPriority.Success) -and ($priority -and $priority.Success) -and ($schedCategory -and $schedCategory.Success) -and ($sfioPriority -and $sfioPriority.Success) -and ($passivePriority -and $passivePriority.Success) -and ($disableFgBoost -and $disableFgBoost.Success)) {
             Write-Host "  [+] Scheduler optimized for games." -ForegroundColor Green
@@ -92,19 +93,19 @@ function Invoke-ProcessPriorityHardcore {
         }
     }
 
-    Set-ProcessPerfOptions -ProcessName 'dwm.exe' -CpuPriorityClass 4 -IoPriority $null -Label 'Elevate dwm.exe priority'
+    Set-ProcessPerfOptions -ProcessName 'dwm.exe' -CpuPriorityClass 4 -IoPriority 3 -Label 'Elevate dwm.exe priority'
     Set-ProcessPerfOptions -ProcessName 'audiodg.exe' -CpuPriorityClass 2 -IoPriority $null -Label 'Elevate audiodg.exe priority'
     Set-ProcessPerfOptions -ProcessName 'SearchIndexer.exe' -CpuPriorityClass 1 -IoPriority 0 -Label 'Degrade SearchIndexer.exe priority'
     Set-ProcessPerfOptions -ProcessName 'TrustedInstaller.exe' -CpuPriorityClass 1 -IoPriority 0 -Label 'Degrade TrustedInstaller.exe priority'
     Set-ProcessPerfOptions -ProcessName 'wuauclt.exe' -CpuPriorityClass 1 -IoPriority 0 -Label 'Degrade wuauclt.exe priority'
 
     $lsassRiskSummary = @(
-        "Lowering lsass.exe priority can impact authentication responsiveness and system stability.",
-        "Use only if you accept potential security or login reliability issues."
+        "Lowering lsass.exe priority can slow logon/authentication responsiveness.",
+        "Proceed only if you accept potential security and login reliability issues."
     )
 
     if (Get-Confirmation -Question "Degrade lsass.exe priority (high risk)?" -Default 'n' -RiskSummary $lsassRiskSummary) {
-        Set-ProcessPerfOptions -ProcessName 'lsass.exe' -CpuPriorityClass 1 -IoPriority 0 -Label 'Degrade lsass.exe priority'
+        Set-ProcessPerfOptions -ProcessName 'lsass.exe' -CpuPriorityClass 1 -IoPriority $null -Label 'Degrade lsass.exe priority'
     } else {
         Write-Host "  [ ] lsass.exe priority left unchanged." -ForegroundColor DarkGray
     }
