@@ -22,6 +22,68 @@ function Invoke-DriverTelemetry {
     Write-Host "  [+] Driver telemetry services disabled where present." -ForegroundColor Green
 }
 
+function Disable-ScheduledTaskSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object]$Task,
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context,
+        [string]$OperationLabel = 'Disable scheduled task'
+    )
+
+    $context = Get-RunContext -Context $Context
+    $tracker = Get-NonRegistryChangeTracker -Context $context
+    if (-not $tracker.ContainsKey('ScheduledTasks')) {
+        $tracker['ScheduledTasks'] = @{}
+    }
+
+    $scheduledTask = $null
+    $taskName = $null
+    $taskPath = $null
+
+    if ($Task -is [string]) {
+        $taskName = Split-Path $Task -Leaf
+        $taskPath = (Split-Path $Task -Parent) -replace '^\\\\', '\'
+        if (-not $taskPath.EndsWith("\")) {
+            $taskPath += "\"
+        }
+        $scheduledTask = Get-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction SilentlyContinue
+    } else {
+        $scheduledTask = $Task
+        $taskName = $scheduledTask.TaskName
+        $taskPath = $scheduledTask.TaskPath
+    }
+
+    if (-not $scheduledTask) {
+        Write-Host "  [ ] Task $Task not present." -ForegroundColor DarkGray
+        return $false
+    }
+
+    $taskKey = "${taskPath}${taskName}"
+    if (-not $tracker.ScheduledTasks.ContainsKey($taskKey)) {
+        $tracker.ScheduledTasks[$taskKey] = @{
+            TaskPath = $taskPath
+            TaskName = $taskName
+            Enabled  = $scheduledTask.Enabled
+        }
+    }
+
+    if ($scheduledTask.Enabled) {
+        try {
+            $scheduledTask | Disable-ScheduledTask -ErrorAction Stop | Out-Null
+            Write-Host "  [+] Task $taskKey disabled" -ForegroundColor Green
+        } catch {
+            Invoke-ErrorHandler -Context "$OperationLabel ($taskKey)" -ErrorRecord $_
+            return $false
+        }
+    } else {
+        Write-Host "  [ ] Task $taskKey already disabled." -ForegroundColor DarkGray
+    }
+
+    return $true
+}
+
 function Invoke-PrivacyTelemetrySafe {
     param(
         [pscustomobject]$Context,
@@ -141,6 +203,21 @@ function Invoke-PrivacySafe {
     }
 
     try {
+        $telemetryTasks = @(
+            "\\Microsoft\\Windows\\Customer Experience Improvement Program\\Consolidator",
+            "\\Microsoft\\Windows\\Customer Experience Improvement Program\\KernelCeipTask",
+            "\\Microsoft\\Windows\\Customer Experience Improvement Program\\UsbCeip",
+            "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser",
+            "\\Microsoft\\Windows\\Application Experience\\ProgramDataUpdater"
+        )
+        foreach ($task in $telemetryTasks) {
+            Disable-ScheduledTaskSafe -Task $task -Context $context -OperationLabel 'Disabling scheduled telemetry task' | Out-Null
+        }
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling telemetry scheduled tasks" -ErrorRecord $_
+    }
+
+    try {
         Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting" "Disabled" 1 -Context $context -Critical
         Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting" "LoggingDisabled" 1 -Context $context -Critical
         Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting" "Disabled" 1 -Context $context -Critical
@@ -185,6 +262,22 @@ function Invoke-PrivacyAggressive {
     if ($abort) { return $true }
 
     try {
+        $autologgers = @(
+            'AppModel',
+            'Cellcore',
+            'DataMarket',
+            'iclsClient',
+            'Mellanox-Kernel',
+            'SQMLogger'
+        )
+        foreach ($logger in $autologgers) {
+            Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\WMI\Autologger\$logger" "Start" 0 -Context $context -Critical
+        }
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling WMI autologgers" -ErrorRecord $_
+    }
+
+    try {
         Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\MicrosoftEdge\Main" "AllowPrelaunch" 0 -Context $context -Critical
         Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\MicrosoftEdge\Main" "AllowTabPreloading" 0 -Context $context -Critical
     } catch {
@@ -206,6 +299,25 @@ function Invoke-PrivacyAggressive {
         Write-Host "  [ ] App camera/microphone access left unchanged." -ForegroundColor DarkGray
     }
 
+    try {
+        $taskTargets = @(
+            "\\Microsoft\\Windows\\Power Efficiency Diagnostics\\AnalyzeSystem",
+            "\\Microsoft\\Windows\\Maintenance\\WinSAT"
+        )
+        foreach ($task in $taskTargets) {
+            Disable-ScheduledTaskSafe -Task $task -Context $context -OperationLabel 'Disabling scheduled task' | Out-Null
+        }
+
+        $familySafetyTasks = Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object {
+            $_.TaskName -like 'FamilySafety*'
+        }
+        foreach ($task in $familySafetyTasks) {
+            Disable-ScheduledTaskSafe -Task $task -Context $context -OperationLabel 'Disabling Family Safety scheduled task' | Out-Null
+        }
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling scheduled privacy tasks" -ErrorRecord $_
+    }
+
     return $false
 }
 
@@ -222,6 +334,31 @@ function Invoke-PrivacyGaming {
 
     $abort = Invoke-PrivacyAggressive -Context $context
     if ($abort) { return $true }
+
+    try {
+        $autologgers = @(
+            'TCPIPLOGGER',
+            'WiFiSession',
+            'NBSMBLOGGER',
+            'ReadyBoot'
+        )
+        foreach ($logger in $autologgers) {
+            Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\WMI\Autologger\$logger" "Start" 0 -Context $context -Critical
+        }
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling gaming WMI autologgers" -ErrorRecord $_
+    }
+
+    try {
+        $taskTargets = Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object {
+            $_.TaskName -eq 'SmartScreenSpecific' -or $_.TaskName -like 'OfficeTelemetryAgent*'
+        }
+        foreach ($task in $taskTargets) {
+            Disable-ScheduledTaskSafe -Task $task -Context $context -OperationLabel 'Disabling scheduled gaming telemetry task' | Out-Null
+        }
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling gaming scheduled tasks" -ErrorRecord $_
+    }
 
     try {
         Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableActivityFeed" 0 -Context $context -Critical
