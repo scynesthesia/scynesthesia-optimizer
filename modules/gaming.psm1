@@ -821,6 +821,94 @@ function Invoke-NvidiaHardcoreTweaks {
         Set-RebootRequired -Context $Context | Out-Null
     }
 }
+
+# Description: Disables NVIDIA dynamic P-States and Windows TDR for maximum GPU stability.
+# Parameters: Context - Run context for rollback tracking.
+# Returns: None. Records registry rollback data for changes.
+function Invoke-VideoStabilityHardcore {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "GPU Power & Stability (Extreme Tweaks)"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $riskSummary = @(
+        "Disables NVIDIA dynamic P-States, which forces the GPU to stay in higher power states and increases heat/power draw.",
+        "Disables Windows TDR recovery. If the GPU driver hangs, the system will freeze completely and require a hard reboot."
+    )
+
+    if (-not (Get-Confirmation -Question "Disable NVIDIA dynamic P-States and Windows TDR recovery?" -Default 'n' -RiskSummary $riskSummary)) {
+        Write-Host "  [ ] GPU stability tweaks skipped." -ForegroundColor DarkGray
+        return
+    }
+
+    $results = @()
+    $appliedAny = $false
+
+    $classPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}"
+    $nvidiaPaths = @()
+
+    try {
+        $classKeys = Get-ChildItem -Path $classPath -ErrorAction Stop
+    } catch {
+        Invoke-ErrorHandler -Context "Discovering NVIDIA GPU registry keys (dynamic P-States)" -ErrorRecord $_
+        return
+    }
+
+    foreach ($key in $classKeys) {
+        try {
+            $provider = (Get-ItemProperty -Path $key.PSPath -Name 'ProviderName' -ErrorAction Stop).ProviderName
+            if ($provider -eq 'NVIDIA') {
+                $nvidiaPaths += $key.PSPath
+            }
+        } catch {
+            Invoke-ErrorHandler -Context "Reading ProviderName for $($key.PSChildName) (dynamic P-States)" -ErrorRecord $_
+        }
+    }
+
+    if ($nvidiaPaths.Count -eq 0) {
+        Write-Host "  [!] No NVIDIA GPU registry keys found for DisableDynamicPstate." -ForegroundColor Yellow
+    } else {
+        foreach ($path in $nvidiaPaths) {
+            try {
+                $results += Set-RegistryValueSafe -Path $path -Name 'DisableDynamicPstate' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "DisableDynamicPstate=1 at $path"
+                if ($logger) {
+                    Write-Log "[Gaming] NVIDIA DisableDynamicPstate set to 1 at $path."
+                }
+            } catch {
+                Invoke-ErrorHandler -Context "Setting DisableDynamicPstate at $path" -ErrorRecord $_
+            }
+        }
+    }
+
+    $graphicsDriversPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers"
+    foreach ($name in @('TdrLevel', 'TdrDelay', 'TdrDdiDelay', 'TdrLimitCount', 'TdrLimitTime')) {
+        try {
+            $results += Set-RegistryValueSafe -Path $graphicsDriversPath -Name $name -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set $name to 0"
+        } catch {
+            Invoke-ErrorHandler -Context "Setting GraphicsDrivers $name to 0" -ErrorRecord $_
+        }
+    }
+
+    foreach ($result in $results) {
+        if ($result -and $result.Success) {
+            $appliedAny = $true
+        } else {
+            $label = if ($result -and $result.Operation) { $result.Operation } else { 'GPU stability registry tweak' }
+            Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $label | Out-Null
+        }
+    }
+
+    if ($appliedAny) {
+        Write-Host "  [+] GPU stability overrides applied (DisableDynamicPstate + TDR off)." -ForegroundColor Green
+        if ($logger) {
+            Write-Log "[Gaming] GPU stability tweaks applied (DisableDynamicPstate=1, TDR=0)."
+        }
+        Set-RebootRequired -Context $Context | Out-Null
+    }
+}
 # Description: Tunes processor scheduling registry settings for lower input latency.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Records changes when logger is present.
@@ -1135,6 +1223,7 @@ function Invoke-GamingOptimizations {
     Invoke-NvidiaHardcoreTweaks -Context $Context
     Invoke-DriverTelemetry
     Set-FsoGlobalOverride -Context $Context
+    Invoke-VideoStabilityHardcore -Context $Context
 
     Write-Host "[+] Global Gaming Optimizations complete." -ForegroundColor Magenta
 }
@@ -1276,4 +1365,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
