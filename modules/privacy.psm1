@@ -235,6 +235,137 @@ function Invoke-PrivacyGaming {
     return $false
 }
 
+# Description: Applies privacy UX tweaks for Explorer and Search history.
+# Parameters: Context - Optional run context for rollback tracking.
+# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
+function Invoke-PrivacyInterfaceSafe {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    Write-Section "Privacy interface hardening (Explorer & Search)"
+
+    $explorerResults = @(
+        Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" "ShowFrequent" 0 -Context $context -ReturnResult -OperationLabel 'Disable Explorer frequent items',
+        Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" "ShowRecent" 0 -Context $context -ReturnResult -OperationLabel 'Disable Explorer recent items',
+        Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoRecentDocsHistory" 1 -Context $context -ReturnResult -OperationLabel 'Disable recent documents history',
+        Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Search" "HistoryViewEnabled" 0 -Context $context -ReturnResult -OperationLabel 'Disable search history view',
+        Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Search" "DeviceHistoryEnabled" 0 -Context $context -ReturnResult -OperationLabel 'Disable device search history',
+        Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Search" "BingSearchEnabled" 0 -Context $context -ReturnResult -OperationLabel 'Disable Bing search in Start'
+    )
+
+    if ($explorerResults | Where-Object { -not ($_ -and $_.Success) }) {
+        Write-Host "  [!] Some Explorer/Search privacy settings could not be updated." -ForegroundColor Yellow
+    } else {
+        Write-Host "  [+] Explorer and Search history tightened." -ForegroundColor Green
+    }
+
+    return $false
+}
+
+# Description: Applies aggressive app permission lockdown using ConsentStore.
+# Parameters: Context - Optional run context for rollback tracking.
+# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
+function Invoke-PrivacyAppPermissionsAggressive {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    $abort = Invoke-PrivacyInterfaceSafe -Context $context
+    if ($abort) { return $true }
+
+    Write-Section "Privacy app permissions (ConsentStore)"
+
+    $consentBase = "HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore"
+    $denyCapabilities = @(
+        'contacts',
+        'appointments',
+        'phoneCall',
+        'location',
+        'documentsLibrary',
+        'picturesLibrary',
+        'activity'
+    )
+
+    $results = @()
+    foreach ($capability in $denyCapabilities) {
+        $results += Set-RegistryValueSafe "$consentBase\$capability" "Value" "Deny" ([Microsoft.Win32.RegistryValueKind]::String) -Context $context -ReturnResult -OperationLabel "Deny $capability access"
+    }
+
+    $results += Set-RegistryValueSafe "$consentBase\microphone" "Value" "Allow" ([Microsoft.Win32.RegistryValueKind]::String) -Context $context -ReturnResult -OperationLabel 'Allow microphone for gaming comms'
+    $results += Set-RegistryValueSafe "$consentBase\webcam" "Value" "Allow" ([Microsoft.Win32.RegistryValueKind]::String) -Context $context -ReturnResult -OperationLabel 'Allow webcam for gaming comms'
+
+    if ($results | Where-Object { -not ($_ -and $_.Success) }) {
+        Write-Host "  [!] Some ConsentStore permissions could not be updated." -ForegroundColor Yellow
+    } else {
+        Write-Host "  [+] ConsentStore permissions enforced." -ForegroundColor Green
+    }
+
+    return $false
+}
+
+# Description: Applies content delivery and smart notification controls for gaming focus.
+# Parameters: Context - Optional run context for rollback tracking.
+# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
+function Invoke-PrivacyContentDeliveryGaming {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    $abort = Invoke-PrivacyAppPermissionsAggressive -Context $context
+    if ($abort) { return $true }
+
+    Write-Section "Privacy content delivery & notifications (Gaming)"
+
+    $cdmPath = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
+    $contentDeliveryNames = @('PreInstalledAppsEnabled', 'SubscribedContentEnabled')
+    $contentDeliveryProps = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -ErrorAction SilentlyContinue
+    if ($contentDeliveryProps) {
+        $dynamicNames = $contentDeliveryProps.PSObject.Properties.Name | Where-Object {
+            $_ -like 'PreInstalledAppsEnabled*' -or $_ -like 'SubscribedContentEnabled*' -or $_ -like 'SubscribedContent-*Enabled'
+        }
+        $contentDeliveryNames = $contentDeliveryNames + $dynamicNames | Select-Object -Unique
+    }
+
+    $cdmResults = @()
+    foreach ($entryName in $contentDeliveryNames) {
+        $cdmResults += Set-RegistryValueSafe $cdmPath $entryName 0 -Context $context -ReturnResult -OperationLabel "Disable $entryName"
+    }
+
+    if ($cdmResults | Where-Object { -not ($_ -and $_.Success) }) {
+        Write-Host "  [!] Some Content Delivery settings could not be updated." -ForegroundColor Yellow
+    } else {
+        Write-Host "  [+] Content Delivery flags disabled." -ForegroundColor Green
+    }
+
+    $notificationPrompt = "Disable Windows toast notifications? You will not see system alerts until reboot or revert."
+    if (Get-Confirmation $notificationPrompt 'n') {
+        $toastResult = Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" "ToastEnabled" 0 -Context $context -ReturnResult -OperationLabel 'Disable toast notifications'
+        if (-not ($toastResult -and $toastResult.Success)) {
+            Write-Host "  [!] Toast notifications could not be fully disabled." -ForegroundColor Yellow
+        } else {
+            Write-Host "  [+] Toast notifications disabled." -ForegroundColor Green
+        }
+
+        $osBuild = [Environment]::OSVersion.Version.Build
+        if ($osBuild -ge 22000) {
+            $dndResult = Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings" "NOC_GLOBAL_SETTING_DND_ENABLED" 1 -Context $context -ReturnResult -OperationLabel 'Enable Windows 11 Do Not Disturb'
+            if (-not ($dndResult -and $dndResult.Success)) {
+                Write-Host "  [!] Windows 11 Do Not Disturb could not be enabled." -ForegroundColor Yellow
+            } else {
+                Write-Host "  [+] Windows 11 Do Not Disturb enabled." -ForegroundColor Green
+            }
+        }
+    } else {
+        Write-Host "  [ ] Notification settings left unchanged." -ForegroundColor DarkGray
+    }
+
+    return $false
+}
+
 # Description: Configures user experience preferences for Explorer, mouse, and keyboard behavior.
 # Parameters: Context - Optional run context used for rollback and permission tracking; PresetName - Label for the active preset.
 # Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
@@ -290,4 +421,4 @@ function Invoke-PreferencesSafe {
     return $false
 }
 
-Export-ModuleMember -Function Invoke-DriverTelemetry, Invoke-PrivacyTelemetrySafe, Invoke-PrivacySafe, Invoke-PrivacyAggressive, Invoke-PrivacyGaming, Invoke-PreferencesSafe
+Export-ModuleMember -Function Invoke-DriverTelemetry, Invoke-PrivacyTelemetrySafe, Invoke-PrivacySafe, Invoke-PrivacyAggressive, Invoke-PrivacyGaming, Invoke-PreferencesSafe, Invoke-PrivacyInterfaceSafe, Invoke-PrivacyAppPermissionsAggressive, Invoke-PrivacyContentDeliveryGaming
