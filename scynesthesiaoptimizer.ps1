@@ -642,7 +642,7 @@ function Run-SafePreset {
     Clear-TempFiles -Context $script:Context
 
     # Safe Debloat (Standard list)
-    $privacyAbort = Invoke-PrivacyTelemetrySafe -Context $script:Context -PresetName 'Safe preset'
+    $privacyAbort = Invoke-PrivacySafe -Context $script:Context
     if ($privacyAbort) {
         Write-Host "[!] Safe preset aborted by user due to critical registry failure." -ForegroundColor Red
         return
@@ -731,7 +731,7 @@ function Run-PCSlowPreset {
     }
     Clear-TempFiles -Context $script:Context
 
-    $privacyAbort = Invoke-PrivacyTelemetrySafe -Context $script:Context -PresetName 'Aggressive preset'
+    $privacyAbort = Invoke-PrivacyAggressive -Context $script:Context
     if ($privacyAbort) {
         Write-Host "[!] Aggressive preset aborted by user due to critical registry failure." -ForegroundColor Red
         return
@@ -982,6 +982,11 @@ do {
             $restoreStatus = New-RestorePointSafe
             if (-not (Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "Gaming Mode")) { 
                 Write-Warning "[Safety] Gaming Mode aborted because no restore point is available."
+                break
+            }
+            $privacyAbort = Invoke-PrivacyGaming -Context $script:Context
+            if ($privacyAbort) {
+                Write-Host "[!] Gaming preset aborted by user due to critical registry failure." -ForegroundColor Red
                 break
             }
             Invoke-GamingOptimizations -Context $script:Context

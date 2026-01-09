@@ -188,8 +188,8 @@ function Invoke-PrivacyAggressive {
     )
     if (Get-Confirmation -Question "Disable global camera/microphone access for apps?" -Default 'n' -RiskSummary $riskSummary) {
         try {
-            Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsAccessCamera" 2 -Context $context -Critical
-            Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsAccessMicrophone" 2 -Context $context -Critical
+            Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsAccessCamera" 0 -Context $context -Critical
+            Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsAccessMicrophone" 0 -Context $context -Critical
         } catch {
             Invoke-ErrorHandler -Context "Disabling global app camera/microphone access" -ErrorRecord $_
         }

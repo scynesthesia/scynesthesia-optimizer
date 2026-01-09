@@ -56,9 +56,23 @@ function Invoke-SafeServiceOptimization {
     )
 
     Write-Section "Service hardening (Safe)"
-    $safeServices = 'RetailDemo','MapsBroker','stisvc','Beep','cdrom','AcpiPmi'
+    $safeServices = @(
+        'RetailDemo',
+        'MapsBroker',
+        'stisvc',
+        'WpcMonSvc',
+        'SensorDataService',
+        'SensrSvc',
+        'SensorService',
+        'PhoneSvc'
+    )
+    $safeDrivers = @(
+        'Beep',
+        'cdrom',
+        'AcpiPmi'
+    )
 
-    foreach ($svc in $safeServices) {
+    foreach ($svc in $safeServices + $safeDrivers) {
         Disable-ServiceByRegistry -Name $svc -Context $Context
     }
 }
@@ -76,9 +90,39 @@ function Invoke-AggressiveServiceOptimization {
     Write-Section "Service reductions (Aggressive)"
     Invoke-SafeServiceOptimization -Context $Context
 
-    $coreTargets = 'RemoteRegistry','WerSvc','lfsvc','DiagTrack','acpipagr','CSC','tcpipreg','dam'
-    foreach ($svc in $coreTargets) {
+    $aggressiveServices = @(
+        'RemoteRegistry',
+        'WerSvc',
+        'DiagTrack',
+        'diagsvc',
+        'DPS',
+        'WdiServiceHost',
+        'WdiSystemHost',
+        'defragsvc',
+        'edgeupdate',
+        'edgeupdatem',
+        'Themes',
+        'lfsvc'
+    )
+    $aggressiveDrivers = @(
+        'acpipagr',
+        'CSC',
+        'tcpipreg',
+        'dam'
+    )
+
+    foreach ($svc in $aggressiveServices + $aggressiveDrivers) {
         Disable-ServiceByRegistry -Name $svc -Context $Context
+    }
+
+    $windowsUpdatePath = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\wuauserv"
+    $wuResult = Set-RegistryValueSafe -Path $windowsUpdatePath -Name 'Start' -Value 3 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Set Windows Update to manual'
+    if ($wuResult -and $wuResult.Success) {
+        Write-Host "  [+] [Services] wuauserv set to manual start (Start=3)." -ForegroundColor Gray
+        Write-Log -Message "[Services] wuauserv set to manual start (Start=3)." -Level 'Info'
+    } else {
+        Write-Host "  [!] [Services] Failed to set wuauserv to manual start." -ForegroundColor Yellow
+        Write-Log -Message "[Services] Failed to set wuauserv to manual start (Start=3)." -Level 'Warning'
     }
 
     $skipSpooler = $OemServices -and $OemServices.Count -gt 0
@@ -124,8 +168,27 @@ function Invoke-GamingServiceOptimization {
     Invoke-AggressiveServiceOptimization -Context $Context
 
     Write-Host "  [!] VPN protocols and DRM (PEAUTH) will be disabled." -ForegroundColor Yellow
-    $gamingServices = 'WSearch','WMPNetworkSvc','PcaSvc','GpuEnergyDrv','RasAcd','Rasl2tp','RasPppoe','RasSstp','PEAUTH','luafv'
-    foreach ($svc in $gamingServices) {
+    $gamingServices = @(
+        'WSearch',
+        'WMPNetworkSvc',
+        'PcaSvc',
+        'TapiSrv',
+        'OneSyncSvc',
+        'TabletInputService',
+        'BcastDVRUserService',
+        'CaptureService',
+        'MessagingService'
+    )
+    $gamingDrivers = @(
+        'GpuEnergyDrv',
+        'RasAcd',
+        'Rasl2tp',
+        'RasPppoe',
+        'RasSstp',
+        'PEAUTH',
+        'luafv'
+    )
+    foreach ($svc in $gamingServices + $gamingDrivers) {
         Disable-ServiceByRegistry -Name $svc -Context $Context
     }
 
