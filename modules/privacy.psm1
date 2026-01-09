@@ -123,6 +123,118 @@ function Invoke-PrivacyTelemetrySafe {
     return $false
 }
 
+# Description: Applies baseline privacy tweaks (Safe layer) for telemetry and advertising controls.
+# Parameters: Context - Optional run context for rollback tracking.
+# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
+function Invoke-PrivacySafe {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    Write-Section "Privacy hardening (Safe layer)"
+
+    try {
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry" 0 -Context $context -Critical
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling telemetry (AllowTelemetry)" -ErrorRecord $_
+    }
+
+    try {
+        Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo" "Enabled" 0 -Context $context -Critical
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling advertising ID" -ErrorRecord $_
+    }
+
+    try {
+        Set-RegistryValueSafe "HKCU\Software\Microsoft\InputPersonalization" "RestrictedImplicitTextCollection" 1 -Context $context -Critical
+    } catch {
+        Invoke-ErrorHandler -Context "Restricting handwriting and speech collection" -ErrorRecord $_
+    }
+
+    try {
+        Set-RegistryValueSafe "HKCU\Software\Microsoft\Siuf\Rules" "NumberOfSIUFInPeriod" 0 -Context $context -Critical
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling feedback frequency prompts" -ErrorRecord $_
+    }
+
+    return $false
+}
+
+# Description: Extends privacy tweaks with app permission and Edge hardening (Aggressive layer).
+# Parameters: Context - Optional run context for rollback tracking.
+# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
+function Invoke-PrivacyAggressive {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    Write-Section "Privacy hardening (Aggressive layer)"
+
+    $abort = Invoke-PrivacySafe -Context $context
+    if ($abort) { return $true }
+
+    try {
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\MicrosoftEdge\Main" "AllowPrelaunch" 0 -Context $context -Critical
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\MicrosoftEdge\Main" "AllowTabPreloading" 0 -Context $context -Critical
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling Edge prelaunch and tab preloading" -ErrorRecord $_
+    }
+
+    $riskSummary = @(
+        "Disables global camera access for all apps.",
+        "Disables global microphone access for all apps."
+    )
+    if (Get-Confirmation -Question "Disable global camera/microphone access for apps?" -Default 'n' -RiskSummary $riskSummary) {
+        try {
+            Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsAccessCamera" 2 -Context $context -Critical
+            Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsAccessMicrophone" 2 -Context $context -Critical
+        } catch {
+            Invoke-ErrorHandler -Context "Disabling global app camera/microphone access" -ErrorRecord $_
+        }
+    } else {
+        Write-Host "  [ ] App camera/microphone access left unchanged." -ForegroundColor DarkGray
+    }
+
+    return $false
+}
+
+# Description: Applies additional privacy tweaks for activity history and background sync (Gaming layer).
+# Parameters: Context - Optional run context for rollback tracking.
+# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
+function Invoke-PrivacyGaming {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    Write-Section "Privacy hardening (Gaming layer)"
+
+    $abort = Invoke-PrivacyAggressive -Context $context
+    if ($abort) { return $true }
+
+    try {
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "EnableActivityFeed" 0 -Context $context -Critical
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling activity history feed" -ErrorRecord $_
+    }
+
+    try {
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" "AllowClipboardHistory" 0 -Context $context -Critical
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling clipboard sync history" -ErrorRecord $_
+    }
+
+    try {
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCortana" 0 -Context $context -Critical
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling Cortana search" -ErrorRecord $_
+    }
+
+    return $false
+}
+
 # Description: Configures user experience preferences for Explorer, mouse, and keyboard behavior.
 # Parameters: Context - Optional run context used for rollback and permission tracking; PresetName - Label for the active preset.
 # Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
@@ -178,4 +290,4 @@ function Invoke-PreferencesSafe {
     return $false
 }
 
-Export-ModuleMember -Function Invoke-DriverTelemetry, Invoke-PrivacyTelemetrySafe, Invoke-PreferencesSafe
+Export-ModuleMember -Function Invoke-DriverTelemetry, Invoke-PrivacyTelemetrySafe, Invoke-PrivacySafe, Invoke-PrivacyAggressive, Invoke-PrivacyGaming, Invoke-PreferencesSafe
