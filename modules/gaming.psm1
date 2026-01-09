@@ -322,6 +322,124 @@ function Optimize-HidLatency {
     Set-RebootRequired -Context $Context | Out-Null
 }
 
+# Description: Applies advanced keyboard/mouse peripheral optimizations.
+# Parameters: Context - Run context for reboot tracking.
+# Returns: None. Applies registry tuning for accessibility, USB, and keyboard response.
+function Invoke-KbmAdvancedOptimizations {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $needsReboot = $false
+
+    Write-Section "Accessibility Clean (Sticky/Filter/Toggle Keys)"
+    $accessibilityEntries = @(
+        @{ Path = "HKCU:\\Control Panel\\Accessibility\\StickyKeys"; Name = 'Flags'; Value = 506; Label = 'Disable StickyKeys prompts' },
+        @{ Path = "HKCU:\\Control Panel\\Accessibility\\FilterKeys"; Name = 'Flags'; Value = 122; Label = 'Disable FilterKeys prompts' },
+        @{ Path = "HKCU:\\Control Panel\\Accessibility\\ToggleKeys"; Name = 'Flags'; Value = 58; Label = 'Disable ToggleKeys prompts' }
+    )
+
+    foreach ($entry in $accessibilityEntries) {
+        $result = Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel $entry.Label
+        if ($result -and $result.Success) {
+            Write-Host "  [+] $($entry.Label)." -ForegroundColor Green
+        } else {
+            Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $entry.Label | Out-Null
+        }
+    }
+
+    Write-Section "USB Controller MSI & Power"
+    $msiRiskSummary = @(
+        "Enabling MSI on USB controllers can briefly disconnect connected peripherals while Windows reinitializes the bus."
+    )
+    $applyMsi = Get-Confirmation -Question "Enable MSI mode for USB controllers? Peripherals may briefly disconnect." -Default 'n' -RiskSummary $msiRiskSummary
+
+    $controllers = @()
+    try {
+        $controllers = Get-CimInstance -ClassName Win32_USBController -ErrorAction Stop
+    } catch {
+        Invoke-ErrorHandler -Context "Enumerating USB controllers" -ErrorRecord $_
+    }
+
+    if (-not $controllers -or $controllers.Count -eq 0) {
+        Write-Host "  [!] No USB controllers found for MSI/power tuning." -ForegroundColor Yellow
+    } else {
+        foreach ($controller in $controllers) {
+            $pnpId = $controller.PNPDeviceID
+            if ([string]::IsNullOrWhiteSpace($pnpId)) {
+                Write-Host "  [!] USB controller missing PNPDeviceID; skipping." -ForegroundColor Yellow
+                continue
+            }
+
+            $enumPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Enum\\$pnpId"
+            if (-not (Test-Path $enumPath)) {
+                Write-Host "  [!] Registry path not found for $pnpId; skipping." -ForegroundColor Yellow
+                continue
+            }
+
+            if ($applyMsi) {
+                $msiPath = Join-Path $enumPath "Device Parameters\\Interrupt Management\\MessageSignaledInterruptProperties"
+                $msiResult = Set-RegistryValueSafe -Path $msiPath -Name 'MSISupported' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Enable MSI for $($controller.Name)"
+                if ($msiResult -and $msiResult.Success) {
+                    Write-Host "  [+] MSI enabled for $($controller.Name)." -ForegroundColor Green
+                    if ($logger) { Write-Log "[Gaming] MSI enabled for USB controller: $($controller.Name)." }
+                    $needsReboot = $true
+                } else {
+                    Register-HighImpactRegistryFailure -Context $Context -Result $msiResult -OperationLabel "Enable MSI for $($controller.Name)" | Out-Null
+                }
+            } else {
+                Write-Host "  [ ] MSI enable skipped for $($controller.Name)." -ForegroundColor DarkGray
+            }
+
+            $deviceParamsPath = Join-Path $enumPath "Device Parameters"
+            foreach ($name in @(
+                'AllowIdleIrpInD3',
+                'D3ColdSupported',
+                'DeviceSelectiveSuspended',
+                'EnableSelectiveSuspend',
+                'EnhancedPowerManagementEnabled'
+            )) {
+                $powerResult = Set-RegistryValueSafe -Path $deviceParamsPath -Name $name -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Disable USB power save ($name) for $($controller.Name)"
+                if ($powerResult -and $powerResult.Success) {
+                    Write-Host "  [+] $name disabled for $($controller.Name)." -ForegroundColor Green
+                    $needsReboot = $true
+                } else {
+                    Register-HighImpactRegistryFailure -Context $Context -Result $powerResult -OperationLabel "Disable USB power save ($name) for $($controller.Name)" | Out-Null
+                }
+            }
+        }
+    }
+
+    Write-Section "Kernel Poll Interval"
+    $pollResult = Set-RegistryValueSafe -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel" -Name 'DebugPollInterval' -Value 1000 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set DebugPollInterval to 1000'
+    if ($pollResult -and $pollResult.Success) {
+        Write-Host "  [+] Kernel DebugPollInterval set to 1000." -ForegroundColor Green
+        $needsReboot = $true
+    } else {
+        Register-HighImpactRegistryFailure -Context $Context -Result $pollResult -OperationLabel 'Set DebugPollInterval to 1000' | Out-Null
+    }
+
+    Write-Section "Keyboard Response"
+    $keyboardEntries = @(
+        @{ Name = 'KeyboardDelay'; Value = '0'; Label = 'Set KeyboardDelay to 0' },
+        @{ Name = 'KeyboardSpeed'; Value = '31'; Label = 'Set KeyboardSpeed to 31' }
+    )
+    foreach ($entry in $keyboardEntries) {
+        $kbResult = Set-RegistryValueSafe -Path "HKCU:\\Control Panel\\Keyboard" -Name $entry.Name -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel $entry.Label
+        if ($kbResult -and $kbResult.Success) {
+            Write-Host "  [+] $($entry.Label)." -ForegroundColor Green
+        } else {
+            Register-HighImpactRegistryFailure -Context $Context -Result $kbResult -OperationLabel $entry.Label | Out-Null
+        }
+    }
+
+    if ($needsReboot) {
+        Set-RebootRequired -Context $Context | Out-Null
+    }
+}
+
 # Description: Sets 1:1 mouse movement by disabling acceleration and setting standard curves.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Records registry rollback data for changes.
@@ -1216,6 +1334,7 @@ function Invoke-GamingOptimizations {
     Optimize-ProcessorScheduling -Context $Context
     Set-UsbPowerManagementHardcore -Context $Context
     Optimize-HidLatency -Context $Context
+    Invoke-KbmAdvancedOptimizations -Context $Context
     Set-CsrssPriorityHardcore -Context $Context
     Set-LatencyToleranceHardcore -Context $Context
     Set-NvidiaLatencyTweaks -Context $Context
@@ -1365,4 +1484,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Invoke-KbmAdvancedOptimizations, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
