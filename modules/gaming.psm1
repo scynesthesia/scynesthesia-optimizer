@@ -1230,56 +1230,69 @@ function Disable-GameDVR {
     }
 }
 
-# Description: Disables Fullscreen Optimizations globally for DX11 input latency gains.
+# Description: Optimizes FSO, MPO, and WGO settings for modern display modes on Windows 10/11.
 # Parameters: Context - Run context for reboot tracking.
-# Returns: None. Sets reboot flag after applying registry overrides.
-function Set-FsoGlobalOverride {
+# Returns: None. Applies registry overrides and flags reboot requirement.
+function Optimize-ModernDisplayModes {
     param(
         [Parameter(Mandatory)]
         [pscustomobject]$Context
     )
 
-    Write-Section "Fullscreen Optimizations (Global Override)"
+    Write-Section "Modern Display Mode Optimizations (FSO/MPO/WGO)"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
-    Write-Host "Disabling FSO reduces input lag but may cause slower or 'buggy' Alt+Tab transitions." -ForegroundColor Yellow
-    $disableFso = Get-Confirmation "Disable Fullscreen Optimizations for maximum latency reduction?" 'n'
+    $confirmation = Get-Confirmation "Apply modern display mode optimizations? These reduce windowed latency and stabilize Alt+Tab." 'y'
+
+    if (-not $confirmation) {
+        Write-Host "  [ ] Modern display optimizations skipped." -ForegroundColor DarkGray
+        return
+    }
+
     try {
-        if ($disableFso) {
-            $fseBehavior = Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Set GameDVR_FSEBehaviorMode to 2'
-            $allowGameDvr = Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable GameDVR policy'
+        $fsoPath = "HKCU:\\System\\GameConfigStore"
+        $wgoPath = "HKCU:\\SOFTWARE\\Microsoft\\DirectX\\UserGpuPreferences"
+        $dwmPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\Dwm"
 
-            if (($fseBehavior -and $fseBehavior.Success) -and ($allowGameDvr -and $allowGameDvr.Success)) {
-                Write-Host "  [+] Fullscreen Optimizations disabled globally." -ForegroundColor Green
-                if ($logger) {
-                    Write-Log "[Gaming] Fullscreen Optimizations globally disabled (GameDVR_FSEBehaviorMode=2, AllowGameDVR=0)."
-                }
-            } else {
-                Write-Host "  [!] Fullscreen Optimization changes could not be fully applied." -ForegroundColor Yellow
-                if (-not ($allowGameDvr -and $allowGameDvr.Success)) {
-                    Register-HighImpactRegistryFailure -Context $Context -Result $allowGameDvr -OperationLabel 'Disable GameDVR policy' | Out-Null
-                }
-            }
-        } else {
-            $fseBehavior = Set-RegistryValueSafe -Path "HKCU:\\System\\GameConfigStore" -Name 'GameDVR_FSEBehaviorMode' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Restore GameDVR_FSEBehaviorMode'
-            $allowGameDvr = Set-RegistryValueSafe -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" -Name 'AllowGameDVR' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Restore GameDVR policy'
+        $fseBehavior = Set-RegistryValueSafe -Path $fsoPath -Name 'GameDVR_FSEBehaviorMode' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Enable FSO (GameDVR_FSEBehaviorMode=0)'
+        $honorUserFse = Set-RegistryValueSafe -Path $fsoPath -Name 'GameDVR_HonorUserFSEBehaviorMode' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Honor user FSO preferences'
+        $wgoSetting = Set-RegistryValueSafe -Path $wgoPath -Name 'DirectXUserGlobalSettings' -Value 'VRROptimizeEnable=0;SwapEffectUpgradeEnable=1;' -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -ReturnResult -OperationLabel 'Enable WGO flip model upgrade'
 
-            if (($fseBehavior -and $fseBehavior.Success) -and ($allowGameDvr -and $allowGameDvr.Success)) {
-                Write-Host "  [ ] Fullscreen Optimizations left at Windows defaults (restored)." -ForegroundColor DarkGray
-                if ($logger) {
-                    Write-Log "[Gaming] Fullscreen Optimizations restored to defaults (GameDVR_FSEBehaviorMode=0, AllowGameDVR=1)."
+        $overlayRemoved = $false
+        if (Test-Path $dwmPath) {
+            try {
+                $overlayValue = Get-ItemProperty -Path $dwmPath -Name 'OverlayTestMode' -ErrorAction SilentlyContinue
+                if ($null -ne $overlayValue) {
+                    Remove-ItemProperty -Path $dwmPath -Name 'OverlayTestMode' -ErrorAction Stop
+                    $overlayRemoved = $true
                 }
-            } else {
-                Write-Host "  [!] Fullscreen Optimizations could not be restored completely." -ForegroundColor Yellow
-                if (-not ($allowGameDvr -and $allowGameDvr.Success)) {
-                    Register-HighImpactRegistryFailure -Context $Context -Result $allowGameDvr -OperationLabel 'Restore GameDVR policy' | Out-Null
-                }
+            } catch {
+                Write-Host "  [!] Unable to remove OverlayTestMode from DWM: $($_.Exception.Message)" -ForegroundColor Yellow
             }
         }
 
+        $results = @($fseBehavior, $honorUserFse, $wgoSetting)
+        $failed = $results | Where-Object { -not ($_ -and $_.Success) }
+        if (-not $failed) {
+            Write-Host "  [+] Modern display mode optimizations applied." -ForegroundColor Green
+            if ($logger) {
+                $overlayMessage = if ($overlayRemoved) { 'OverlayTestMode removed.' } else { 'OverlayTestMode not present or already removed.' }
+                Write-Log "[Gaming] Modern display optimizations applied (FSO enabled, WGO flip model upgrade set, $overlayMessage)."
+            }
+        } else {
+            foreach ($result in $failed) {
+                Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $result.Operation | Out-Null
+            }
+        }
+
+        if ($overlayRemoved) {
+            Write-Host "  [+] MPO unlocked by removing OverlayTestMode." -ForegroundColor Green
+        } else {
+            Write-Host "  [ ] OverlayTestMode already absent; MPO left unlocked." -ForegroundColor DarkGray
+        }
+
         Set-RebootRequired -Context $Context | Out-Null
-        Write-Host "  [!] Reboot required to finalize Fullscreen Optimizations override." -ForegroundColor Yellow
     } catch {
-        Invoke-ErrorHandler -Context "Applying Fullscreen Optimizations global override" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Applying modern display mode optimizations" -ErrorRecord $_
     }
 }
 
@@ -1579,7 +1592,7 @@ function Invoke-GamingOptimizations {
     Invoke-NvidiaAdvancedInternalTweaks -Context $Context
     Invoke-NvidiaHardcoreTweaks -Context $Context
     Invoke-DriverTelemetry
-    Set-FsoGlobalOverride -Context $Context
+    Optimize-ModernDisplayModes -Context $Context
     Invoke-VideoStabilityHardcore -Context $Context
     Invoke-ProcessPriorityHardcore -Context $Context
 
@@ -1723,4 +1736,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Optimize-MouseCurve, Invoke-KbmAdvancedOptimizations, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-KernelSecurityTweaks, Invoke-GamingOptimizations, Invoke-ProcessPriorityHardcore, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Optimize-MouseCurve, Invoke-KbmAdvancedOptimizations, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Optimize-ModernDisplayModes, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-KernelSecurityTweaks, Invoke-GamingOptimizations, Invoke-ProcessPriorityHardcore, Manage-GameQoS
