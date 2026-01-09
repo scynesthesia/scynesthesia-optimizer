@@ -141,6 +141,13 @@ function Invoke-PrivacySafe {
     }
 
     try {
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting" "Disabled" 1 -Context $context -Critical
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting" "Disabled" 1 -Context $context -Critical
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling Windows Error Reporting" -ErrorRecord $_
+    }
+
+    try {
         Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo" "Enabled" 0 -Context $context -Critical
     } catch {
         Invoke-ErrorHandler -Context "Disabling advertising ID" -ErrorRecord $_

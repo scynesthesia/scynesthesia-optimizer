@@ -17,23 +17,28 @@ function Optimize-GamingScheduler {
 
     if (Get-Confirmation "Prioritize GPU/CPU for foreground games?" 'y') {
         $gamesPath = "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
+        $priorityControlPath = "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl"
 
         $gpuPriority = Set-RegistryValueSafe $gamesPath "GPU Priority" 8 -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler GPU priority'
         $priority = Set-RegistryValueSafe $gamesPath "Priority" 6 -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler priority'
         $schedCategory = Set-RegistryValueSafe $gamesPath "Scheduling Category" "High" ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler category'
         $sfioPriority = Set-RegistryValueSafe $gamesPath "SFIO Priority" "High" ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel 'Gaming scheduler SFIO priority'
+        $passivePriority = Set-RegistryValueSafe -Path $priorityControlPath -Name "PassiveIntRealTimeWorkerPriority" -Value 18 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set PassiveIntRealTimeWorkerPriority to 18'
+        $disableFgBoost = Set-RegistryValueSafe -Path $priorityControlPath -Name "DisableFGBoostDecay" -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable foreground boost decay'
 
-        if (($gpuPriority -and $gpuPriority.Success) -and ($priority -and $priority.Success) -and ($schedCategory -and $schedCategory.Success) -and ($sfioPriority -and $sfioPriority.Success)) {
+        if (($gpuPriority -and $gpuPriority.Success) -and ($priority -and $priority.Success) -and ($schedCategory -and $schedCategory.Success) -and ($sfioPriority -and $sfioPriority.Success) -and ($passivePriority -and $passivePriority.Success) -and ($disableFgBoost -and $disableFgBoost.Success)) {
             Write-Host "  [+] Scheduler optimized for games." -ForegroundColor Green
             if ($logger) {
-                Write-Log "[Gaming] Foreground game priorities set (GPU Priority=8, Priority=6, Scheduling/SFIO=High)."
+                Write-Log "[Gaming] Foreground game priorities set (GPU Priority=8, Priority=6, Scheduling/SFIO=High, PassiveIntRealTimeWorkerPriority=18, DisableFGBoostDecay=1)."
             }
         } else {
             foreach ($entry in @(
                 @{ Result = $gpuPriority; Label = 'Gaming scheduler GPU priority' },
                 @{ Result = $priority; Label = 'Gaming scheduler priority' },
                 @{ Result = $schedCategory; Label = 'Gaming scheduler category' },
-                @{ Result = $sfioPriority; Label = 'Gaming scheduler SFIO priority' }
+                @{ Result = $sfioPriority; Label = 'Gaming scheduler SFIO priority' },
+                @{ Result = $passivePriority; Label = 'Set PassiveIntRealTimeWorkerPriority to 18' },
+                @{ Result = $disableFgBoost; Label = 'Disable foreground boost decay' }
             )) {
                 if (-not ($entry.Result -and $entry.Result.Success)) {
                     Register-HighImpactRegistryFailure -Context $Context -Result $entry.Result -OperationLabel $entry.Label | Out-Null
@@ -44,6 +49,78 @@ function Optimize-GamingScheduler {
         Set-RebootRequired -Context $Context | Out-Null
     } else {
         Write-Host "  [ ] Scheduler left unchanged." -ForegroundColor DarkGray
+    }
+}
+
+# Description: Applies hardcore process priority overrides to favor critical UX and audio processes.
+# Parameters: Context - Run context for rollback tracking.
+# Returns: None. Records registry rollback data for each perf option change.
+function Invoke-ProcessPriorityHardcore {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "Process Priority Hardcore"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $perfRoots = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
+    )
+
+    $results = New-Object System.Collections.Generic.List[object]
+
+    function Set-ProcessPerfOptions {
+        param(
+            [string]$ProcessName,
+            [int]$CpuPriorityClass,
+            [Nullable[int]]$IoPriority,
+            [string]$Label
+        )
+
+        foreach ($root in $perfRoots) {
+            $perfPath = Join-Path $root "$ProcessName\\PerfOptions"
+            $results.Add(
+                (Set-RegistryValueSafe -Path $perfPath -Name 'CpuPriorityClass' -Value $CpuPriorityClass -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "$Label (CpuPriorityClass) [$root]")
+            ) | Out-Null
+
+            if ($null -ne $IoPriority) {
+                $results.Add(
+                    (Set-RegistryValueSafe -Path $perfPath -Name 'IoPriority' -Value $IoPriority -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "$Label (IoPriority) [$root]")
+                ) | Out-Null
+            }
+        }
+    }
+
+    Set-ProcessPerfOptions -ProcessName 'dwm.exe' -CpuPriorityClass 4 -IoPriority $null -Label 'Elevate dwm.exe priority'
+    Set-ProcessPerfOptions -ProcessName 'audiodg.exe' -CpuPriorityClass 2 -IoPriority $null -Label 'Elevate audiodg.exe priority'
+    Set-ProcessPerfOptions -ProcessName 'SearchIndexer.exe' -CpuPriorityClass 1 -IoPriority 0 -Label 'Degrade SearchIndexer.exe priority'
+    Set-ProcessPerfOptions -ProcessName 'TrustedInstaller.exe' -CpuPriorityClass 1 -IoPriority 0 -Label 'Degrade TrustedInstaller.exe priority'
+    Set-ProcessPerfOptions -ProcessName 'wuauclt.exe' -CpuPriorityClass 1 -IoPriority 0 -Label 'Degrade wuauclt.exe priority'
+
+    $lsassRiskSummary = @(
+        "Lowering lsass.exe priority can impact authentication responsiveness and system stability.",
+        "Use only if you accept potential security or login reliability issues."
+    )
+
+    if (Get-Confirmation -Question "Degrade lsass.exe priority (high risk)?" -Default 'n' -RiskSummary $lsassRiskSummary) {
+        Set-ProcessPerfOptions -ProcessName 'lsass.exe' -CpuPriorityClass 1 -IoPriority 0 -Label 'Degrade lsass.exe priority'
+    } else {
+        Write-Host "  [ ] lsass.exe priority left unchanged." -ForegroundColor DarkGray
+    }
+
+    $failed = $results | Where-Object { -not ($_ -and $_.Success) }
+    if (-not $failed) {
+        Write-Host "  [+] Process priority overrides applied." -ForegroundColor Green
+        if ($logger) {
+            Write-Log "[Gaming] Process priority overrides applied for dwm.exe, audiodg.exe, SearchIndexer.exe, TrustedInstaller.exe, wuauclt.exe (lsass optional)."
+        }
+    } else {
+        foreach ($result in $failed) {
+            $label = if ($result -and $result.Operation) { $result.Operation } else { 'Process priority override' }
+            Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $label | Out-Null
+        }
+        Write-Host "  [!] Some process priority overrides could not be applied." -ForegroundColor Yellow
     }
 }
 
@@ -1503,6 +1580,7 @@ function Invoke-GamingOptimizations {
     Invoke-DriverTelemetry
     Set-FsoGlobalOverride -Context $Context
     Invoke-VideoStabilityHardcore -Context $Context
+    Invoke-ProcessPriorityHardcore -Context $Context
 
     Write-Host "[+] Global Gaming Optimizations complete." -ForegroundColor Magenta
 }
@@ -1644,4 +1722,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Optimize-MouseCurve, Invoke-KbmAdvancedOptimizations, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-KernelSecurityTweaks, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Optimize-MouseCurve, Invoke-KbmAdvancedOptimizations, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-KernelSecurityTweaks, Invoke-GamingOptimizations, Invoke-ProcessPriorityHardcore, Manage-GameQoS
