@@ -1363,6 +1363,119 @@ function Enable-WindowsGameMode {
     }
 }
 
+# Description: Applies kernel-level timers and security mitigation overrides for gaming.
+# Parameters: Context - Run context for rollback tracking.
+# Returns: None. Records BCD and registry changes and flags reboot requirement.
+function Invoke-KernelSecurityTweaks {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "Kernel & Security (Gaming Hardcore)"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $riskSummary = @(
+        'ESTÁS DESACTIVANDO LA SEGURIDAD DEL KERNEL (Spectre/Meltdown/ASLR). El sistema será vulnerable pero ganará máxima latencia.'
+    )
+
+    if (-not (Get-Confirmation -Question "Apply kernel & security hardcore tweaks for gaming?" -Default 'n' -RiskSummary $riskSummary)) {
+        Write-Host "  [ ] Kernel & security tweaks skipped." -ForegroundColor DarkGray
+        return
+    }
+
+    $null = Get-NonRegistryChangeTracker -Context $Context
+    if (-not $Context.NonRegistryChanges.ContainsKey('BcdEdit')) {
+        $Context.NonRegistryChanges['BcdEdit'] = @{}
+    }
+
+    function Get-BcdSettingValue {
+        param([string]$Setting)
+        try {
+            $output = & bcdedit /enum {current} 2>$null
+            if (-not $output) { return $null }
+            foreach ($line in $output) {
+                if ($line -match "^\s*${Setting}\s+(.+)$") {
+                    return $Matches[1].Trim()
+                }
+            }
+        } catch {
+            return $null
+        }
+        return $null
+    }
+
+    Write-Host "  [i] Applying BCD timer optimizations..." -ForegroundColor DarkGray
+    foreach ($entry in @(
+        @{ Name = 'useplatformclock'; Value = 'No' },
+        @{ Name = 'useplatformtick'; Value = 'No' },
+        @{ Name = 'disabledynamictick'; Value = 'Yes' }
+    )) {
+        if (-not $Context.NonRegistryChanges.BcdEdit.ContainsKey($entry.Name)) {
+            $Context.NonRegistryChanges.BcdEdit[$entry.Name] = @{
+                Previous = Get-BcdSettingValue -Setting $entry.Name
+                New = $entry.Value
+            }
+        }
+
+        try {
+            & bcdedit /set $entry.Name $entry.Value | Out-Null
+            Write-Host "  [+] BCD $($entry.Name) set to $($entry.Value)." -ForegroundColor Green
+            if ($logger) { Write-Log "[Gaming] BCD $($entry.Name) set to $($entry.Value)." }
+        } catch {
+            Invoke-ErrorHandler -Context "Setting BCD $($entry.Name)" -ErrorRecord $_
+        }
+    }
+
+    Write-Host "  [i] Disabling memory compression and page combining..." -ForegroundColor DarkGray
+    try {
+        Disable-MMAgent -MemoryCompression -PageCombining -ErrorAction Stop
+        Write-Host "  [+] MMAgent memory compression/page combining disabled." -ForegroundColor Green
+        if ($logger) { Write-Log "[Gaming] MMAgent memory compression/page combining disabled." }
+    } catch {
+        Invoke-ErrorHandler -Context "Disabling MMAgent memory compression/page combining" -ErrorRecord $_
+    }
+
+    $registryEntries = @(
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"; Name = 'FeatureSettingsOverride'; Value = 3; Label = 'Disable Spectre/Meltdown mitigations (override)' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"; Name = 'FeatureSettingsOverrideMask'; Value = 3; Label = 'Disable Spectre/Meltdown mitigations (mask)' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard"; Name = 'EnableVirtualizationBasedSecurity'; Value = 0; Label = 'Disable VBS' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity"; Name = 'Enabled'; Value = 0; Label = 'Disable HVCI' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"; Name = 'DisableExecProtection'; Value = 1; Label = 'Disable DEP' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"; Name = 'MoveImages'; Value = 0; Label = 'Disable ASLR (MoveImages)' },
+        @{ Path = "HKLM:\SOFTWARE\Microsoft\FTH"; Name = 'Enabled'; Value = 0; Label = 'Disable Fault Tolerant Heap' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"; Name = 'DisablePagingExecutive'; Value = 1; Label = 'Disable paging executive' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"; Name = 'LargeSystemCache'; Value = 1; Label = 'Enable large system cache' },
+        @{ Path = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\Maintenance"; Name = 'MaintenanceDisabled'; Value = 1; Label = 'Disable maintenance scheduling' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Kernel"; Name = 'CoalescingTimerInterval'; Value = 0; Label = 'Disable timer coalescing (Kernel)' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power"; Name = 'CoalescingTimerInterval'; Value = 0; Label = 'Disable timer coalescing (Power)' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"; Name = 'PowerThrottlingOff'; Value = 1; Label = 'Disable power throttling' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"; Name = 'HwSchMode'; Value = 2; Label = 'Enable HAGS' },
+        @{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Kernel"; Name = 'DistributeTimers'; Value = 1; Label = 'Enable DistributeTimers' }
+    )
+
+    foreach ($entry in $registryEntries) {
+        $result = Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel $entry.Label
+        if ($result -and $result.Success) {
+            Write-Host "  [+] $($entry.Label)." -ForegroundColor Green
+            if ($logger) { Write-Log "[Gaming] $($entry.Label)." }
+        } else {
+            Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $entry.Label | Out-Null
+        }
+    }
+
+    Write-Host "  [i] Applying NTFS memory usage tweaks..." -ForegroundColor DarkGray
+    try {
+        fsutil behavior set memoryusage 2 | Out-Null
+        fsutil behavior set mftzone 4 | Out-Null
+        Write-Host "  [+] NTFS memory usage and MFT zone set." -ForegroundColor Green
+        if ($logger) { Write-Log "[Gaming] NTFS memoryusage=2 and mftzone=4 applied." }
+    } catch {
+        Invoke-ErrorHandler -Context "Applying NTFS performance tweaks" -ErrorRecord $_
+    }
+
+    Set-RebootRequired -Context $Context | Out-Null
+}
+
 # Description: Runs the complete Gaming preset sequence following modular standards.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Sequentially applies gaming optimizations and reports completion.
@@ -1372,6 +1485,7 @@ function Invoke-GamingOptimizations {
         [pscustomobject]$Context
     )
 
+    Invoke-KernelSecurityTweaks -Context $Context
     Invoke-GamingServiceOptimization -Context $Context
     Optimize-GamingScheduler -Context $Context
     Enable-WindowsGameMode -Context $Context
@@ -1530,4 +1644,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Optimize-MouseCurve, Invoke-KbmAdvancedOptimizations, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Optimize-MouseCurve, Invoke-KbmAdvancedOptimizations, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-KernelSecurityTweaks, Invoke-GamingOptimizations, Manage-GameQoS
