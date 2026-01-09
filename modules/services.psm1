@@ -56,7 +56,7 @@ function Invoke-SafeServiceOptimization {
     )
 
     Write-Section "Service hardening (Safe)"
-    $safeServices = 'RetailDemo','MapsBroker','stisvc'
+    $safeServices = 'RetailDemo','MapsBroker','stisvc','Beep','cdrom','AcpiPmi'
 
     foreach ($svc in $safeServices) {
         Disable-ServiceByRegistry -Name $svc -Context $Context
@@ -76,7 +76,7 @@ function Invoke-AggressiveServiceOptimization {
     Write-Section "Service reductions (Aggressive)"
     Invoke-SafeServiceOptimization -Context $Context
 
-    $coreTargets = 'RemoteRegistry','WerSvc','lfsvc','DiagTrack'
+    $coreTargets = 'RemoteRegistry','WerSvc','lfsvc','DiagTrack','acpipagr','CSC','tcpipreg','dam'
     foreach ($svc in $coreTargets) {
         Disable-ServiceByRegistry -Name $svc -Context $Context
     }
@@ -123,7 +123,8 @@ function Invoke-GamingServiceOptimization {
     Write-Section "Service tuning (Gaming)"
     Invoke-AggressiveServiceOptimization -Context $Context
 
-    $gamingServices = 'WSearch','WMPNetworkSvc','PcaSvc'
+    Write-Host "  [!] VPN protocols and DRM (PEAUTH) will be disabled." -ForegroundColor Yellow
+    $gamingServices = 'WSearch','WMPNetworkSvc','PcaSvc','GpuEnergyDrv','RasAcd','Rasl2tp','RasPppoe','RasSstp','PEAUTH','luafv'
     foreach ($svc in $gamingServices) {
         Disable-ServiceByRegistry -Name $svc -Context $Context
     }
