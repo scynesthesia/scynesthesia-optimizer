@@ -600,6 +600,132 @@ function Set-NvidiaLatencyTweaks {
         Set-RebootRequired -Context $Context | Out-Null
     }
 }
+
+# Description: Applies deep NVIDIA driver optimizations for latency, telemetry, and power savings removal.
+# Parameters: Context - Run context for rollback tracking.
+# Returns: None. Records registry rollback data and disables scheduled tasks.
+function Invoke-NvidiaHardcoreTweaks {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "NVIDIA Hardcore Tweaks (HDCP/TCC/Telemetry/Power)"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $riskSummary = @(
+        "Disables HDCP in the NVIDIA driver, which will break DRM playback (Netflix, Prime Video, Disney+, etc.).",
+        "Disables write combining in nvlddmkm (experimental) and may negatively impact stability or performance.",
+        "Disables NVIDIA display power saving, telemetry, and driver power-saving controls which may increase power draw and heat."
+    )
+
+    if (-not (Get-Confirmation -Question "Apply NVIDIA hardcore driver tweaks?" -Default 'n' -RiskSummary $riskSummary)) {
+        Write-Host "  [ ] NVIDIA hardcore tweaks skipped." -ForegroundColor DarkGray
+        return
+    }
+
+    $classPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}"
+    $nvidiaPaths = @()
+
+    try {
+        $classKeys = Get-ChildItem -Path $classPath -ErrorAction Stop
+    } catch {
+        Invoke-ErrorHandler -Context "Discovering NVIDIA GPU registry keys" -ErrorRecord $_
+        return
+    }
+
+    foreach ($key in $classKeys) {
+        try {
+            $provider = (Get-ItemProperty -Path $key.PSPath -Name 'ProviderName' -ErrorAction Stop).ProviderName
+            if ($provider -eq 'NVIDIA') {
+                $nvidiaPaths += $key.PSPath
+            }
+        } catch {
+            Invoke-ErrorHandler -Context "Reading ProviderName for $($key.PSChildName)" -ErrorRecord $_
+        }
+    }
+
+    if ($nvidiaPaths.Count -eq 0) {
+        Write-Host "  [!] No NVIDIA GPU registry keys found for hardcore tweaks." -ForegroundColor Yellow
+        return
+    }
+
+    $results = @()
+    $appliedAny = $false
+
+    foreach ($path in $nvidiaPaths) {
+        try {
+            $results += Set-RegistryValueSafe -Path $path -Name 'RMHdcpKeyGlobZero' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Disable HDCP at $($path)"
+            $results += Set-RegistryValueSafe -Path $path -Name 'TCCSupported' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Disable TCC at $($path)"
+
+            if ($logger) {
+                Write-Log "[Gaming] NVIDIA hardcore tweaks applied at $path (RMHdcpKeyGlobZero=1, TCCSupported=0)."
+            }
+        } catch {
+            Invoke-ErrorHandler -Context "Applying NVIDIA hardcore tweaks at $path" -ErrorRecord $_
+        }
+    }
+
+    $servicePath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\nvlddmkm"
+    $nvTweakPath = "$servicePath\\Global\\NVTweak"
+    $graphicsDriversPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers"
+    $graphicsPowerPath = "$graphicsDriversPath\\Power"
+    $telemetryPath = "HKLM:\\SOFTWARE\\NVIDIA Corporation\\NvControlPanel2\\Client"
+
+    try {
+        $results += Set-RegistryValueSafe -Path $servicePath -Name 'DisableWriteCombining' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable nvlddmkm write combining'
+        $results += Set-RegistryValueSafe -Path $servicePath -Name 'RmGpsPsEnablePerCpuCoreDpc' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Enable nvlddmkm per-core DPC'
+        $results += Set-RegistryValueSafe -Path $nvTweakPath -Name 'DisplayPowerSaving' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable NVIDIA display power saving'
+        $results += Set-RegistryValueSafe -Path $graphicsDriversPath -Name 'RmGpsPsEnablePerCpuCoreDpc' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Enable GraphicsDrivers per-core DPC'
+        $results += Set-RegistryValueSafe -Path $graphicsPowerPath -Name 'RmGpsPsEnablePerCpuCoreDpc' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Enable GraphicsDrivers Power per-core DPC'
+        $results += Set-RegistryValueSafe -Path $telemetryPath -Name 'OptInOrOutPreference' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable NVIDIA Control Panel telemetry'
+    } catch {
+        Invoke-ErrorHandler -Context "Applying NVIDIA service and telemetry registry tweaks" -ErrorRecord $_
+    }
+
+    $taskPrefixes = @('NvTmRep', 'NvTmMon', 'NvDriverUpdateCheck')
+    $taskMatches = @()
+
+    try {
+        $taskMatches = Get-ScheduledTask -ErrorAction Stop | Where-Object {
+            $taskName = $_.TaskName
+            $taskPrefixes | Where-Object { $taskName.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) }
+        }
+    } catch {
+        Invoke-ErrorHandler -Context "Enumerating NVIDIA scheduled tasks" -ErrorRecord $_
+    }
+
+    if ($taskMatches.Count -gt 0) {
+        foreach ($task in $taskMatches) {
+            $fullName = "{0}{1}" -f $task.TaskPath, $task.TaskName
+            try {
+                & schtasks.exe /change /disable /tn $fullName | Out-Null
+                Write-Host "  [+] NVIDIA scheduled task disabled: $fullName" -ForegroundColor Green
+                if ($logger) {
+                    Write-Log "[Gaming] NVIDIA scheduled task disabled: $fullName"
+                }
+            } catch {
+                Invoke-ErrorHandler -Context "Disabling NVIDIA scheduled task $fullName" -ErrorRecord $_
+            }
+        }
+    } else {
+        Write-Host "  [ ] No NVIDIA scheduled tasks matching NvTmRep/NvTmMon/NvDriverUpdateCheck were found." -ForegroundColor DarkGray
+    }
+
+    foreach ($result in $results) {
+        if ($result -and $result.Success) {
+            $appliedAny = $true
+        } else {
+            $label = if ($result -and $result.Operation) { $result.Operation } else { 'NVIDIA hardcore tweak' }
+            Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $label | Out-Null
+        }
+    }
+
+    if ($appliedAny) {
+        Write-Host "  [+] NVIDIA hardcore tweaks applied." -ForegroundColor Green
+        Set-RebootRequired -Context $Context | Out-Null
+    }
+}
 # Description: Tunes processor scheduling registry settings for lower input latency.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Records changes when logger is present.
@@ -910,6 +1036,7 @@ function Invoke-GamingOptimizations {
     Set-CsrssPriorityHardcore -Context $Context
     Set-LatencyToleranceHardcore -Context $Context
     Set-NvidiaLatencyTweaks -Context $Context
+    Invoke-NvidiaHardcoreTweaks -Context $Context
     Invoke-DriverTelemetry
     Set-FsoGlobalOverride -Context $Context
 
@@ -1053,4 +1180,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaHardcoreTweaks, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
