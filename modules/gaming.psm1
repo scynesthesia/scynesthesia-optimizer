@@ -504,6 +504,50 @@ function Optimize-MouseOneToOne {
     }
 }
 
+# Description: Flattens mouse acceleration curves for 1:1 tracking.
+# Parameters: Context - Run context for reboot tracking.
+# Returns: None. Records registry rollback data for changes.
+function Optimize-MouseCurve {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "Mouse Acceleration Curve (Flattening)"
+    $mousePath = "HKCU:\\Control Panel\\Mouse"
+    $hardwareProfile = Get-HardwareProfile
+    if ($hardwareProfile -and $hardwareProfile.IsLaptop) {
+        Write-Host "  [!] Laptop detected: this tweak is not recommended for touchpads. Continue only if using an external mouse." -ForegroundColor Cyan
+    }
+
+    if (-not (Get-Confirmation "Disable mouse smoothing by flattening acceleration curves?" 'y')) {
+        Write-Host "  [ ] Mouse smoothing left unchanged." -ForegroundColor DarkGray
+        return
+    }
+
+    try {
+        $flatCurve = New-Object byte[] 40
+        $results = @(
+            Set-RegistryValueSafe -Path $mousePath -Name 'SmoothMouseXCurve' -Value $flatCurve -Type ([Microsoft.Win32.RegistryValueKind]::Binary) -Context $Context -Critical -ReturnResult -OperationLabel 'Flatten SmoothMouseXCurve'
+            Set-RegistryValueSafe -Path $mousePath -Name 'SmoothMouseYCurve' -Value $flatCurve -Type ([Microsoft.Win32.RegistryValueKind]::Binary) -Context $Context -Critical -ReturnResult -OperationLabel 'Flatten SmoothMouseYCurve'
+        )
+
+        if ($results | Where-Object { -not $_ -or -not $_.Success }) {
+            foreach ($result in $results) {
+                if (-not ($result -and $result.Success)) {
+                    Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Mouse acceleration curve flattening' | Out-Null
+                }
+            }
+            return
+        }
+
+        Write-Host "  [+] Mouse acceleration curves flattened for 1:1 movement." -ForegroundColor Green
+        Set-RebootRequired -Context $Context | Out-Null
+    } catch {
+        Invoke-ErrorHandler -Context "Applying mouse curve flattening" -ErrorRecord $_
+    }
+}
+
 # Description: Elevates csrss.exe to realtime priority for extreme latency reduction.
 # Parameters: Context - Run context for reboot tracking.
 # Returns: None. Records registry rollback data for changes.
@@ -1334,6 +1378,7 @@ function Invoke-GamingOptimizations {
     Optimize-ProcessorScheduling -Context $Context
     Set-UsbPowerManagementHardcore -Context $Context
     Optimize-HidLatency -Context $Context
+    Optimize-MouseCurve -Context $Context
     Invoke-KbmAdvancedOptimizations -Context $Context
     Set-CsrssPriorityHardcore -Context $Context
     Set-LatencyToleranceHardcore -Context $Context
@@ -1484,4 +1529,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Invoke-KbmAdvancedOptimizations, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Optimize-MouseCurve, Invoke-KbmAdvancedOptimizations, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Invoke-VideoStabilityHardcore, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
