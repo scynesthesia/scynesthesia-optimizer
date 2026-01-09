@@ -1,53 +1,48 @@
 # Depends on: ui.psm1 (loaded by main script)
-# Description: Internal helper to configure service startup and runtime state with logging.
-# Parameters: Name - Service name; StartupType - Desired startup mode; Status - Desired runtime status (Running/Stopped).
-# Returns: None. Logs operations and errors using existing utilities.
-function Set-ServiceState {
+# Description: Internal helper to disable a service by setting its registry start value and stopping it.
+# Parameters: Name - Service name; Context - run context for rollback tracking.
+# Returns: None. Logs operations and handles protected service errors.
+function Disable-ServiceByRegistry {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][ValidateSet('Automatic','Manual','Disabled')][string]$StartupType,
-        [Parameter(Mandatory)][ValidateSet('Running','Stopped')][string]$Status,
         [pscustomobject]$Context
     )
 
-    $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
-    if (-not $service) {
-        $message = "[Services] Service not found: $Name"
-        Write-Host "  [!] $message" -ForegroundColor Yellow
-        Write-Log -Message $message -Level 'Warning'
-        return
-    }
-
-    $serviceSnapshot = $null
     try {
-        $serviceSnapshot = [pscustomobject]@{
-            Name        = $service.Name
-            StartupType = $service.StartType.ToString()
-            Status      = $service.Status.ToString()
-        }
-    } catch { }
-
-    try {
-        if ($Context -and $serviceSnapshot) {
-            try {
-                Add-ServiceRollbackAction -Context $Context -ServiceName $service.Name -StartupType $serviceSnapshot.StartupType -Status $serviceSnapshot.Status | Out-Null
-            } catch { }
+        $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+        if (-not $service) {
+            $message = "[Services] Service not found: $Name"
+            Write-Host "  [!] $message" -ForegroundColor Yellow
+            Write-Log -Message $message -Level 'Warning'
+            return
         }
 
-        Set-Service -Name $Name -StartupType $StartupType -ErrorAction Stop
+        $servicePath = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\$Name"
+        $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name"
 
-        if ($Status -eq 'Stopped') {
-            Stop-Service -Name $Name -Force -ErrorAction SilentlyContinue
+        if ($result -and $result.Success) {
+            Write-Host "  [+] [Services] $Name disabled (Start=4)." -ForegroundColor Gray
+            Write-Log -Message "[Services] $Name disabled via registry." -Level 'Info'
         } else {
-            Start-Service -Name $Name -ErrorAction SilentlyContinue
+            Write-Host "  [!] [Services] Failed to disable $Name via registry." -ForegroundColor Yellow
+            Write-Log -Message "[Services] Failed to disable $Name via registry." -Level 'Warning'
         }
 
-        $message = "[Services] $Name set to $StartupType; runtime: $Status"
-        Write-Host "  [+] $message" -ForegroundColor Gray
-        Write-Log -Message $message -Level 'Info'
+        if ($result -and $result.ErrorCategory -eq 'PermissionDenied') {
+            $exception = [System.UnauthorizedAccessException]::new("Registry update denied for service $Name.")
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'ServiceRegistryAccessDenied',
+                [System.Management.Automation.ErrorCategory]::PermissionDenied,
+                $Name
+            )
+            Invoke-ErrorHandler -Context "Disabling protected service $Name (TrustedInstaller)" -ErrorRecord $errorRecord
+        }
+
+        Stop-Service -Name $Name -Force -ErrorAction SilentlyContinue
     } catch {
-        Invoke-ErrorHandler -Context "Configuring service $Name" -ErrorRecord $_
+        Invoke-ErrorHandler -Context "Disabling service $Name" -ErrorRecord $_
     }
 }
 
@@ -64,7 +59,7 @@ function Invoke-SafeServiceOptimization {
     $safeServices = 'RetailDemo','MapsBroker','stisvc'
 
     foreach ($svc in $safeServices) {
-        Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped' -Context $Context
+        Disable-ServiceByRegistry -Name $svc -Context $Context
     }
 }
 
@@ -79,10 +74,11 @@ function Invoke-AggressiveServiceOptimization {
     )
 
     Write-Section "Service reductions (Aggressive)"
+    Invoke-SafeServiceOptimization -Context $Context
 
     $coreTargets = 'RemoteRegistry','WerSvc','lfsvc','DiagTrack'
     foreach ($svc in $coreTargets) {
-        Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped' -Context $Context
+        Disable-ServiceByRegistry -Name $svc -Context $Context
     }
 
     $skipSpooler = $OemServices -and $OemServices.Count -gt 0
@@ -96,7 +92,7 @@ function Invoke-AggressiveServiceOptimization {
         }
     } else {
         if (Get-Confirmation "Disable Print Spooler service?" 'n') {
-            Set-ServiceState -Name 'Spooler' -StartupType 'Disabled' -Status 'Stopped' -Context $Context
+            Disable-ServiceByRegistry -Name 'Spooler' -Context $Context
             if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                 Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'Print Spooler disabled'
             }
@@ -109,9 +105,35 @@ function Invoke-AggressiveServiceOptimization {
     }
 
     if (Get-Confirmation "Disable Bluetooth Support service?" 'n') {
-        Set-ServiceState -Name 'bthserv' -StartupType 'Disabled' -Status 'Stopped' -Context $Context
+        Disable-ServiceByRegistry -Name 'bthserv' -Context $Context
     } else {
         Write-Host "  [ ] Bluetooth Support kept enabled." -ForegroundColor DarkGray
+    }
+}
+
+# Description: Applies gaming service optimizations layered on safe and aggressive presets.
+# Parameters: Context - Run context for rollback tracking.
+# Returns: None. Disables gaming-focused services and handles optional network-impacting services.
+function Invoke-GamingServiceOptimization {
+    [CmdletBinding()]
+    param(
+        [pscustomobject]$Context
+    )
+
+    Write-Section "Service tuning (Gaming)"
+    Invoke-AggressiveServiceOptimization -Context $Context
+
+    $gamingServices = 'WSearch','WMPNetworkSvc','PcaSvc'
+    foreach ($svc in $gamingServices) {
+        Disable-ServiceByRegistry -Name $svc -Context $Context
+    }
+
+    Write-Host "  [!] Optional network services may impact LAN connectivity." -ForegroundColor Yellow
+    if (Get-Confirmation "Deshabilitar LanmanWorkstation y CryptSvc? Advertencia: Pérdida de red local." 'n') {
+        Disable-ServiceByRegistry -Name 'LanmanWorkstation' -Context $Context
+        Disable-ServiceByRegistry -Name 'CryptSvc' -Context $Context
+    } else {
+        Write-Host "  [ ] LanmanWorkstation/CryptSvc kept enabled." -ForegroundColor DarkGray
     }
 }
 
@@ -130,7 +152,7 @@ function Invoke-DriverTelemetryOptimization {
     $nvidiaServices = @('NvTelemetryContainer')
     foreach ($svc in $nvidiaServices) {
         if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
-            Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped' -Context $Context
+            Disable-ServiceByRegistry -Name $svc -Context $Context
         } else {
             $message = "[Services] NVIDIA telemetry service not found: $svc"
             Write-Host "  [ ] $message" -ForegroundColor DarkGray
@@ -141,7 +163,7 @@ function Invoke-DriverTelemetryOptimization {
     $amdServices = @('AMD Crash User Service','AMD Link Service')
     foreach ($svc in $amdServices) {
         if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
-            Set-ServiceState -Name $svc -StartupType 'Disabled' -Status 'Stopped' -Context $Context
+            Disable-ServiceByRegistry -Name $svc -Context $Context
         } else {
             $message = "[Services] AMD telemetry service not found: $svc"
             Write-Host "  [ ] $message" -ForegroundColor DarkGray
@@ -150,4 +172,4 @@ function Invoke-DriverTelemetryOptimization {
     }
 }
 
-Export-ModuleMember -Function Invoke-SafeServiceOptimization, Invoke-AggressiveServiceOptimization, Invoke-DriverTelemetryOptimization
+Export-ModuleMember -Function Invoke-SafeServiceOptimization, Invoke-AggressiveServiceOptimization, Invoke-GamingServiceOptimization, Invoke-DriverTelemetryOptimization

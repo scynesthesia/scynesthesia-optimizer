@@ -1372,6 +1372,7 @@ function Invoke-GamingOptimizations {
         [pscustomobject]$Context
     )
 
+    Invoke-GamingServiceOptimization -Context $Context
     Optimize-GamingScheduler -Context $Context
     Enable-WindowsGameMode -Context $Context
     Invoke-CustomGamingPowerSettings -Context $Context
