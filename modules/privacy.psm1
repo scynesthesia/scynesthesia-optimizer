@@ -142,7 +142,9 @@ function Invoke-PrivacySafe {
 
     try {
         Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting" "Disabled" 1 -Context $context -Critical
+        Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting" "LoggingDisabled" 1 -Context $context -Critical
         Set-RegistryValueSafe "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting" "Disabled" 1 -Context $context -Critical
+        Set-RebootRequired -Context $context | Out-Null
     } catch {
         Invoke-ErrorHandler -Context "Disabling Windows Error Reporting" -ErrorRecord $_
     }
@@ -357,17 +359,18 @@ function Invoke-PrivacyContentDeliveryGaming {
             Write-Host "  [+] Toast notifications disabled." -ForegroundColor Green
         }
 
-        $osBuild = [Environment]::OSVersion.Version.Build
-        if ($osBuild -ge 22000) {
-            $dndResult = Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings" "NOC_GLOBAL_SETTING_DND_ENABLED" 1 -Context $context -ReturnResult -OperationLabel 'Enable Windows 11 Do Not Disturb'
-            if (-not ($dndResult -and $dndResult.Success)) {
-                Write-Host "  [!] Windows 11 Do Not Disturb could not be enabled." -ForegroundColor Yellow
-            } else {
-                Write-Host "  [+] Windows 11 Do Not Disturb enabled." -ForegroundColor Green
-            }
-        }
     } else {
         Write-Host "  [ ] Notification settings left unchanged." -ForegroundColor DarkGray
+    }
+
+    $osVersion = [Environment]::OSVersion.Version
+    if ($osVersion -and $osVersion.Build -ge 22000) {
+        $dndResult = Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings" "NOC_GLOBAL_SETTING_DND_ENABLED" 1 -Context $context -ReturnResult -OperationLabel 'Enable Windows 11 Do Not Disturb'
+        if (-not ($dndResult -and $dndResult.Success)) {
+            Write-Host "  [!] Windows 11 Do Not Disturb could not be enabled." -ForegroundColor Yellow
+        } else {
+            Write-Host "  [+] Windows 11 Do Not Disturb enabled." -ForegroundColor Green
+        }
     }
 
     return $false
