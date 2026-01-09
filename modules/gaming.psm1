@@ -601,6 +601,101 @@ function Set-NvidiaLatencyTweaks {
     }
 }
 
+# Description: Applies advanced NVIDIA Resource Manager and renderer internal tweaks.
+# Parameters: Context - Run context for rollback tracking.
+# Returns: None. Records registry rollback data for changes.
+function Invoke-NvidiaAdvancedInternalTweaks {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Context
+    )
+
+    Write-Section "NVIDIA Advanced Internal Tweaks (RM/Renderer)"
+    $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+
+    $riskSummary = @(
+        "Disables driver safety validations (Blit sub-rect validation) and internal event tracking to shave milliseconds.",
+        "These changes can reduce diagnostics/guardrails and may affect stability if the driver hits unexpected states."
+    )
+
+    if (-not (Get-Confirmation -Question "Apply NVIDIA Resource Manager and renderer internal tweaks?" -Default 'n' -RiskSummary $riskSummary)) {
+        Write-Host "  [ ] NVIDIA internal tweaks skipped." -ForegroundColor DarkGray
+        return
+    }
+
+    $classPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}"
+    $nvidiaPaths = @()
+
+    try {
+        $classKeys = Get-ChildItem -Path $classPath -ErrorAction Stop
+    } catch {
+        Invoke-ErrorHandler -Context "Discovering NVIDIA GPU registry keys (advanced internal tweaks)" -ErrorRecord $_
+        return
+    }
+
+    foreach ($key in $classKeys) {
+        try {
+            $provider = (Get-ItemProperty -Path $key.PSPath -Name 'ProviderName' -ErrorAction Stop).ProviderName
+            if ($provider -eq 'NVIDIA') {
+                $nvidiaPaths += $key.PSPath
+            }
+        } catch {
+            Invoke-ErrorHandler -Context "Reading ProviderName for $($key.PSChildName) (advanced internal tweaks)" -ErrorRecord $_
+        }
+    }
+
+    if ($nvidiaPaths.Count -eq 0) {
+        Write-Host "  [!] No NVIDIA GPU registry keys found for advanced internal tweaks." -ForegroundColor Yellow
+        return
+    }
+
+    $results = @()
+    $appliedAny = $false
+
+    foreach ($path in $nvidiaPaths) {
+        try {
+            # RM: disables engine reset tracking to reduce bookkeeping latency.
+            $results += Set-RegistryValueSafe -Path $path -Name 'TrackResetEngine' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set TrackResetEngine=0 at $path"
+            # RM: disables blit sub-rect validation checks to reduce render validation overhead.
+            $results += Set-RegistryValueSafe -Path $path -Name 'ValidateBlitSubRects' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set ValidateBlitSubRects=0 at $path"
+            # RM: prioritize VRAM caching over system memory for faster resource residency.
+            $results += Set-RegistryValueSafe -Path $path -Name 'RmCacheLoc' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set RmCacheLoc=0 at $path"
+            # RM: enable paged DMA in FBSR to optimize memory transfers.
+            $results += Set-RegistryValueSafe -Path $path -Name 'RmFbsrPagedDMA' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set RmFbsrPagedDMA=1 at $path"
+            # RM: lower acceleration level to reduce driver overhead in internal scheduling.
+            $results += Set-RegistryValueSafe -Path $path -Name 'Acceleration.Level' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set Acceleration.Level=0 at $path"
+            # RM: disable kernel filter support flag to streamline device filtering paths.
+            $results += Set-RegistryValueSafe -Path $path -Name 'NVDeviceSupportKFilter' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set NVDeviceSupportKFilter=0 at $path"
+            # RM: remove desktop stereo shortcuts to reduce UI bloat.
+            $results += Set-RegistryValueSafe -Path $path -Name 'DesktopStereoShortcuts' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set DesktopStereoShortcuts=0 at $path"
+            # RM: set feature control level to reduce extra driver UI components.
+            $results += Set-RegistryValueSafe -Path $path -Name 'FeatureControl' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set FeatureControl=4 at $path"
+            # RM: allow profiling without admin requirement to enable telemetry access.
+            $results += Set-RegistryValueSafe -Path $path -Name 'RmProfilingAdminOnly' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set RmProfilingAdminOnly=0 at $path"
+
+            if ($logger) {
+                Write-Log "[Gaming] NVIDIA advanced internal tweaks applied at $path (RM/Renderer settings)."
+            }
+        } catch {
+            Invoke-ErrorHandler -Context "Applying NVIDIA advanced internal tweaks at $path" -ErrorRecord $_
+        }
+    }
+
+    foreach ($result in $results) {
+        if ($result -and $result.Success) {
+            $appliedAny = $true
+        } else {
+            $label = if ($result -and $result.Operation) { $result.Operation } else { 'NVIDIA advanced internal tweak' }
+            Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $label | Out-Null
+        }
+    }
+
+    if ($appliedAny) {
+        Write-Host "  [+] NVIDIA advanced internal tweaks applied." -ForegroundColor Green
+        Set-RebootRequired -Context $Context | Out-Null
+    }
+}
+
 # Description: Applies deep NVIDIA driver optimizations for latency, telemetry, and power savings removal.
 # Parameters: Context - Run context for rollback tracking.
 # Returns: None. Records registry rollback data and disables scheduled tasks.
@@ -1036,6 +1131,7 @@ function Invoke-GamingOptimizations {
     Set-CsrssPriorityHardcore -Context $Context
     Set-LatencyToleranceHardcore -Context $Context
     Set-NvidiaLatencyTweaks -Context $Context
+    Invoke-NvidiaAdvancedInternalTweaks -Context $Context
     Invoke-NvidiaHardcoreTweaks -Context $Context
     Invoke-DriverTelemetry
     Set-FsoGlobalOverride -Context $Context
@@ -1180,4 +1276,4 @@ function Manage-GameQoS {
     }
 }
 
-Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaHardcoreTweaks, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
+Export-ModuleMember -Function Optimize-GamingScheduler, Invoke-CustomGamingPowerSettings, Optimize-ProcessorScheduling, Set-UsbPowerManagementHardcore, Optimize-HidLatency, Set-CsrssPriorityHardcore, Set-LatencyToleranceHardcore, Set-NvidiaLatencyTweaks, Invoke-NvidiaAdvancedInternalTweaks, Invoke-NvidiaHardcoreTweaks, Disable-GameDVR, Set-FsoGlobalOverride, Disable-UdpSegmentOffload, Enable-TcpFastOpen, Disable-ArpNsOffload, Enable-WindowsGameMode, Invoke-GamingOptimizations, Manage-GameQoS
