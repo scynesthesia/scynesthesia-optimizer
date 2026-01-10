@@ -244,6 +244,23 @@ function Invoke-PrivacySafe {
         Invoke-ErrorHandler -Context "Disabling feedback frequency prompts" -ErrorRecord $_
     }
 
+    if (Get-Confirmation "Set Windows Update to notify before downloading and installing updates?" 'n') {
+        $path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
+        $name = "AUOptions"
+        $value = 2
+
+        Write-Host "[i] Setting Windows Update to Notify for download and auto install." -ForegroundColor Gray
+        $updateResult = Set-RegistryValueSafe -Path $path -Name $name -Value $value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $context -Critical -ReturnResult -OperationLabel 'Set Windows Update to notify only'
+        if (-not ($updateResult -and $updateResult.Success)) {
+            Register-HighImpactRegistryFailure -Context $context -Result $updateResult -OperationLabel 'Set Windows Update to notify only' | Out-Null
+        } else {
+            Set-RebootRequired -Context $context | Out-Null
+            Write-Host "[+] Windows Update set to Notify Only. A reboot is recommended." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  [ ] Windows Update notification mode left unchanged." -ForegroundColor DarkGray
+    }
+
     return $false
 }
 

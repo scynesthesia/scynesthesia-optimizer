@@ -889,37 +889,6 @@ function Show-NetworkTweaksMenu {
     } while ($true)
 }
 
-# Description: Presents software installation and Windows Update controls.
-# Parameters: None.
-# Returns: None.
-function Show-SoftwareUpdatesMenu {
-    do {
-        Write-Section "Software & Updates"
-        Write-Host "1) Install essential software"
-        Write-Host "2) Set Windows Update to Notify Only"
-        Write-Host "3) Manual update scan"
-        Write-Host "4) Back"
-        Write-Host ""
-
-        $swChoice = Read-MenuChoice "Select a software/update option" @('1','2','3','4')
-
-        switch ($swChoice) {
-            '1' {
-                Invoke-SoftwareInstaller
-            }
-            '2' {
-                Set-WindowsUpdateNotifyOnly -Context $script:Context
-            }
-            '3' {
-                Invoke-WindowsUpdateScan
-            }
-            '4' { return }
-        }
-
-        if ($swChoice -ne '4') { Read-Host "`nPress Enter to continue..." }
-    } while ($true)
-}
-
 # Description: Presents UI and Explorer tweaks that can be applied individually or together.
 # Parameters: None.
 # Returns: None. May set global reboot flag.
@@ -964,15 +933,14 @@ do {
     Write-Host "[ Granular Tools ]" -ForegroundColor Yellow
     Write-Host "4) Repair tools"
     Write-Host "5) Network tweaks"
-    Write-Host "6) Software & Updates"
-    Write-Host "7) UI & Explorer tweaks"
-    Write-Host "8) Roll back changes from this session (registry + network)" -ForegroundColor Yellow
+    Write-Host "6) UI & Explorer tweaks"
+    Write-Host "7) Roll back changes from this session (registry + network)" -ForegroundColor Yellow
     Write-Host ""
     $rebootStatus = if (Get-NeedsReboot -Context $script:Context) { 'System Status: Reboot pending' } else { 'System Status: No reboot pending' }
     Write-Host $rebootStatus -ForegroundColor DarkCyan
     Write-Host "0) Exit" -ForegroundColor Gray
     Write-Host ""
-    $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','6','7','8','0')
+    $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','6','7','0')
 
     switch ($choice) {
         '1' { Run-SafePreset }
@@ -1033,12 +1001,9 @@ do {
             Show-NetworkTweaksMenu
         }
         '6' {
-            Show-SoftwareUpdatesMenu
-        }
-        '7' {
             Show-ExplorerTweaksMenu
         }
-        '8' {
+        '7' {
             Write-Section "Rollback"
             Invoke-RegistryRollback -Context $script:Context
             try {
