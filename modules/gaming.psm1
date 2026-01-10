@@ -1595,6 +1595,7 @@ function Invoke-GamingOptimizations {
     Optimize-ModernDisplayModes -Context $Context
     Invoke-VideoStabilityHardcore -Context $Context
     Invoke-ProcessPriorityHardcore -Context $Context
+    Invoke-HardwareDeviceHardening -Context $Context -Level 'Gaming'
 
     Write-Host "[+] Global Gaming Optimizations complete." -ForegroundColor Magenta
 }

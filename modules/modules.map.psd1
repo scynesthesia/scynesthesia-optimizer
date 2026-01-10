@@ -14,6 +14,7 @@
         'modules/debloat.psm1'
         'modules/gaming.psm1'
         'modules/hardware.psm1'
+        'modules/hardware_optimization.psm1'
         'modules/network.psm1'
         'modules/network_hardcore.psm1'
         'modules/performance.psm1'
