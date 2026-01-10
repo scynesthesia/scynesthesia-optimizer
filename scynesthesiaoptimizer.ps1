@@ -671,6 +671,7 @@ function Run-SafePreset {
         Write-Host "[!] Safe preset aborted by user due to critical registry failure." -ForegroundColor Red
         return
     }
+    Invoke-HardwareDeviceHardening -Context $script:Context -Level 'Safe'
     Ensure-PowerPlan -Mode 'HighPerformance'
 
     $Status.RebootRequired = Get-NeedsReboot -Context $script:Context
@@ -766,6 +767,7 @@ function Run-PCSlowPreset {
         Write-Host "[!] Aggressive preset aborted by user due to critical registry failure." -ForegroundColor Red
         return
     }
+    Invoke-HardwareDeviceHardening -Context $script:Context -Level 'Aggressive'
 
     $Status.RebootRequired = Get-NeedsReboot -Context $script:Context
     $Status.RegistryPermissionFailures = @($script:Context.RegistryPermissionFailures)

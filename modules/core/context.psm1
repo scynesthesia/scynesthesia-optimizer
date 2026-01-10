@@ -27,8 +27,9 @@ function New-RunContext {
         NetshRollbackActions = [System.Collections.Generic.List[object]]::new()
         NetworkHardwareRollbackActions = [System.Collections.Generic.List[object]]::new()
         NonRegistryChanges = @{
-            ServiceState = @{}
-            NetshGlobal  = @{}
+            ServiceState    = @{}
+            NetshGlobal     = @{}
+            HardwareDevices = @{}
         }
         RollbackPersistencePath = $null
         LogPath         = $null
@@ -156,14 +157,16 @@ function Get-NonRegistryChangeTracker {
     $runContext = Get-RunContext -Context $Context
     if (-not $runContext.PSObject.Properties.Name.Contains('NonRegistryChanges')) {
         $runContext | Add-Member -Name NonRegistryChanges -MemberType NoteProperty -Value @{
-            ServiceState = @{}
-            NetshGlobal  = @{}
+            ServiceState    = @{}
+            NetshGlobal     = @{}
+            HardwareDevices = @{}
         }
     }
     elseif (-not $runContext.NonRegistryChanges) {
         $runContext.NonRegistryChanges = @{
-            ServiceState = @{}
-            NetshGlobal  = @{}
+            ServiceState    = @{}
+            NetshGlobal     = @{}
+            HardwareDevices = @{}
         }
     }
 
@@ -172,6 +175,9 @@ function Get-NonRegistryChangeTracker {
     }
     if (-not $runContext.NonRegistryChanges.ContainsKey('NetshGlobal')) {
         $runContext.NonRegistryChanges['NetshGlobal'] = @{}
+    }
+    if (-not $runContext.NonRegistryChanges.ContainsKey('HardwareDevices')) {
+        $runContext.NonRegistryChanges['HardwareDevices'] = @{}
     }
 
     return $runContext.NonRegistryChanges
@@ -185,7 +191,7 @@ function Add-NonRegistryChange {
         [Parameter(Mandatory)]
         [pscustomobject]$Context,
         [Parameter(Mandatory)]
-        [ValidateSet('ServiceState','NetshGlobal')]
+        [ValidateSet('ServiceState','NetshGlobal','HardwareDevices')]
         [string]$Area,
         [Parameter(Mandatory)]
         [string]$Key,
