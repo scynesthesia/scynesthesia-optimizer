@@ -931,16 +931,17 @@ do {
     Write-Host "3) Gaming preset (Low latency)"
     Write-Host ""
     Write-Host "[ Granular Tools ]" -ForegroundColor Yellow
-    Write-Host "4) Repair tools"
+    Write-Host "4) Repair & Update Center"
     Write-Host "5) Network tweaks"
     Write-Host "6) UI & Explorer tweaks"
-    Write-Host "7) Roll back changes from this session (registry + network)" -ForegroundColor Yellow
+    Write-Host "7) Optimization Audit (Verify applied tweaks)"
+    Write-Host "8) Roll back changes from this session (registry + network)" -ForegroundColor Yellow
     Write-Host ""
     $rebootStatus = if (Get-NeedsReboot -Context $script:Context) { 'System Status: Reboot pending' } else { 'System Status: No reboot pending' }
     Write-Host $rebootStatus -ForegroundColor DarkCyan
     Write-Host "0) Exit" -ForegroundColor Gray
     Write-Host ""
-    $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','6','7','0')
+    $choice = Read-MenuChoice "Select an option" @('1','2','3','4','5','6','7','8','0')
 
     switch ($choice) {
         '1' { Run-SafePreset }
@@ -993,9 +994,10 @@ do {
             }
         }
         '4' {
-            Write-Section "Repair Tools"
+            Write-Section "Repair & Update Center"
             Invoke-NetworkSoftReset -Context $script:Context
             Invoke-SystemRepair
+            Invoke-WindowsUpdateScan
         }
         '5' {
             Show-NetworkTweaksMenu
@@ -1004,6 +1006,11 @@ do {
             Show-ExplorerTweaksMenu
         }
         '7' {
+            Write-Section "Optimization Audit"
+            Invoke-OptimizationAudit -Context $script:Context
+            Read-Host "`n[DONE] Press Enter to return to the menu..." | Out-Null
+        }
+        '8' {
             Write-Section "Rollback"
             Invoke-RegistryRollback -Context $script:Context
             try {
