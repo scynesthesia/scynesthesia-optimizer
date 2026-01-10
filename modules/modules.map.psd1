@@ -8,7 +8,6 @@
     Features = @(
         'modules/ui.psm1'
         'modules/services.psm1'
-        'modules/software.psm1'
         'modules/tweaks.psm1'
         'modules/aggressive.psm1'
         'modules/debloat.psm1'
