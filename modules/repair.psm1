@@ -40,4 +40,21 @@ function Invoke-SystemRepair {
     }
 }
 
-Export-ModuleMember -Function Invoke-NetworkSoftReset, Invoke-SystemRepair
+function Invoke-WindowsUpdateScan {
+    Write-Host "[i] Triggering Windows Update scan..." -ForegroundColor Gray
+
+    $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        Write-Host "[X] Administrative privileges are required to start the scan." -ForegroundColor Yellow
+        return
+    }
+
+    try {
+        Start-Process -FilePath "usoclient" -ArgumentList "StartInteractiveScan" -WindowStyle Hidden -ErrorAction Stop | Out-Null
+        Write-Host "[+] Scan started in the background." -ForegroundColor Green
+    } catch {
+        Invoke-ErrorHandler -Context "Starting Windows Update interactive scan" -ErrorRecord $_
+    }
+}
+
+Export-ModuleMember -Function Invoke-NetworkSoftReset, Invoke-SystemRepair, Invoke-WindowsUpdateScan
