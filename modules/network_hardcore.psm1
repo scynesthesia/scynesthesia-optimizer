@@ -1625,6 +1625,66 @@ function Disable-NetworkTunneling {
     }
 }
 
+# Description: Enables Weak Host Send/Receive for eligible adapters and tracks rollback state.
+# Parameters: Context - Optional run context for rollback tracking.
+# Returns: None.
+function Optimize-WeakHostModel {
+    param(
+        [pscustomobject]$Context
+    )
+
+    Write-Section 'Weak Host Model (Send/Receive)'
+
+    $adapters = Get-EligibleNetAdapters
+    if (-not $adapters -or $adapters.Count -eq 0) {
+        Write-Host "  [!] No active physical adapters detected for Weak Host Model." -ForegroundColor Yellow
+        return
+    }
+
+    if ($Context -and -not $Context.PSObject.Properties.Name.Contains('NonRegistryChanges')) {
+        $Context | Add-Member -Name NonRegistryChanges -MemberType NoteProperty -Value @{ }
+    }
+    if ($Context -and (-not $Context.NonRegistryChanges)) {
+        $Context.NonRegistryChanges = @{ }
+    }
+    if ($Context -and (-not $Context.NonRegistryChanges.ContainsKey('NetIPInterfaces'))) {
+        $Context.NonRegistryChanges['NetIPInterfaces'] = @{ }
+    }
+
+    $modifiedAdapters = @()
+    foreach ($adapter in $adapters) {
+        foreach ($family in @('IPv4', 'IPv6')) {
+            $ipInterface = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily $family -ErrorAction SilentlyContinue
+            if (-not $ipInterface) { continue }
+
+            $rollbackKey = "{0}:{1}" -f $adapter.ifIndex, $family
+            if ($Context -and -not $Context.NonRegistryChanges.NetIPInterfaces.ContainsKey($rollbackKey)) {
+                $Context.NonRegistryChanges.NetIPInterfaces[$rollbackKey] = [pscustomobject]@{
+                    InterfaceIndex = $adapter.ifIndex
+                    InterfaceAlias = $adapter.Name
+                    AddressFamily  = $family
+                    WeakHostSend   = $ipInterface.WeakHostSend
+                    WeakHostReceive = $ipInterface.WeakHostReceive
+                }
+            }
+
+            $needsChange = ($ipInterface.WeakHostSend -notmatch '(?i)enabled') -or ($ipInterface.WeakHostReceive -notmatch '(?i)enabled')
+            if (-not $needsChange) { continue }
+
+            Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily $family -WeakHostSend Enabled -WeakHostReceive Enabled -ErrorAction SilentlyContinue | Out-Null
+            $modifiedAdapters += "{0} ({1})" -f $adapter.Name, $family
+        }
+    }
+
+    if ($modifiedAdapters.Count -gt 0) {
+        $summary = "Weak Host Model enabled for: {0}" -f ($modifiedAdapters -join ', ')
+        Write-Host "  [+] $summary" -ForegroundColor Green
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] $summary" }
+    } else {
+        Write-Host "  [=] Weak Host Model already enabled on detected adapters." -ForegroundColor DarkGray
+    }
+}
+
 # Description: Applies advanced network optimizations including registry, driver, MTU, and congestion tweaks.
 # Parameters: Context - Optional run context for reboot tracking.
 # Returns: None. Sets reboot flag due to extensive changes.
@@ -1730,6 +1790,7 @@ function Invoke-NetworkTweaksHardcore {
     Disable-NetworkDirect -Context $Context
     Disable-PacketCoalescing -Context $Context
     Enable-TcpHyStart -Context $Context
+    Optimize-WeakHostModel -Context $Context
     Disable-NetworkTunneling
 
     $adapters = Get-EligibleNetAdapters
@@ -1937,4 +1998,4 @@ function Invoke-NetworkTweaksHardcore {
     Set-NeedsReboot -Context $Context | Out-Null
 }
 
-Export-ModuleMember -Function Get-EligibleNetAdapters, Test-IsAdminSession, Test-IsServerClassHardware, Disable-NetworkDirect, Disable-PacketCoalescing, Enable-TcpHyStart, Get-HardcoreAdapterProfile, Get-NicLegacyDriverAssessment, Get-LowLevelSocketTweakSkips, Set-TcpIpAdvancedParameters, Set-NetworkThrottlingHardcore, Set-ServicePriorities, Set-WinsockOptimizations, Optimize-LanmanServer, Set-NetshHardcoreGlobals, Get-NicRegistryPaths, Set-NicRegistryHardcore, Get-PrimaryNetAdapter, Set-WakeOnLanHardcore, Test-MtuSize, Find-OptimalMtu, Invoke-MtuToAdapters, Get-HardwareAgeYears, Suggest-NetworkIrqCores, Set-TcpCongestionProvider, Disable-NetworkTunneling, Invoke-NetworkTweaksHardcore
+Export-ModuleMember -Function Get-EligibleNetAdapters, Test-IsAdminSession, Test-IsServerClassHardware, Disable-NetworkDirect, Disable-PacketCoalescing, Enable-TcpHyStart, Get-HardcoreAdapterProfile, Get-NicLegacyDriverAssessment, Get-LowLevelSocketTweakSkips, Set-TcpIpAdvancedParameters, Set-NetworkThrottlingHardcore, Set-ServicePriorities, Set-WinsockOptimizations, Optimize-LanmanServer, Set-NetshHardcoreGlobals, Get-NicRegistryPaths, Set-NicRegistryHardcore, Get-PrimaryNetAdapter, Set-WakeOnLanHardcore, Test-MtuSize, Find-OptimalMtu, Invoke-MtuToAdapters, Get-HardwareAgeYears, Suggest-NetworkIrqCores, Set-TcpCongestionProvider, Disable-NetworkTunneling, Optimize-WeakHostModel, Invoke-NetworkTweaksHardcore
