@@ -321,6 +321,81 @@ function Invoke-RegistryRollback {
     Write-Host "[i] Registry rollback completed. Success: $success / $total, Failed: $failed." -ForegroundColor Cyan
 }
 
+function Invoke-OptimizationAudit {
+    [CmdletBinding()]
+    param([pscustomobject]$Context)
+
+    if (-not $Context -or -not $Context.PSObject.Properties.Name -contains 'RegistryRollbackActions' -or -not $Context.RegistryRollbackActions -or $Context.RegistryRollbackActions.Count -eq 0) {
+        Write-Host "[ ] No registry audit entries recorded for this session." -ForegroundColor Gray
+        return
+    }
+
+    function Test-RegistryAuditEquality {
+        param(
+            [Parameter(Mandatory)][AllowNull()]$Expected,
+            [Parameter(Mandatory)][AllowNull()]$Actual
+        )
+
+        if ($null -eq $Expected -and $null -eq $Actual) { return $true }
+        if ($null -eq $Expected -or $null -eq $Actual) { return $false }
+
+        if ($Expected -is [byte[]] -and $Actual -is [byte[]]) {
+            if ($Expected.Length -ne $Actual.Length) { return $false }
+            return (@(Compare-Object -ReferenceObject $Expected -DifferenceObject $Actual).Count -eq 0)
+        }
+
+        $expectedIsEnumerable = $Expected -is [System.Collections.IEnumerable] -and -not ($Expected -is [string])
+        $actualIsEnumerable = $Actual -is [System.Collections.IEnumerable] -and -not ($Actual -is [string])
+        if ($expectedIsEnumerable -and $actualIsEnumerable) {
+            return (@(Compare-Object -ReferenceObject $Expected -DifferenceObject $Actual).Count -eq 0)
+        }
+
+        return ($Expected -eq $Actual)
+    }
+
+    foreach ($record in $Context.RegistryRollbackActions) {
+        $displayName = if ([string]::IsNullOrWhiteSpace($record.Name)) { '(default)' } else { $record.Name }
+        $propertyName = if ($displayName -eq '(default)') { '(default)' } else { $displayName }
+        $intendedValue = if ($record.PSObject.Properties.Name -contains 'NewValue') {
+            $record.NewValue
+        } elseif ($record.PSObject.Properties.Name -contains 'IntendedValue') {
+            $record.IntendedValue
+        } else {
+            $null
+        }
+
+        $currentValue = $null
+        try {
+            $item = Get-ItemProperty -Path "Registry::$($record.Path)" -ErrorAction Stop
+            if ($item.PSObject.Properties.Name -contains $propertyName) {
+                $currentValue = $item.$propertyName
+            }
+        }
+        catch [System.UnauthorizedAccessException] {
+            Write-Host "[X] BLOCKED: Could not audit key [$displayName] (possible antivirus/system restriction)." -ForegroundColor Yellow
+            continue
+        }
+        catch [System.Security.SecurityException] {
+            Write-Host "[X] BLOCKED: Could not audit key [$displayName] (possible antivirus/system restriction)." -ForegroundColor Yellow
+            continue
+        }
+        catch {
+            $currentDisplay = Format-RegistryDataForLog -Data $currentValue
+            Write-Host "[!] FAILURE: The key [$displayName] was reverted or did not apply. Current value: [$currentDisplay]." -ForegroundColor Red
+            continue
+        }
+
+        $currentDisplay = Format-RegistryDataForLog -Data $currentValue
+        $intendedDisplay = Format-RegistryDataForLog -Data $intendedValue
+
+        if (Test-RegistryAuditEquality -Expected $intendedValue -Actual $currentValue) {
+            Write-Host "[VERIFIED] The key [$displayName] has the expected value [$intendedDisplay]." -ForegroundColor Green
+        } else {
+            Write-Host "[!] FAILURE: The key [$displayName] was reverted or did not apply. Current value: [$currentDisplay]." -ForegroundColor Red
+        }
+    }
+}
+
 # Description: Normalizes GUID input into uppercase brace-enclosed string form.
 # Parameters: Value - Input GUID or string representation.
 # Returns: Normalized GUID string or null when conversion fails.
@@ -916,4 +991,4 @@ function Write-OutcomeSummary {
     }
 }
 
-Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary, New-RegistryFailureTracker, Register-RegistryResult, Write-RegistryFailureSummary, Add-RegistryPermissionFailure, Test-RegistryResultForPresetAbort, Get-RegistryFailureReason, Register-HighImpactRegistryFailure
+Export-ModuleMember -Function Write-Section, Write-Log, Get-NormalizedGuid, Invoke-ErrorHandler, Get-Confirmation, Read-MenuChoice, Set-RegistryValueSafe, Write-OutcomeSummary, New-RegistryFailureTracker, Register-RegistryResult, Write-RegistryFailureSummary, Add-RegistryPermissionFailure, Test-RegistryResultForPresetAbort, Get-RegistryFailureReason, Register-HighImpactRegistryFailure, Invoke-OptimizationAudit
