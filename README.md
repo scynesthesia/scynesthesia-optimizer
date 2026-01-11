@@ -42,6 +42,8 @@ Scynesthesia Optimizer is built like a **transactional system**, not a tweak pac
 - **Context intelligence**: a shared `$Context` object persists device/hardware detection, prior state, and rollback metadata.
 - **Predictable frametimes**: tuning favors low jitter and stable render latency, not blind benchmarking gains.
 
+Advanced users can review the full engineering rationale in the [technical reference](docs/technical-reference.md), which documents subsystem-specific tweaks, expected gains, and trade-offs in a formal, audit-ready format.
+
 ---
 
 ## Core modules: the new performance stack
