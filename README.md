@@ -1,11 +1,12 @@
-# Scynesthesia Optimizer
+# Scynesthesia Optimizer v1.0
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white)
 ![PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)
 ![Language](https://img.shields.io/badge/UI-English-3CB371)
-![Status](https://img.shields.io/badge/Focus-Performance%20%7C%20Stability%20%7C%20Privacy-8A2BE2)
+![Status](https://img.shields.io/badge/Engine-Transactional%20Performance-8A2BE2)
+![Mode](https://img.shields.io/badge/Audit-Option%207-2F855A)
 
-An authoritative, security-first, performance-obsessed PowerShell 5.1 suite for Windows 10/11. Scynesthesia Optimizer is a **modular Windows hardening and latency-tuning environment**, not a disposable batch script. It prioritizes reversibility, telemetry awareness, and predictable frametimes for gaming, streaming, and low-jitter networking.
+A security-forward, performance-obsessed **transactional optimization engine** for Windows 10/11. Scynesthesia Optimizer v1.0 is not a disposable tweak script—it is a **modular performance platform** with rollback-first design, strict auditability, and predictable frametime outcomes across gaming, streaming, and latency-critical networking.
 
 > [!NOTE]
 > All prompts and outputs are in English. Run from an **elevated PowerShell 5.1** session; elevation is requested if missing.
@@ -32,7 +33,42 @@ Set-ExecutionPolicy Bypass -Scope Process
 
 ---
 
-## Architecture
+## Why Scynesthesia Optimizer is different
+Scynesthesia Optimizer is built like a **transactional system**, not a tweak pack. Every module is expected to be reversible, auditable, and context-aware. The engine tracks state before touching critical subsystems, executes guarded changes, and summarizes rollback options for deterministic recovery.
+
+**What makes it elite:**
+- **Rollback engine by design**: every high-impact action is paired with a traceable revert path.
+- **Modular core**: discrete, testable modules loaded from `modules/` and routed via `modules.map.psd1`.
+- **Context intelligence**: a shared `$Context` object persists device/hardware detection, prior state, and rollback metadata.
+- **Predictable frametimes**: tuning favors low jitter and stable render latency, not blind benchmarking gains.
+
+---
+
+## Core modules: the new performance stack
+
+### Kernel Security
+- Strategic mitigations management for controlled latency tradeoffs.
+- BCD timer alignment for consistent scheduling.
+- Guarded registry operations and rollback metadata for safe reversibility.
+
+### Modern Display Stack
+- FSO/MPO/WGO optimization pipeline aligned to modern render paths.
+- Reduction of overlay and composition overhead for stable frametimes.
+- Compatibility-aware switches to avoid legacy conflicts.
+
+### Hardware Hardening
+- Native cleanup for legacy PnP devices (HPET, WAN Miniports) with traceable actions.
+- Power and thermal awareness to protect thin-and-light devices.
+- Safe device toggle logic with recovery guidance.
+
+### Network Hardcore
+- WeakHost Model activation and packet consistency tuning.
+- MTU discovery with binary search and safe fallback snapshots.
+- RSS base CPU pinning, bufferbloat mitigation, and hardened adapter hygiene.
+
+---
+
+## Transactional architecture
 - **Modular PowerShell suite**: Windows 10/11 modules live in `modules/` and are dynamically loaded via `modules.map.psd1` to keep dependencies explicit and discoverable.
 - **Central `$Context`**: tracks persistence, hardware detection, prior state, and rollback metadata so modules can safely undo or summarize actions.
 - **Guided entry points**: `setup.ps1` bootstraps securely; `scynesthesiaoptimizer.ps1` routes to profiles and modules without editing core files.
@@ -40,34 +76,42 @@ Set-ExecutionPolicy Bypass -Scope Process
 
 ---
 
-## Pillars
+## Presets overview
 
-### Network Hardcore
-- BBR support and TCP hygiene tuned for modern stacks.
-- Binary-search MTU discovery with safe fallbacks and rollback context captured.
-- Bufferbloat mitigation plus RSS base CPU pinning.
-- Optional IPv6 disablement logged to `$Context` for reliable reversal.
+| Preset | Target use | Aggressiveness | Rollback coverage | Recommended for |
+| --- | --- | --- | --- | --- |
+| **Safe** | Daily driver stability | Low | Full | Workstations, creators, business machines |
+| **Balanced** | Performance + safety | Medium | Full | Gaming, streaming, productivity |
+| **Aggressive** | Max performance | High | Full (with risk flags) | Competitive gaming rigs |
+| **Gaming** | Latency + visuals tradeoffs | High | Full (with risk flags) | Competitive play + streaming |
 
-### Gaming & Low Latency
-- Interactive QoS manager with DSCP 46 defaults for latency-critical traffic.
-- qWave autostart and network service alignment for games.
-- CPU/GPU priority helpers, HID/latency tweaks, and MSI awareness.
-- Game overlay silencing (GameDVR off) to keep render latency predictable.
-
-### Hardware Intelligence
-- Detects laptops and thin-and-light devices to keep defaults non-destructive.
-- Modern Standby awareness and battery safeguards before applying power or NIC overrides.
-- Applies aggressive modes only when thermals and power profiles allow safe operation.
-
-### Safety & Recovery
-- Restore points prior to high-impact changes when available.
-- `Set-RegistryValueSafe` for registry writes and sanity checks.
-- Network rollback actions captured in `$Context` alongside summaries for traceability.
-- Session summaries enumerate what changed and how to undo it.
+> [!NOTE]
+> All presets are reversible through the session summary and rollback actions stored in `$Context`.
 
 ---
 
-## Design philosophy: why safety-first matters for power users
+## Audit Mode (Option 7)
+**Option 7** is the verification engine. It inspects the system and validates that optimizations persist, detects OS reversion, and highlights drift—ensuring that your performance posture remains intact between sessions.
+
+**Use Audit Mode when:**
+- You suspect Windows updates reverted settings.
+- You want proof of applied changes before tournaments or streaming events.
+- You need a clean compliance report for baseline enforcement.
+
+---
+
+## Risk disclosure (Aggressive & Gaming)
+These presets intentionally push past default Windows safety margins. They are built for expert users who can evaluate and accept tradeoffs.
+
+> [!WARNING]
+> **DRM & streaming risk**: Aggressive/Gaming changes may trigger playback or authentication issues with protected content (e.g., DRM services, Netflix). Roll back if you see playback failures.
+
+> [!WARNING]
+> **Kernel-level risk**: Disabling mitigations or modifying kernel scheduling behaviors can reduce system security. Use only on trusted, controlled systems.
+
+---
+
+## Design philosophy: performance with accountability
 - **Predictable reversibility** beats raw aggressiveness; every hardcore toggle is paired with a documented rollback path.
 - **Hardware-awareness** prevents laptop battery damage and thermal runaway on thin devices.
 - **Performance with auditability**: session summaries and guarded helpers make tweaks explainable and repeatable.
@@ -112,12 +156,7 @@ Because this project modifies system settings and can disable/enable network ada
 
 If you believe your security tool is blocking a legitimate action, capture the log file from `%TEMP%\ScynesthesiaOptimizer` and include it with your issue report.
 
-## Safety improvements (recommended)
-For the most resilient experience, consider the following enhancements:
-1. **Immediate rollback flush after high-impact changes**: persist rollback state right after critical or high-impact operations to reduce crash windows.
-2. **Hardened rollback metadata**: keep failed rollback entries so retries are possible if permissions or registry state change later.
-3. **Network recovery fallback**: if MTU rollback or adapter re-enable fails, offer a guided recovery step (e.g., staged netsh reset and reboot guidance).
-4. **Integrity verification for remote installs**: add hash/signature validation in the installer workflow to reduce supply-chain risk.
+---
 
 ## License
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
