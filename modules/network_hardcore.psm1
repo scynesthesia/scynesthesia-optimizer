@@ -91,7 +91,7 @@ function Disable-NetworkDirect {
 
     try {
         Set-NetOffloadGlobalSetting -NetworkDirect Disabled -ErrorAction Stop | Out-Null
-        Write-Host "  [+] NetworkDirect (RDMA) disabled globally on non-server hardware." -ForegroundColor Green
+        Write-Host "  [OK] NetworkDirect (RDMA) disabled globally on non-server hardware." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] NetworkDirect disabled globally for non-server hardware." }
         if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
             Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'NetworkDirect disabled globally'
@@ -126,7 +126,7 @@ function Disable-PacketCoalescing {
 
     try {
         Set-NetOffloadGlobalSetting -PacketCoalescing Disabled -ErrorAction Stop | Out-Null
-        Write-Host "  [+] Packet coalescing disabled globally." -ForegroundColor Green
+        Write-Host "  [OK] Packet coalescing disabled globally." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] Packet coalescing disabled globally." }
         if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
             Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'Packet coalescing disabled globally'
@@ -168,7 +168,7 @@ function Enable-TcpHyStart {
 
     try {
         netsh int tcp set global hystart=enabled | Out-Null
-        Write-Host "  [+] HyStart enabled for faster TCP startup." -ForegroundColor Green
+        Write-Host "  [OK] HyStart enabled for faster TCP startup." -ForegroundColor Green
         if ($logger) { Write-Log "[NetworkHardcore] HyStart enabled via netsh." }
         if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
             Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'HyStart enabled'
@@ -423,7 +423,7 @@ function Set-TcpIpAdvancedParameters {
                 $result = Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Critical -ReturnResult
                 $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
                 if ($result -and $result.Success) {
-                    Write-Host "  [+] $($entry.Key) set to $($entry.Value) in TCP parameters." -ForegroundColor Green
+                    Write-Host "  [OK] $($entry.Key) set to $($entry.Value) in TCP parameters." -ForegroundColor Green
                     $anySuccess = $true
                 } else {
                     Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel "TCP parameter: $($entry.Key)" | Out-Null
@@ -440,7 +440,7 @@ function Set-TcpIpAdvancedParameters {
             $rssBaseCpuResult = Set-RegistryValueSafe -Path $ndisPath -Name 'RssBaseCpu' -Value $rssBaseCpuValue -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Critical -ReturnResult
             Register-RegistryResult -Tracker $FailureTracker -Result $rssBaseCpuResult -Critical | Out-Null
             if ($rssBaseCpuResult -and $rssBaseCpuResult.Success) {
-                Write-Host "  [+] RssBaseCpu fijado en $rssBaseCpuValue para aislar IRQs del núcleo 0." -ForegroundColor Green
+                Write-Host "  [OK] RssBaseCpu fijado en $rssBaseCpuValue para aislar IRQs del núcleo 0." -ForegroundColor Green
                 $anySuccess = $true
             } else {
                 Register-HighImpactRegistryFailure -Context $Context -Result $rssBaseCpuResult -OperationLabel 'RssBaseCpu hardening' | Out-Null
@@ -508,7 +508,7 @@ function Set-WinsockOptimizations {
                 $result = Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Critical -ReturnResult
                 $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
                 if ($result -and $result.Success) {
-                    Write-Host "  [+] $($entry.Key) set to $($entry.Value) for Winsock." -ForegroundColor Green
+                    Write-Host "  [OK] $($entry.Key) set to $($entry.Value) for Winsock." -ForegroundColor Green
                     $anySuccess = $true
                 } else {
                     Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel "Winsock parameter: $($entry.Key)" | Out-Null
@@ -564,7 +564,7 @@ function Optimize-LanmanServer {
             try {
                 $result = Set-RegistryValueSafe -Path $path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $runContext -Critical -ReturnResult -OperationLabel "LanmanServer: $($entry.Key)"
                 if ($result -and $result.Success) {
-                    Write-Host "  [+] $($entry.Key) set to $($entry.Value) for LanmanServer." -ForegroundColor Green
+                    Write-Host "  [OK] $($entry.Key) set to $($entry.Value) for LanmanServer." -ForegroundColor Green
                 } else {
                     Register-HighImpactRegistryFailure -Context $runContext -Result $result -OperationLabel "LanmanServer: $($entry.Key)" | Out-Null
                 }
@@ -734,7 +734,7 @@ function Set-NetshHardcoreGlobals {
                 $exitCode = $LASTEXITCODE
                 if ($exitCode -eq 0) {
                     foreach ($command in ($eligibleTcpCommands + $eligibleIpCommands)) {
-                        Write-Host "  [+] $($command.Description)." -ForegroundColor Green
+                        Write-Host "  [OK] $($command.Description)." -ForegroundColor Green
                     }
                 } else {
                     Write-Host "  [!] netsh script returned exit code $exitCode. Review output for details." -ForegroundColor Yellow
@@ -893,7 +893,7 @@ function Set-NicRegistryHardcore {
                     try {
                         $result = Set-RegistryValueSafe -Path $item.Path -Name $_.Key -Value $_.Value -Type $registryString -Context $runContext -Critical -ReturnResult -OperationLabel "NIC hardcore: $($_.Key)"
                         if ($result -and $result.Success) {
-                            Write-Host "    [+] $($_.Key) set to $($_.Value)" -ForegroundColor Green
+                            Write-Host "    [OK] $($_.Key) set to $($_.Value)" -ForegroundColor Green
                             $adapterChanged = $true
                         } else {
                             Register-HighImpactRegistryFailure -Context $runContext -Result $result -OperationLabel "NIC hardcore: $($_.Key)" | Out-Null
@@ -923,7 +923,7 @@ function Set-NicRegistryHardcore {
                 }
 
                 if ($nagleResult -and $nagleResult.ChangedAdapters -contains $adapterName) {
-                    Write-Host "    [+] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
+                    Write-Host "    [OK] Nagle parameters set (Ack=1, NoDelay=1, DelAckTicks=0)" -ForegroundColor Green
                     $adapterChanged = $true
                 }
             } catch {
@@ -957,7 +957,7 @@ function Set-NicRegistryHardcore {
             try {
                 & cmd.exe /c 'netsh int ip reset' 2>&1 | Out-Null
                 & cmd.exe /c 'netsh winsock reset' 2>&1 | Out-Null
-                Write-Host "  [+] Network stack cache cleared (IP/Winsock reset)" -ForegroundColor Green
+                Write-Host "  [OK] Network stack cache cleared (IP/Winsock reset)" -ForegroundColor Green
             } catch {
                 Invoke-ErrorHandler -Context 'Resetting network stack' -ErrorRecord $_
             }
@@ -967,7 +967,7 @@ function Set-NicRegistryHardcore {
                     Disable-NetAdapter -Name $pending.Name -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
                     Start-Sleep -Seconds 3
                     Enable-NetAdapter -Name $pending.Name -Confirm:$false -PassThru -ErrorAction Stop | Out-Null
-                    Write-Host "    [+] Adapter reset to reload driver settings ($($pending.Name))" -ForegroundColor Green
+                    Write-Host "    [OK] Adapter reset to reload driver settings ($($pending.Name))" -ForegroundColor Green
                 } catch {
                     Invoke-ErrorHandler -Context "Resetting adapter $($pending.Name)" -ErrorRecord $_
                 }
@@ -1076,7 +1076,7 @@ function Set-WakeOnLanHardcore {
                     try {
                         $result = Set-RegistryValueSafe -Path $pathEntry.Path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $runContext -Critical -ReturnResult -OperationLabel "WOL hardening: $($entry.Key)"
                         if ($result -and $result.Success) {
-                            Write-Host "      [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
+                            Write-Host "      [OK] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
                         } else {
                             Register-HighImpactRegistryFailure -Context $runContext -Result $result -OperationLabel "WOL hardening: $($entry.Key)" | Out-Null
                         }
@@ -1111,7 +1111,7 @@ function Set-WakeOnLanHardcore {
 
                     $effective = $current.DisplayValue
                     if ($effective -eq $target.Value) {
-                        Write-Host "      [+] $($target.Name) = $effective (OK)" -ForegroundColor Green
+                        Write-Host "      [OK] $($target.Name) = $effective (OK)" -ForegroundColor Green
                         if ($logger) { Write-Log "[NetworkHardcore] $($target.Name) confirmed as $effective on $adapterName." }
                     } else {
                         Write-Host "      [!] $($target.Name) expected $($target.Value) but found $effective on $adapterName." -ForegroundColor Yellow
@@ -1307,7 +1307,7 @@ function Find-OptimalMtu {
             return [pscustomobject]@{ Mtu = $fallbackMtu; WasFallback = $true }
         }
 
-        Write-Host "  [+] Optimal MTU discovered: $mtu bytes" -ForegroundColor Green
+        Write-Host "  [OK] Optimal MTU discovered: $mtu bytes" -ForegroundColor Green
         return [pscustomobject]@{ Mtu = $mtu; WasFallback = $false }
     } catch {
         Invoke-ErrorHandler -Context 'Discovering optimal MTU' -ErrorRecord $_
@@ -1396,7 +1396,7 @@ function Invoke-MtuToAdapters {
             }
 
             Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu $Mtu -AddressFamily IPv4 -ErrorAction Stop | Out-Null
-            Write-Host "  [+] MTU $Mtu applied to $($adapter.Name) (IPv4)." -ForegroundColor Green
+            Write-Host "  [OK] MTU $Mtu applied to $($adapter.Name) (IPv4)." -ForegroundColor Green
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
                 Write-Log "[NetworkHardcore] MTU set to $Mtu on $($adapter.Name) (IPv4)."
             }
@@ -1571,7 +1571,7 @@ function Set-TcpCongestionProvider {
         if ($bbrAvailable -and (Get-Confirmation "Enable experimental BBR congestion control?" 'n')) {
             try {
                 netsh int tcp set global congestionprovider=bbr | Out-Null
-                Write-Host "  [+] TCP congestion provider set to BBR (experimental, favors throughput and latency)." -ForegroundColor Green
+                Write-Host "  [OK] TCP congestion provider set to BBR (experimental, favors throughput and latency)." -ForegroundColor Green
                 if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] TCP congestion provider set to BBR." }
                 if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                     Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'BBR congestion provider enabled'
@@ -1585,7 +1585,7 @@ function Set-TcpCongestionProvider {
         Write-Host "  [i] Defaulting to stable CUBIC congestion control." -ForegroundColor Cyan
         try {
             netsh int tcp set global congestionprovider=cubic | Out-Null
-            Write-Host "  [+] TCP congestion provider set to CUBIC." -ForegroundColor Green
+            Write-Host "  [OK] TCP congestion provider set to CUBIC." -ForegroundColor Green
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] TCP congestion provider set to CUBIC." }
         } catch {
             Invoke-ErrorHandler -Context 'Setting TCP congestion provider to CUBIC' -ErrorRecord $_
@@ -1611,7 +1611,7 @@ function Disable-NetworkTunneling {
                 $output = & cmd.exe /c "netsh $($entry.Command)" 2>&1
                 $exitCode = $LASTEXITCODE
                 if ($exitCode -eq 0) {
-                    Write-Host "  [+] $($entry.Description)." -ForegroundColor Green
+                    Write-Host "  [OK] $($entry.Description)." -ForegroundColor Green
                 } else {
                     Write-Host "  [!] netsh devolvió $exitCode al aplicar $($entry.Description)." -ForegroundColor Yellow
                     if ($output) { Write-Host $output -ForegroundColor Yellow }
@@ -1678,7 +1678,7 @@ function Optimize-WeakHostModel {
 
     if ($modifiedAdapters.Count -gt 0) {
         $summary = "Weak Host Model enabled for: {0}" -f ($modifiedAdapters -join ', ')
-        Write-Host "  [+] $summary" -ForegroundColor Green
+        Write-Host "  [OK] $summary" -ForegroundColor Green
         if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] $summary" }
     } else {
         Write-Host "  [=] Weak Host Model already enabled on detected adapters." -ForegroundColor DarkGray
@@ -1764,7 +1764,7 @@ function Invoke-NetworkTweaksHardcore {
         try {
             $output = & cmd.exe /c 'netsh int ipv6 set state disabled' 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "  [+] IPv6 deshabilitado globalmente." -ForegroundColor Green
+                Write-Host "  [OK] IPv6 deshabilitado globalmente." -ForegroundColor Green
             } else {
                 Write-Host "  [!] netsh devolvió $LASTEXITCODE al desactivar IPv6." -ForegroundColor Yellow
                 if ($output) { Write-Host $output -ForegroundColor Yellow }
@@ -1897,7 +1897,7 @@ function Invoke-NetworkTweaksHardcore {
                 }
 
                 Set-NetAdapterRss -Name $adapter.Name -Profile Closest -ErrorAction Stop | Out-Null
-                Write-Host "  [+] RSS profile set to Closest on $($adapter.Name)." -ForegroundColor Green
+                Write-Host "  [OK] RSS profile set to Closest on $($adapter.Name)." -ForegroundColor Green
                 if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to Closest on $($adapter.Name)." }
             } catch {
                 Invoke-ErrorHandler -Context "Configuring RSS on $($adapter.Name)" -ErrorRecord $_
@@ -1944,7 +1944,7 @@ function Invoke-NetworkTweaksHardcore {
             $netshExitCode = $LASTEXITCODE
             if ($netshExitCode -eq 0) {
                 foreach ($entry in $netshGlobals) {
-                    Write-Host "  [+] $($entry.Description)" -ForegroundColor Green
+                    Write-Host "  [OK] $($entry.Description)" -ForegroundColor Green
                     if ($logger -and $entry.LogMessage) { Write-Log $entry.LogMessage }
                 }
             } else {
@@ -1994,7 +1994,7 @@ function Invoke-NetworkTweaksHardcore {
     Write-RegistryFailureSummary -Tracker $failureTracker
     if ($failureTracker -and $failureTracker.Abort) { return }
 
-    Write-Host "  [+] Hardcore network tweaks complete." -ForegroundColor Green
+    Write-Host "  [OK] Hardcore network tweaks complete." -ForegroundColor Green
     Set-NeedsReboot -Context $Context | Out-Null
 }
 

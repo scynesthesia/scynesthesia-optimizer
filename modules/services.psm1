@@ -22,7 +22,7 @@ function Disable-ServiceByRegistry {
         $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name"
 
         if ($result -and $result.Success) {
-            Write-Host "  [+] [Services] $Name disabled (Start=4)." -ForegroundColor Gray
+            Write-Host "  [OK] [Services] $Name disabled (Start=4)." -ForegroundColor Gray
             Write-Log -Message "[Services] $Name disabled via registry." -Level 'Info'
         } else {
             Write-Host "  [!] [Services] Failed to disable $Name via registry." -ForegroundColor Yellow
@@ -118,7 +118,7 @@ function Invoke-AggressiveServiceOptimization {
     $windowsUpdatePath = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\wuauserv"
     $wuResult = Set-RegistryValueSafe -Path $windowsUpdatePath -Name 'Start' -Value 3 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Set Windows Update to manual'
     if ($wuResult -and $wuResult.Success) {
-        Write-Host "  [+] [Services] wuauserv set to manual start (Start=3)." -ForegroundColor Gray
+        Write-Host "  [OK] [Services] wuauserv set to manual start (Start=3)." -ForegroundColor Gray
         Write-Log -Message "[Services] wuauserv set to manual start (Start=3)." -Level 'Info'
     } else {
         Write-Host "  [!] [Services] Failed to set wuauserv to manual start." -ForegroundColor Yellow

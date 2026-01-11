@@ -109,14 +109,14 @@ function Invoke-NetworkThrottlingShared {
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
     if (-not [string]::IsNullOrWhiteSpace($HostMessage)) {
-        Write-Host "  [+] $HostMessage" -ForegroundColor Gray
+        Write-Host "  [OK] $HostMessage" -ForegroundColor Gray
     }
 
     $result = Set-RegistryValueSafe -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' -Name 'NetworkThrottlingIndex' -Value 0xFFFFFFFF -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $context -Critical -ReturnResult -OperationLabel $OperationLabel
 
     if ($result -and $result.Success) {
         if ($SuccessMessage) {
-            Write-Host "  [+] $SuccessMessage" -ForegroundColor Green
+            Write-Host "  [OK] $SuccessMessage" -ForegroundColor Green
         }
 
         if ($logger) {
@@ -159,7 +159,7 @@ function Invoke-ServiceProviderPrioritiesShared {
     }
 
     if (-not [string]::IsNullOrWhiteSpace($HostMessage)) {
-        Write-Host "  [+] $HostMessage" -ForegroundColor Gray
+        Write-Host "  [OK] $HostMessage" -ForegroundColor Gray
     }
 
     $anySuccess = $false
@@ -168,7 +168,7 @@ function Invoke-ServiceProviderPrioritiesShared {
             $result = Set-RegistryValueSafe -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\ServiceProvider' -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $runContext -Critical -ReturnResult -OperationLabel "ServiceProvider: $($entry.Key)"
             $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
             if ($result -and $result.Success) {
-                Write-Host "  [+] $($entry.Key) set to $($entry.Value) in ServiceProvider." -ForegroundColor Green
+                Write-Host "  [OK] $($entry.Key) set to $($entry.Value) in ServiceProvider." -ForegroundColor Green
                 $anySuccess = $true
                 if ($logger) {
                     Write-Log "$LoggerPrefix ServiceProvider $($entry.Key) set to $($entry.Value)."
@@ -302,7 +302,7 @@ function Invoke-NagleRegistryUpdate {
                     $changedAdapters += $adapter.Name
                 }
             }
-            Write-Host "  [+] Nagle-related parameters optimized for $($adapter.Name)." -ForegroundColor Green
+            Write-Host "  [OK] Nagle-related parameters optimized for $($adapter.Name)." -ForegroundColor Green
         } catch {
             Invoke-ErrorHandler -Context "Setting Nagle parameters on $($adapter.Name)" -ErrorRecord $_
         }
@@ -352,7 +352,7 @@ function Invoke-NicPowerRegistryTweaks {
             if ($currentPnP -ne $PnPCapabilitiesValue) {
                 $pnPResult = Set-RegistryValueSafe -Path $item.Path -Name 'PnPCapabilities' -Value $PnPCapabilitiesValue -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $context -Critical -ReturnResult -OperationLabel "$LoggerPrefix $adapterName PnPCapabilities"
                 if ($pnPResult -and $pnPResult.Success) {
-                    Write-Host "    [+] PnPCapabilities set to $PnPCapabilitiesValue (power management disabled)" -ForegroundColor Green
+                    Write-Host "    [OK] PnPCapabilities set to $PnPCapabilitiesValue (power management disabled)" -ForegroundColor Green
                     if ($logger) { Write-Log "$LoggerPrefix $adapterName PnPCapabilities set to $PnPCapabilitiesValue." }
                     $adapterChanged = $true
                 } else {
@@ -373,7 +373,7 @@ function Invoke-NicPowerRegistryTweaks {
                 if ($currentValue -ne $entry.Value) {
                     $valueResult = Set-RegistryValueSafe -Path $item.Path -Name $entry.Key -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $context -Critical -ReturnResult -OperationLabel "$LoggerPrefix $adapterName $($entry.Key)"
                     if ($valueResult -and $valueResult.Success) {
-                        Write-Host "    [+] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
+                        Write-Host "    [OK] $($entry.Key) set to $($entry.Value)" -ForegroundColor Green
                         if ($logger) { Write-Log "$LoggerPrefix $adapterName $($entry.Key) set to $($entry.Value)." }
                         $adapterChanged = $true
                     } else {
@@ -565,7 +565,7 @@ function Set-NetAdapterAdvancedPropertySafe {
         foreach ($value in $orderedValues) {
             try {
                 Set-NetAdapterAdvancedProperty -Name $AdapterName -DisplayName $DisplayName -DisplayValue $value -NoRestart -ErrorAction Stop | Out-Null
-                Write-Host "  [+] $DisplayName set to $value on $AdapterName." -ForegroundColor Green
+                Write-Host "  [OK] $DisplayName set to $value on $AdapterName." -ForegroundColor Green
                 $anyApplied = $true
                 break
             } catch {
@@ -688,7 +688,7 @@ function Invoke-AdapterOffloadToggle {
 
         try {
             Disable-NetAdapterRsc -Name $adapter.Name -ErrorAction Stop | Out-Null
-            Write-Host "  [+] RSC disabled on $($adapter.Name)." -ForegroundColor Green
+            Write-Host "  [OK] RSC disabled on $($adapter.Name)." -ForegroundColor Green
             if ($logger) { Write-Log "$LoggerPrefix Disabled RSC on $($adapter.Name)." }
             $touched.Add($adapter.Name) | Out-Null
         } catch {

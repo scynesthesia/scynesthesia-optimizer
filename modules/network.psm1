@@ -27,7 +27,7 @@ function Get-NicRegistryPaths {
 # Parameters: None.
 # Returns: None.
 function Invoke-NetworkFlush {
-    Write-Host "  [+] Flushing DNS cache" -ForegroundColor Gray
+    Write-Host "  [OK] Flushing DNS cache" -ForegroundColor Gray
     try {
         ipconfig /flushdns | Out-Null
     } catch {
@@ -44,7 +44,7 @@ function Invoke-NetworkFullReset {
         [pscustomobject]$Context
     )
 
-    Write-Host "  [+] Resetting Winsock catalog" -ForegroundColor Gray
+    Write-Host "  [OK] Resetting Winsock catalog" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     try {
         netsh winsock reset | Out-Null
@@ -81,7 +81,7 @@ function Set-NetworkDnsSafe {
             }
 
             Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses @('1.1.1.1','1.0.0.1') -ErrorAction Stop
-            Write-Host "  [+] Cloudflare DNS applied to $($adapter.Name)." -ForegroundColor Green
+            Write-Host "  [OK] Cloudflare DNS applied to $($adapter.Name)." -ForegroundColor Green
             if ($logger) {
                 Write-Log "[Network] DNS set to Cloudflare on '$($adapter.Name)' (1.1.1.1/1.0.0.1)."
             }
@@ -100,7 +100,7 @@ function Set-DnsOverHttps {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Enabling DNS over HTTPS policy (AutoDoH)" -ForegroundColor Gray
+    Write-Host "  [OK] Enabling DNS over HTTPS policy (AutoDoH)" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
     $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DnsClient" "EnableAutoDoh" 2 -Context $context -Critical -ReturnResult -OperationLabel 'Enable DNS over HTTPS'
@@ -144,7 +144,7 @@ function Set-DnsOverHttps {
 # Parameters: None.
 # Returns: None.
 function Set-TcpAutotuningNormal {
-    Write-Host "  [+] Setting TCP autotuning to 'normal'" -ForegroundColor Gray
+    Write-Host "  [OK] Setting TCP autotuning to 'normal'" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     try {
         netsh int tcp set global autotuninglevel=normal | Out-Null
@@ -166,7 +166,7 @@ function Set-IPvPreferenceIPv4First {
         [pscustomobject]$Context
     )
 
-    Write-Host "  [+] Preferring IPv4 over IPv6 (without disabling IPv6)" -ForegroundColor Gray
+    Write-Host "  [OK] Preferring IPv4 over IPv6 (without disabling IPv6)" -ForegroundColor Gray
     try {
         $result = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" "DisabledComponents" 0x20 -Critical -ReturnResult -Context $Context -OperationLabel 'Prefer IPv4 over IPv6'
         $abort = Register-RegistryResult -Tracker $FailureTracker -Result $result -Critical
@@ -197,7 +197,7 @@ function Disable-LLMNR {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Disabling LLMNR" -ForegroundColor Gray
+    Write-Host "  [OK] Disabling LLMNR" -ForegroundColor Gray
     $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "EnableMulticast" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable LLMNR'
     if ($result -and $result.Success) {
         if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
@@ -217,7 +217,7 @@ function Disable-mDNS {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Disabling multicast DNS (mDNS)" -ForegroundColor Gray
+    Write-Host "  [OK] Disabling multicast DNS (mDNS)" -ForegroundColor Gray
     $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "EnableMDNS" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable mDNS'
     if ($result -and $result.Success) {
         if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
@@ -237,7 +237,7 @@ function Set-IgmpLevel {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Setting IGMPLevel to 0" -ForegroundColor Gray
+    Write-Host "  [OK] Setting IGMPLevel to 0" -ForegroundColor Gray
     $result = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" "IGMPLevel" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Set IGMPLevel to 0'
     if ($result -and $result.Success) {
         if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
@@ -258,7 +258,7 @@ function Disable-LLTD {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Disabling Link-Layer Topology Discovery (mapper/responder)" -ForegroundColor Gray
+    Write-Host "  [OK] Disabling Link-Layer Topology Discovery (mapper/responder)" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     $services = @('lltdsvc','rspndr')
 
@@ -292,7 +292,7 @@ function Disable-SmartNameResolution {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Disabling Smart Multi-Homed Name Resolution" -ForegroundColor Gray
+    Write-Host "  [OK] Disabling Smart Multi-Homed Name Resolution" -ForegroundColor Gray
     $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "DisableSmartNameResolution" 1 -Context $context -Critical -ReturnResult -OperationLabel 'Disable Smart Name Resolution'
     if ($result -and $result.Success) {
         if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
@@ -328,7 +328,7 @@ function Disable-NetBIOS {
             try {
                 $result = Invoke-CimMethod -InputObject $cim -MethodName SetTcpipNetbios -Arguments @{ TcpipNetbiosOptions = 2 } -ErrorAction Stop
                 if ($result.ReturnValue -eq 0) {
-                    Write-Host "  [+] NetBIOS disabled on $($adapter.Name)." -ForegroundColor Green
+                    Write-Host "  [OK] NetBIOS disabled on $($adapter.Name)." -ForegroundColor Green
                     if ($logger) {
                         Write-Log "[Network] NetBIOS disabled on $($adapter.Name) via SetTcpipNetbios." 
                     }
@@ -353,7 +353,7 @@ function Disable-NetworkTelemetry {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Disabling network telemetry services" -ForegroundColor Gray
+    Write-Host "  [OK] Disabling network telemetry services" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     try {
         $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable network telemetry'
@@ -391,7 +391,7 @@ function Disable-DeliveryOptimization {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Disabling Delivery Optimization (WUDO)" -ForegroundColor Gray
+    Write-Host "  [OK] Disabling Delivery Optimization (WUDO)" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     try {
         $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable Delivery Optimization'
@@ -428,7 +428,7 @@ function Set-ReservableBandwidth {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Setting reservable bandwidth limit to 0%" -ForegroundColor Gray
+    Write-Host "  [OK] Setting reservable bandwidth limit to 0%" -ForegroundColor Gray
     $result = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Psched" "NonBestEffortLimit" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Set reservable bandwidth to 0%'
     if ($result -and $result.Success) {
         if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
@@ -448,7 +448,7 @@ function Disable-RemoteAssistance {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Host "  [+] Disabling Remote Assistance" -ForegroundColor Gray
+    Write-Host "  [OK] Disabling Remote Assistance" -ForegroundColor Gray
     try {
         $raResult = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\Remote Assistance" "fAllowToGetHelp" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable Remote Assistance (Control)'
         $tsResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "fAllowToGetHelp" 0 -Context $context -Critical -ReturnResult -OperationLabel 'Disable Remote Assistance (Policy)'
@@ -473,7 +473,7 @@ function Disable-RemoteAssistance {
 # Parameters: None.
 # Returns: None.
 function Disable-NetworkDiscovery {
-    Write-Host "  [+] Disabling Network Discovery firewall rules" -ForegroundColor Gray
+    Write-Host "  [OK] Disabling Network Discovery firewall rules" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     try {
         netsh advfirewall firewall set rule group="Network Discovery" new enable=No | Out-Null
@@ -536,7 +536,7 @@ function Set-AdapterAdvancedPropertyIfPresent {
         foreach ($match in $matches) {
             try {
                 Set-NetAdapterAdvancedProperty -InterfaceDescription $Adapter.InterfaceDescription -RegistryKeyword $match.RegistryKeyword -RegistryValue $Value -NoRestart -ErrorAction Stop
-                Write-Host "  [+] Set $($match.RegistryKeyword) on $($Adapter.Name) to $Value." -ForegroundColor Green
+                Write-Host "  [OK] Set $($match.RegistryKeyword) on $($Adapter.Name) to $Value." -ForegroundColor Green
                 if ($logger) {
                     Write-Log "[Network] $($Adapter.Name): $($match.RegistryKeyword) set to $Value."
                 }
@@ -622,7 +622,7 @@ function Enable-RSS {
 
             try {
                 Enable-NetAdapterRss -Name $adapter.Name -ErrorAction Stop | Out-Null
-                Write-Host "  [+] RSS enabled on $($adapter.Name)." -ForegroundColor Green
+                Write-Host "  [OK] RSS enabled on $($adapter.Name)." -ForegroundColor Green
                 if ($logger) {
                     Write-Log "[Network] RSS enabled on $($adapter.Name)."
                 }
@@ -768,13 +768,13 @@ function Invoke-NetworkTweaksGaming {
             Push-Location -Path $safePath
             try {
                 netsh int tcp set global chimney=disabled | Out-Null
-                Write-Host "  [+] TCP Chimney Offload disabled." -ForegroundColor Green
+                Write-Host "  [OK] TCP Chimney Offload disabled." -ForegroundColor Green
                 if ($logger) {
                     Write-Log "[Network] TCP Chimney Offload set to disabled."
                 }
 
                 netsh int tcp set global dca=enabled | Out-Null
-                Write-Host "  [+] Direct Cache Access enabled." -ForegroundColor Green
+                Write-Host "  [OK] Direct Cache Access enabled." -ForegroundColor Green
                 if ($logger) {
                     Write-Log "[Network] Direct Cache Access set to enabled."
                 }

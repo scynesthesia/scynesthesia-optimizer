@@ -1,74 +1,98 @@
 # Scynesthesia Optimizer v1.0 — Technical Reference
 
-This document provides a technical and verifiable description of the logic implemented by Scynesthesia Optimizer v1.0 across its core modules. The approach is transparent: mechanisms, performance rationales, and associated security/compatibility trade-offs are explained explicitly.
+This document provides a technical, verifiable description of Scynesthesia Optimizer v1.0 across its core modules. The intent is transparency: mechanisms, performance rationale, and security/compatibility trade-offs are spelled out in operational terms.
 
 ## Core Engine (Security and Transactionality)
 
-The base engine defines a per-run context object (`$Context`) to track changes, persist evidence of applied actions, and enable deterministic rollback. Transactionality relies on rollback action collections and a "transaction scope" mechanism for registry changes.
+**Tweak:** Per-run `$Context` ledger.
+**Justification:** Tracks state before and after changes so rollback is deterministic. This does not reduce DPC/ISR directly, but it prevents partial writes that can leave the system in an inconsistent latency state after failures or reboots.
+**Trade-off:** Slight runtime overhead from bookkeeping and JSON persistence.
 
-| Subsystem | Implementation (modules/functions) | Auditability and reversibility guarantee | Technical evidence |
-| --- | --- | --- | --- |
-| Per-run `$Context` | `New-RunContext`, `Get-RunContext` in `modules/core/context.psm1` | Centralizes run state (reboot required, rollback collections, tracking of non-registry changes and permission failures). Enables per-session traceability. | `RegistryRollbackActions`, `ServiceRollbackActions`, `NetshRollbackActions`, `NetworkHardwareRollbackActions`, `NonRegistryChanges` structures. |
-| Registry rollback log | `Add-RegistryRollbackRecord`, `Invoke-RegistryRollback` in `modules/ui.psm1` | Captures value/key snapshots before modification and reverts in reverse order. | Captures `Path`, `Name`, `PreviousExists`, `PreviousValue` and applies reversal with error handling. |
-| Registry transactions | `Invoke-RegistryTransaction` in `modules/core/context.psm1` | Delimits a block of changes; if any critical operation fails, it reverts changes within that block. | Uses the initial index of `RegistryRollbackActions`, detects failures, and rolls back in reverse order. |
-| Rollback persistence | `Save-RollbackState`, `Restore-RollbackState` in `modules/core/context.psm1` | Persists changes to disk (JSON) for post-crash recovery. | File at `%ProgramData%\Scynesthesia\session_rollback.json` with `Registry/Services/Netsh/NetworkHardware`. |
-| Non-registry changes | `Get-NonRegistryChangeTracker`, `Add-NonRegistryChange` in `modules/core/context.psm1` | Records changes to services, netsh, BCD, and PnP hardware for auditability and manual rollback. | `NonRegistryChanges` bucket with `ServiceState`, `NetshGlobal`, `HardwareDevices`, `BcdEdit` keys. |
+**Tweak:** Registry rollback log (`Add-RegistryRollbackRecord`, `Invoke-RegistryRollback`).
+**Justification:** Captures values and existence state before mutation so registry writes can be reverted in reverse order. This keeps kernel and driver state transitions coherent when tuning high-impact keys.
+**Trade-off:** Adds disk writes and more log data to manage.
 
-**Technical summary:** the context behaves as a change ledger; rollback is reproducible because prior state is captured and can be persisted, while the transactional engine reverts any failed operation inside a registry block.
+**Tweak:** Registry transaction scope (`Invoke-RegistryTransaction`).
+**Justification:** Uses a local rollback boundary so failed registry operations are reverted immediately, preventing half-applied driver or kernel paths that can surface as jitter.
+**Trade-off:** Stops the preset when critical steps fail, which can reduce coverage in partial runs.
+
+**Tweak:** Rollback persistence (`Save-RollbackState`, `Restore-RollbackState`).
+**Justification:** Persists the rollback ledger to `%ProgramData%\Scynesthesia\session_rollback.json` so crash recovery does not leave low-level settings stranded.
+**Trade-off:** Requires writable system storage; failure to persist is treated as a hard stop for safety.
+
+**Tweak:** Non-registry change tracking (`Add-NonRegistryChange`).
+**Justification:** Records netsh, service, BCD, and hardware changes so operators can explicitly unwind non-registry state that impacts DPC/ISR behavior.
+**Trade-off:** Manual rollback for non-registry changes still requires operator intent.
 
 ## Kernel & Security Hardening
 
-This action set lives in `Invoke-KernelSecurityTweaks` and reduces kernel/ISR/DPC latency by disabling mitigations and adjusting timers. The module requires explicit confirmation due to security implications.
+**Tweak:** Spectre/Meltdown mitigation overrides (`FeatureSettingsOverride=3`, `FeatureSettingsOverrideMask=3`).
+**Justification:** Removes speculative execution mitigation paths in kernel transitions, lowering branch fencing and context switch cost that surfaces in DPC/ISR latency.
+**Trade-off:** Exposes the system to Spectre/Meltdown-class side-channel attacks.
 
-| Subsystem | Implementation (keys/commands) | Expected gain | Trade-off (risk) |
-| --- | --- | --- | --- |
-| Spectre/Meltdown mitigations | `FeatureSettingsOverride=3`, `FeatureSettingsOverrideMask=3` under `HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management` | Lower overhead from side-channel mitigation paths in kernel transitions. | Exposure to Spectre/Meltdown-class attacks and reduced isolation between contexts. |
-| VBS/HVCI | `EnableVirtualizationBasedSecurity=0` and `...\HypervisorEnforcedCodeIntegrity\Enabled=0` | Less hypervisor-enforced layering in kernel calls, reducing latency. | Disables virtualization-based isolation protections. |
-| DEP | `DisableExecProtection=1` | Fewer execution checks, lower latency in some code paths. | Loss of data execution prevention. |
-| ASLR | `MoveImages=0` | Avoids randomized relocation, reducing load/mapping cost. | Predictable address space for exploitation. |
-| BCD timers | `bcdedit /set useplatformclock No`, `useplatformtick No`, `disabledynamictick Yes` | Reduced jitter and lower overhead from timers and dynamic ticks. | Potential timing compatibility issues on certain firmware/hardware. |
+**Tweak:** VBS/HVCI disablement (`EnableVirtualizationBasedSecurity=0`, `HypervisorEnforcedCodeIntegrity=0`).
+**Justification:** Removes hypervisor-enforced indirection in kernel execution, reducing ISR/DPC overhead in code integrity checks.
+**Trade-off:** Loses virtualization-based isolation protections.
 
-**Operational motivation:** the suite prioritizes a steep reduction in system-call latency (DPC/ISR), even at the cost of security, and explicitly surfaces the risk before applying changes.
+**Tweak:** DEP disablement (`DisableExecProtection=1`).
+**Justification:** Reduces execution-check overhead in some kernel paths, lowering latency for drivers that thrash DEP checks during high ISR load.
+**Trade-off:** Lowers memory execution safety.
+
+**Tweak:** ASLR disablement (`MoveImages=0`).
+**Justification:** Avoids relocation churn for driver images, reducing initialization overhead and loader work in the kernel path.
+**Trade-off:** Predictable address layout increases exploitability.
+
+**Tweak:** BCD timer policy (`bcdedit /set useplatformclock No`, `useplatformtick No`, `disabledynamictick Yes`).
+**Justification:** Forces a stable timing source and disables dynamic ticks to reduce scheduling jitter that can bleed into audio and render DPCs.
+**Trade-off:** Firmware-specific timing compatibility issues are possible.
 
 ## Modern Display Stack
 
-The `Optimize-ModernDisplayModes` module applies FSO/MPO/WGO tweaks to maximize "exclusive-like" latency in windowed mode via *Independent Flip* when supported by the driver and OS.
+**Tweak:** FSO policy (`GameDVR_FSEBehaviorMode=0`, `GameDVR_HonorUserFSEBehaviorMode=1`).
+**Justification:** Encourages flip-model presentation paths closer to exclusive fullscreen, reducing composition overhead and latency in the graphics pipeline.
+**Trade-off:** Behavior depends on the GPU driver and OS build.
 
-| Subsystem | Implementation (keys/actions) | Expected gain | Trade-off |
-| --- | --- | --- | --- |
-| FSO (Fullscreen Optimizations) | `GameDVR_FSEBehaviorMode=0`, `GameDVR_HonorUserFSEBehaviorMode=1` under `HKCU:\System\GameConfigStore` | Lets windows use presentation paths closer to fullscreen without losing stable Alt+Tab. | Depends on user policy and system support. |
-| WGO (Windowed Game Optimizations) | `DirectXUserGlobalSettings=VRROptimizeEnable=0;SwapEffectUpgradeEnable=1;` under `HKCU:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences` | Forces flip-model presentation, enabling *Independent Flip* and lower render queueing. | Requires a modern graphics stack and recent drivers. |
-| MPO (Multi-Plane Overlay) | Removal of `OverlayTestMode` under `HKLM:\SOFTWARE\Microsoft\Windows\Dwm` | Frees MPO for compositor overlays when they reduce latency. | Older drivers may flicker; requires stable WDDM 2.7+. |
+**Tweak:** WGO policy (`DirectXUserGlobalSettings=VRROptimizeEnable=0;SwapEffectUpgradeEnable=1;`).
+**Justification:** Forces flip-model presentation to unlock Independent Flip where supported, trimming compositor queueing and reducing frame pacing jitter.
+**Trade-off:** Requires modern WDDM drivers and compatible display paths.
 
-**Operational note:** the module applies changes with rollback and marks `RebootRequired` to ensure full application after restart.
+**Tweak:** MPO unlock (removing `OverlayTestMode`).
+**Justification:** Enables multi-plane overlay paths that can bypass parts of the compositor, reducing GPU scheduling overhead that shows up in frametime spikes.
+**Trade-off:** Older drivers may flicker or mis-handle overlays.
 
 ## NVIDIA Hardcore Tweaks
 
-The `Invoke-NvidiaHardcoreTweaks` block hardens NVIDIA driver configuration to reduce micro-latency by eliminating DRM checks and power/telemetry overhead. The suite explicitly communicates risks.
+**Tweak:** HDCP disablement (`RMHdcpKeyGlobZero=1`).
+**Justification:** Removes HDCP handshake checks that can inject periodic driver stalls, improving consistent render and capture timing.
+**Trade-off:** Protected content playback and DRM authentication can fail.
 
-| Subsystem | Implementation (keys/actions) | Expected gain | Trade-off |
-| --- | --- | --- | --- |
-| HDCP | `RMHdcpKeyGlobZero=1` in NVIDIA keys under `HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}` | Removes HDCP handshake checks that can cause micro-stutter. | Breaks protected content playback (Netflix, Disney+, Prime Video). |
-| Write Combining | `DisableWriteCombining=1` under `HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm` | Reduces buffer-related stutter inside the driver. | May impact stability/performance, especially on older GPUs. |
-| Telemetry/Power | `DisplayPowerSaving=0`, `OptInOrOutPreference=0`, disable tasks `NvTmRep/NvTmMon/NvDriverUpdateCheck` | Lowers background driver/control panel load. | Higher power consumption and loss of telemetry/diagnostics. |
+**Tweak:** Write combining disablement (`DisableWriteCombining=1`).
+**Justification:** Limits driver-side buffering strategies that can introduce bursty present behavior and micro-stutter under load.
+**Trade-off:** Possible performance regressions or instability on some GPUs.
+
+**Tweak:** Telemetry/power throttling removal (`DisplayPowerSaving=0`, `OptInOrOutPreference=0`, disable tasks `NvTmRep/NvTmMon/NvDriverUpdateCheck`).
+**Justification:** Cuts background driver polling and state transitions that can preempt render threads and inflate ISR/DPC noise.
+**Trade-off:** Higher power draw and less driver diagnostics.
 
 ## Hardware PnP Hardening
 
-The `Invoke-HardwareDeviceHardening` module disables specific PnP devices by level (Safe/Aggressive/Gaming). At the aggressive level it includes HPET and WAN Miniports. Changes are recorded in the `HardwareDevices` tracker inside the context.
+**Tweak:** HPET disablement (`Disable-PnpDevice` on `High Precision Event Timer`).
+**Justification:** Reduces redundant timer sources competing for scheduler attention, lowering jitter in high-frequency audio or input ISR workloads.
+**Trade-off:** Some legacy audio stacks require HPET for stability.
 
-| Subsystem | Implementation (devices) | Expected gain | Trade-off |
-| --- | --- | --- | --- |
-| HPET | Disable `High Precision Event Timer` via `Disable-PnpDevice` | Reduces interrupt/timer sources considered redundant. | Legacy audio software may require HPET. |
-| WAN Miniports | `WAN Miniport (IP/IPv6/L2TP/PPPOE/PPTP/SSTP/Network Monitor)` | Reduces IRQs and unused pseudo-network drivers in gaming environments. | Breaks VPN/PPPoE connectivity and legacy network tools. |
+**Tweak:** WAN Miniport disablement (`WAN Miniport (IP/IPv6/L2TP/PPPOE/PPTP/SSTP/Network Monitor)`).
+**Justification:** Removes unused pseudo-NIC drivers that can register interrupts and driver callbacks, trimming kernel bookkeeping overhead.
+**Trade-off:** Breaks VPN/PPPoE connectivity and legacy network tooling.
 
 ## Network Consistency
 
-The networking adjustments target packet consistency and latency stability by reducing host-model ambiguity and segmentation variability.
+**Tweak:** Weak Host Model enablement (`Set-NetIPInterface -WeakHostSend Enabled -WeakHostReceive Enabled`).
+**Justification:** Reduces logical friction in the IP stack by allowing interfaces to accept and forward traffic more flexibly, minimizing routing flips that can present as jitter in multi-NIC and virtual adapter layouts.
+**Trade-off:** More permissive interface behavior increases the need for strict firewall and adapter hygiene.
 
-| Subsystem | Implementation (keys/actions) | Expected gain | Trade-off |
-| --- | --- | --- | --- |
-| Weak Host Model | `Set-NetIPInterface -WeakHostSend Enabled -WeakHostReceive Enabled` on applicable adapters | More consistent routing decisions across interfaces, reducing path flaps that can manifest as jitter in multi-NIC scenarios. | May accept traffic on non-primary interfaces, increasing the need for strict interface hygiene. |
-| UDP Segmentation Offload | `Set-NetAdapterAdvancedProperty -DisplayName "UDP Segmentation Offload" -DisplayValue "Disabled"` | More uniform packet sizing and pacing, reducing jitter caused by hardware segmentation variability. | Higher CPU load and lower peak throughput on some NICs. |
+**Tweak:** UDP Segmentation Offload disablement (`Set-NetAdapterAdvancedProperty -DisplayName "UDP Segmentation Offload" -DisplayValue "Disabled"`).
+**Justification:** Shifts segmentation from NIC hardware back to the stack to reduce interrupt bursts and DPC spikes caused by large offloaded UDP frames.
+**Trade-off:** Higher CPU usage and lower peak throughput on some adapters.
 
 ---
 

@@ -6,7 +6,7 @@
 ![Status](https://img.shields.io/badge/Engine-Transactional%20Performance-8A2BE2)
 ![Mode](https://img.shields.io/badge/Audit-Option%207-2F855A)
 
-A security-forward, performance-obsessed **transactional optimization engine** for Windows 10/11. Scynesthesia Optimizer v1.0 is not a disposable tweak script—it is a **modular performance platform** with rollback-first design, strict auditability, and predictable frametime outcomes across gaming, streaming, and latency-critical networking.
+A transactional optimization engine for Windows 10/11. Scynesthesia Optimizer v1.0 is a rollback-first platform for low-level registry, kernel, and network overrides with explicit audit trails. It targets deterministic frametime behavior and predictable latency in gaming, streaming, and network-heavy workloads.
 
 > [!NOTE]
 > All prompts and outputs are in English. Run from an **elevated PowerShell 5.1** session; elevation is requested if missing.
@@ -34,19 +34,21 @@ Set-ExecutionPolicy Bypass -Scope Process
 ---
 
 ## Why Scynesthesia Optimizer is different
-Scynesthesia Optimizer is built like a **transactional system**, not a tweak pack. Every module is expected to be reversible, auditable, and context-aware. The engine tracks state before touching critical subsystems, executes guarded changes, and summarizes rollback options for deterministic recovery.
+Scynesthesia Optimizer is built like a transactional system, not a tweak pack. Every module is reversible, auditable, and context-aware. The engine records state before touching critical subsystems, executes guarded changes, and summarizes rollback actions for deterministic recovery.
 
-**What makes it elite:**
+**What makes it distinct:**
 - **Rollback engine by design**: every high-impact action is paired with a traceable revert path.
 - **Modular core**: discrete, testable modules loaded from `modules/` and routed via `modules.map.psd1`.
 - **Context intelligence**: a shared `$Context` object persists device/hardware detection, prior state, and rollback metadata.
 - **Predictable frametimes**: tuning favors low jitter and stable render latency, not blind benchmarking gains.
 
-Advanced users can review the full engineering rationale in the [technical reference](docs/technical-reference.md), which documents subsystem-specific tweaks, expected gains, and trade-offs in a formal, audit-ready format.
+## Engineering Transparency
+For a deep-dive into the technical justification and risk analysis of our kernel and network tweaks, see our Technical Reference.
+You can find it in [docs/technical-reference.md](docs/technical-reference.md).
 
 ---
 
-## Core modules: the new performance stack
+## Core modules: the performance stack
 
 ### Kernel Security
 - Strategic mitigations management for controlled latency tradeoffs.
@@ -106,7 +108,10 @@ Advanced users can review the full engineering rationale in the [technical refer
 These presets intentionally push past default Windows safety margins. They are built for expert users who can evaluate and accept tradeoffs.
 
 > [!WARNING]
-> **DRM & streaming risk**: Aggressive/Gaming changes may trigger playback or authentication issues with protected content (e.g., DRM services, Netflix). Roll back if you see playback failures.
+> **Spectre/Meltdown exposure**: Aggressive/Gaming settings can disable kernel mitigations. This reduces syscall overhead but removes protections against speculative execution attacks.
+
+> [!WARNING]
+> **HDCP/DRM breakage**: NVIDIA tweaks can disable HDCP checks. Protected playback (Netflix, Disney+, Prime Video) or DRM authentication may fail. Roll back if protected content breaks.
 
 > [!WARNING]
 > **Kernel-level risk**: Disabling mitigations or modifying kernel scheduling behaviors can reduce system security. Use only on trusted, controlled systems.
@@ -157,6 +162,11 @@ Because this project modifies system settings and can disable/enable network ada
 - Re-run the optimizer after confirming the allowlist, then review the session log for any security-tool blocks.
 
 If you believe your security tool is blocking a legitimate action, capture the log file from `%TEMP%\ScynesthesiaOptimizer` and include it with your issue report.
+
+---
+
+## Credits & Inspiration
+Scynesthesia Optimizer is an evolution of performance research shared by communities like O&O, melodytheneko, and latency-focused hardware enthusiasts who mapped the real-world cost of kernel and driver behavior.
 
 ---
 

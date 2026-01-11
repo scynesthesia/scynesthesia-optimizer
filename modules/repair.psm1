@@ -51,7 +51,7 @@ function Invoke-WindowsUpdateScan {
 
     try {
         Start-Process -FilePath "usoclient" -ArgumentList "StartInteractiveScan" -WindowStyle Hidden -ErrorAction Stop | Out-Null
-        Write-Host "[+] Scan started in the background." -ForegroundColor Green
+        Write-Host "[OK] Scan started in the background." -ForegroundColor Green
     } catch {
         Invoke-ErrorHandler -Context "Starting Windows Update interactive scan" -ErrorRecord $_
     }
