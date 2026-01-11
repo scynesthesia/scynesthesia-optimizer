@@ -28,7 +28,7 @@ function Optimize-GamingScheduler {
         $disableFgBoost = Set-RegistryValueSafe -Path $kernelVelocityPath -Name "DisableFGBoostDecay" -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable foreground boost decay'
 
         if (($gpuPriority -and $gpuPriority.Success) -and ($priority -and $priority.Success) -and ($schedCategory -and $schedCategory.Success) -and ($sfioPriority -and $sfioPriority.Success) -and ($passivePriority -and $passivePriority.Success) -and ($disableFgBoost -and $disableFgBoost.Success)) {
-            Write-Host "  [+] Scheduler optimized for games." -ForegroundColor Green
+            Write-Host "  [OK] Scheduler optimized for games." -ForegroundColor Green
             if ($logger) {
                 Write-Log "[Gaming] Foreground game priorities set (GPU Priority=8, Priority=6, Scheduling/SFIO=High, PassiveIntRealTimeWorkerPriority=18, DisableFGBoostDecay=1)."
             }
@@ -112,7 +112,7 @@ function Invoke-ProcessPriorityHardcore {
 
     $failed = $results | Where-Object { -not ($_ -and $_.Success) }
     if (-not $failed) {
-        Write-Host "  [+] Process priority overrides applied." -ForegroundColor Green
+        Write-Host "  [OK] Process priority overrides applied." -ForegroundColor Green
         if ($logger) {
             Write-Log "[Gaming] Process priority overrides applied for dwm.exe, audiodg.exe, SearchIndexer.exe, TrustedInstaller.exe, wuauclt.exe (lsass optional)."
         }
@@ -283,7 +283,7 @@ function Invoke-CustomGamingPowerSettings {
 
             powercfg /setactive $gamingGuid
 
-            Write-Host "  [+] Power settings for gaming applied." -ForegroundColor Green
+            Write-Host "  [OK] Power settings for gaming applied." -ForegroundColor Green
             if ($logger) {
                 Write-Log "[Gaming] Hardcore power plan tweaks applied and set active (GUID=$gamingGuid)."
             }
@@ -349,7 +349,7 @@ function Set-UsbPowerManagementHardcore {
         try {
             $result = Set-RegistryValueSafe -Path $hub.Path -Name 'PnPCapabilities' -Value 24 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "USB hub power override: $($hub.Name)"
             if ($result -and $result.Success) {
-                Write-Host "  [+] USB hub '$($hub.Name)' power disable applied." -ForegroundColor Green
+                Write-Host "  [OK] USB hub '$($hub.Name)' power disable applied." -ForegroundColor Green
                 if ($logger) {
                     Write-Log "[Gaming] USB hub '$($hub.Name)' PnPCapabilities set to 24."
                 }
@@ -363,7 +363,7 @@ function Set-UsbPowerManagementHardcore {
         }
     }
 
-    Write-Host "[+] USB power management overrides applied." -ForegroundColor Magenta
+    Write-Host "[OK] USB power management overrides applied." -ForegroundColor Magenta
 }
 
 # Description: Tunes HID class queue sizes to reduce input buffering latency.
@@ -387,7 +387,7 @@ function Optimize-HidLatency {
         try {
             $result = Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value 100 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set $($entry.Name) to 100"
             if ($result -and $result.Success) {
-                Write-Host "  [+] $($entry.Name) set to 100." -ForegroundColor Green
+                Write-Host "  [OK] $($entry.Name) set to 100." -ForegroundColor Green
                 if ($logger) { Write-Log "[Gaming] $($entry.Name) set to 100 for HID latency optimization." }
             } else {
                 Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel "Set $($entry.Name) to 100" | Out-Null
@@ -422,7 +422,7 @@ function Invoke-KbmAdvancedOptimizations {
     foreach ($entry in $accessibilityEntries) {
         $result = Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel $entry.Label
         if ($result -and $result.Success) {
-            Write-Host "  [+] $($entry.Label)." -ForegroundColor Green
+            Write-Host "  [OK] $($entry.Label)." -ForegroundColor Green
         } else {
             Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $entry.Label | Out-Null
         }
@@ -461,7 +461,7 @@ function Invoke-KbmAdvancedOptimizations {
                 $msiPath = Join-Path $enumPath "Device Parameters\\Interrupt Management\\MessageSignaledInterruptProperties"
                 $msiResult = Set-RegistryValueSafe -Path $msiPath -Name 'MSISupported' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Enable MSI for $($controller.Name)"
                 if ($msiResult -and $msiResult.Success) {
-                    Write-Host "  [+] MSI enabled for $($controller.Name)." -ForegroundColor Green
+                    Write-Host "  [OK] MSI enabled for $($controller.Name)." -ForegroundColor Green
                     if ($logger) { Write-Log "[Gaming] MSI enabled for USB controller: $($controller.Name)." }
                     $needsReboot = $true
                 } else {
@@ -481,7 +481,7 @@ function Invoke-KbmAdvancedOptimizations {
             )) {
                 $powerResult = Set-RegistryValueSafe -Path $deviceParamsPath -Name $name -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Disable USB power save ($name) for $($controller.Name)"
                 if ($powerResult -and $powerResult.Success) {
-                    Write-Host "  [+] $name disabled for $($controller.Name)." -ForegroundColor Green
+                    Write-Host "  [OK] $name disabled for $($controller.Name)." -ForegroundColor Green
                     $needsReboot = $true
                 } else {
                     Register-HighImpactRegistryFailure -Context $Context -Result $powerResult -OperationLabel "Disable USB power save ($name) for $($controller.Name)" | Out-Null
@@ -493,7 +493,7 @@ function Invoke-KbmAdvancedOptimizations {
     Write-Section "Kernel Poll Interval"
     $pollResult = Set-RegistryValueSafe -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel" -Name 'DebugPollInterval' -Value 1000 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set DebugPollInterval to 1000'
     if ($pollResult -and $pollResult.Success) {
-        Write-Host "  [+] Kernel DebugPollInterval set to 1000." -ForegroundColor Green
+        Write-Host "  [OK] Kernel DebugPollInterval set to 1000." -ForegroundColor Green
         $needsReboot = $true
     } else {
         Register-HighImpactRegistryFailure -Context $Context -Result $pollResult -OperationLabel 'Set DebugPollInterval to 1000' | Out-Null
@@ -507,7 +507,7 @@ function Invoke-KbmAdvancedOptimizations {
     foreach ($entry in $keyboardEntries) {
         $kbResult = Set-RegistryValueSafe -Path "HKCU:\\Control Panel\\Keyboard" -Name $entry.Name -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context -Critical -ReturnResult -OperationLabel $entry.Label
         if ($kbResult -and $kbResult.Success) {
-            Write-Host "  [+] $($entry.Label)." -ForegroundColor Green
+            Write-Host "  [OK] $($entry.Label)." -ForegroundColor Green
         } else {
             Register-HighImpactRegistryFailure -Context $Context -Result $kbResult -OperationLabel $entry.Label | Out-Null
         }
@@ -568,7 +568,7 @@ function Optimize-MouseOneToOne {
                 return
             }
 
-            Write-Host "  [+] Mouse acceleration disabled for 1:1 movement." -ForegroundColor Green
+            Write-Host "  [OK] Mouse acceleration disabled for 1:1 movement." -ForegroundColor Green
             if ($logger) {
                 Write-Log "[Gaming] Mouse 1:1 movement applied (MouseSpeed/Thresholds=0, Sensitivity=10, flat curves)."
             }
@@ -619,7 +619,7 @@ function Optimize-MouseCurve {
             return
         }
 
-        Write-Host "  [+] Mouse acceleration curves flattened for 1:1 movement." -ForegroundColor Green
+        Write-Host "  [OK] Mouse acceleration curves flattened for 1:1 movement." -ForegroundColor Green
         Set-RebootRequired -Context $Context | Out-Null
     } catch {
         Invoke-ErrorHandler -Context "Applying mouse curve flattening" -ErrorRecord $_
@@ -649,7 +649,7 @@ function Set-CsrssPriorityHardcore {
             $ioPriority = Set-RegistryValueSafe -Path $perfPath -Name 'IoPriority' -Value 3 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Set csrss.exe IoPriority to High'
 
             if (($cpuPriority -and $cpuPriority.Success) -and ($ioPriority -and $ioPriority.Success)) {
-                Write-Host "  [+] csrss.exe priority overrides applied (Realtime/High IO)." -ForegroundColor Green
+                Write-Host "  [OK] csrss.exe priority overrides applied (Realtime/High IO)." -ForegroundColor Green
                 if ($logger) {
                     Write-Log "[Gaming] csrss.exe PerfOptions set (CpuPriorityClass=4, IoPriority=3)."
                 }
@@ -742,7 +742,7 @@ function Set-LatencyToleranceHardcore {
                 return
             }
 
-            Write-Host "  [+] Latency tolerance registry overrides applied." -ForegroundColor Green
+            Write-Host "  [OK] Latency tolerance registry overrides applied." -ForegroundColor Green
             if ($logger) {
                 Write-Log "[Gaming] Latency tolerance values forced to 1 for DXGKrnl/Power/GraphicsDrivers."
             }
@@ -836,7 +836,7 @@ function Set-NvidiaLatencyTweaks {
     }
 
     if ($appliedAny) {
-        Write-Host "  [+] NVIDIA latency tolerance tweaks applied." -ForegroundColor Green
+        Write-Host "  [OK] NVIDIA latency tolerance tweaks applied." -ForegroundColor Green
         Set-RebootRequired -Context $Context | Out-Null
     }
 }
@@ -931,7 +931,7 @@ function Invoke-NvidiaAdvancedInternalTweaks {
     }
 
     if ($appliedAny) {
-        Write-Host "  [+] NVIDIA advanced internal tweaks applied." -ForegroundColor Green
+        Write-Host "  [OK] NVIDIA advanced internal tweaks applied." -ForegroundColor Green
         Set-RebootRequired -Context $Context | Out-Null
     }
 }
@@ -1035,7 +1035,7 @@ function Invoke-NvidiaHardcoreTweaks {
             $fullName = "{0}{1}" -f $task.TaskPath, $task.TaskName
             try {
                 & schtasks.exe /change /disable /tn $fullName | Out-Null
-                Write-Host "  [+] NVIDIA scheduled task disabled: $fullName" -ForegroundColor Green
+                Write-Host "  [OK] NVIDIA scheduled task disabled: $fullName" -ForegroundColor Green
                 if ($logger) {
                     Write-Log "[Gaming] NVIDIA scheduled task disabled: $fullName"
                 }
@@ -1057,7 +1057,7 @@ function Invoke-NvidiaHardcoreTweaks {
     }
 
     if ($appliedAny) {
-        Write-Host "  [+] NVIDIA hardcore tweaks applied." -ForegroundColor Green
+        Write-Host "  [OK] NVIDIA hardcore tweaks applied." -ForegroundColor Green
         Set-RebootRequired -Context $Context | Out-Null
     }
 }
@@ -1142,7 +1142,7 @@ function Invoke-VideoStabilityHardcore {
     }
 
     if ($appliedAny) {
-        Write-Host "  [+] GPU stability overrides applied (DisableDynamicPstate + TDR off)." -ForegroundColor Green
+        Write-Host "  [OK] GPU stability overrides applied (DisableDynamicPstate + TDR off)." -ForegroundColor Green
         if ($logger) {
             Write-Log "[Gaming] GPU stability tweaks applied (DisableDynamicPstate=1, TDR=0)."
         }
@@ -1174,7 +1174,7 @@ function Optimize-ProcessorScheduling {
     if (Get-Confirmation "Apply Fixed Priority Separation (28 Hex) for lower input latency?" 'n') {
         $result = Set-RegistryValueSafe $priorityPath "Win32PrioritySeparation" 40 -Context $Context -Critical -ReturnResult -OperationLabel 'Set Win32PrioritySeparation to 0x28'
         if ($result -and $result.Success) {
-            Write-Host "  [+] Processor scheduling set to 28 Hex (Fixed/Short)." -ForegroundColor Green
+            Write-Host "  [OK] Processor scheduling set to 28 Hex (Fixed/Short)." -ForegroundColor Green
             if ($logger) {
                 Write-Log "[Gaming] Win32PrioritySeparation set to 0x28 for fixed/short quanta."
             }
@@ -1209,7 +1209,7 @@ function Disable-GameDVR {
     $allSucceeded = -not (@($appCapture, $gameDvrEnabled, $allowGameDvr) | Where-Object { -not ($_ -and $_.Success) })
 
     if ($allSucceeded) {
-        Write-Host "  [+] Game DVR capture and policies disabled." -ForegroundColor Green
+        Write-Host "  [OK] Game DVR capture and policies disabled." -ForegroundColor Green
         if ($logger) {
             Write-Log "[Gaming] Game DVR disabled (AppCaptureEnabled=0, GameDVR_Enabled=0, AllowGameDVR=0)."
         }
@@ -1273,7 +1273,7 @@ function Optimize-ModernDisplayModes {
         $results = @($fseBehavior, $honorUserFse, $wgoSetting)
         $failed = $results | Where-Object { -not ($_ -and $_.Success) }
         if (-not $failed) {
-            Write-Host "  [+] Modern display mode optimizations applied." -ForegroundColor Green
+            Write-Host "  [OK] Modern display mode optimizations applied." -ForegroundColor Green
             if ($logger) {
                 $overlayMessage = if ($overlayRemoved) { 'OverlayTestMode removed.' } else { 'OverlayTestMode not present or already removed.' }
                 Write-Log "[Gaming] Modern display optimizations applied (FSO enabled, WGO flip model upgrade set, $overlayMessage)."
@@ -1285,7 +1285,7 @@ function Optimize-ModernDisplayModes {
         }
 
         if ($overlayRemoved) {
-            Write-Host "  [+] MPO unlocked by removing OverlayTestMode." -ForegroundColor Green
+            Write-Host "  [OK] MPO unlocked by removing OverlayTestMode." -ForegroundColor Green
         } else {
             Write-Host "  [ ] OverlayTestMode already absent; MPO left unlocked." -ForegroundColor DarkGray
         }
@@ -1319,7 +1319,7 @@ function Disable-UdpSegmentOffload {
         try {
             Set-NetOffloadGlobalSetting -UdpSegmentationOffload Disabled -ErrorAction Stop | Out-Null
             $globalApplied = $true
-            Write-Host "  [+] Global USO disabled." -ForegroundColor Green
+            Write-Host "  [OK] Global USO disabled." -ForegroundColor Green
             if ($logger) { Write-Log "[Gaming] UDP Segmentation Offload disabled globally." }
         } catch {
             Write-Host "  [!] Could not disable global USO: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -1342,7 +1342,7 @@ function Disable-UdpSegmentOffload {
             try {
                 Set-NetAdapterAdvancedProperty -Name $adapter.Name -DisplayName $property -DisplayValue 'Disabled' -NoRestart -ErrorAction Stop | Out-Null
                 $touched.Add($adapter.Name) | Out-Null
-                Write-Host "  [+] $property disabled on $($adapter.Name)." -ForegroundColor Green
+                Write-Host "  [OK] $property disabled on $($adapter.Name)." -ForegroundColor Green
                 if ($logger) { Write-Log "[Gaming] $property disabled on $($adapter.Name)." }
             } catch {
                 Write-Host "  [ ] $property unsupported on $($adapter.Name): $($_.Exception.Message)" -ForegroundColor DarkGray
@@ -1351,7 +1351,7 @@ function Disable-UdpSegmentOffload {
     }
 
     if ($touched.Count -gt 0 -or $globalApplied) {
-        Write-Host "  [+] UDP Segmentation Offload disabled where supported." -ForegroundColor Green
+        Write-Host "  [OK] UDP Segmentation Offload disabled where supported." -ForegroundColor Green
     } else {
         Write-Host "  [!] USO could not be disabled on detected adapters." -ForegroundColor Yellow
     }
@@ -1369,7 +1369,7 @@ function Enable-TcpFastOpen {
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     try {
         netsh int tcp set global fastopen=enabled | Out-Null
-        Write-Host "  [+] TCP Fast Open enabled in the global stack." -ForegroundColor Green
+        Write-Host "  [OK] TCP Fast Open enabled in the global stack." -ForegroundColor Green
         if ($logger) { Write-Log "[Gaming] TCP Fast Open enabled via netsh." }
     } catch {
         Write-Host "  [!] Unable to enable TCP Fast Open: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -1405,7 +1405,7 @@ function Disable-ArpNsOffload {
             Set-NetAdapterPowerManagement -Name $adapter.Name -ArpOffload Disabled -NsOffload Disabled -ErrorAction Stop | Out-Null
             $powerManagementApplied = $true
             $touched.Add($adapter.Name) | Out-Null
-            Write-Host "  [+] ARP/NS offload disabled via power management on $($adapter.Name)." -ForegroundColor Green
+            Write-Host "  [OK] ARP/NS offload disabled via power management on $($adapter.Name)." -ForegroundColor Green
             if ($logger) { Write-Log "[Gaming] ARP/NS offload disabled on $($adapter.Name) through power management." }
         } catch {
             Write-Host "  [ ] Power management ARP/NS offload toggle unsupported on $($adapter.Name): $($_.Exception.Message)" -ForegroundColor DarkGray
@@ -1415,7 +1415,7 @@ function Disable-ArpNsOffload {
             try {
                 Set-NetAdapterAdvancedProperty -Name $adapter.Name -DisplayName $property -DisplayValue 'Disabled' -NoRestart -ErrorAction Stop | Out-Null
                 if (-not $touched.Contains($adapter.Name)) { $touched.Add($adapter.Name) | Out-Null }
-                Write-Host "  [+] $property disabled on $($adapter.Name)." -ForegroundColor Green
+                Write-Host "  [OK] $property disabled on $($adapter.Name)." -ForegroundColor Green
                 if ($logger) { Write-Log "[Gaming] $property disabled on $($adapter.Name)." }
             } catch {
                 if (-not $powerManagementApplied) {
@@ -1426,7 +1426,7 @@ function Disable-ArpNsOffload {
     }
 
     if ($touched.Count -gt 0) {
-        Write-Host "  [+] ARP/NS offload disabled where supported." -ForegroundColor Green
+        Write-Host "  [OK] ARP/NS offload disabled where supported." -ForegroundColor Green
     } else {
         Write-Host "  [!] No ARP/NS offload settings could be changed on detected adapters." -ForegroundColor Yellow
     }
@@ -1448,7 +1448,7 @@ function Enable-WindowsGameMode {
     $result = Set-RegistryValueSafe -Path $gameBarPath -Name 'AllowAutoGameMode' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Enable Windows Game Mode'
 
     if ($result -and $result.Success) {
-        Write-Host "  [+] Windows Game Mode auto-priority enabled." -ForegroundColor Green
+        Write-Host "  [OK] Windows Game Mode auto-priority enabled." -ForegroundColor Green
     } else {
         Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Enable Windows Game Mode' | Out-Null
     }
@@ -1510,7 +1510,7 @@ function Invoke-KernelSecurityTweaks {
 
         try {
             & bcdedit /set $entry.Name $entry.Value | Out-Null
-            Write-Host "  [+] BCD $($entry.Name) set to $($entry.Value)." -ForegroundColor Green
+            Write-Host "  [OK] BCD $($entry.Name) set to $($entry.Value)." -ForegroundColor Green
             if ($logger) { Write-Log "[Gaming] BCD $($entry.Name) set to $($entry.Value)." }
         } catch {
             Invoke-ErrorHandler -Context "Setting BCD $($entry.Name)" -ErrorRecord $_
@@ -1520,7 +1520,7 @@ function Invoke-KernelSecurityTweaks {
     Write-Host "  [i] Disabling memory compression and page combining..." -ForegroundColor DarkGray
     try {
         Disable-MMAgent -MemoryCompression -PageCombining -ErrorAction Stop
-        Write-Host "  [+] MMAgent memory compression/page combining disabled." -ForegroundColor Green
+        Write-Host "  [OK] MMAgent memory compression/page combining disabled." -ForegroundColor Green
         if ($logger) { Write-Log "[Gaming] MMAgent memory compression/page combining disabled." }
     } catch {
         Invoke-ErrorHandler -Context "Disabling MMAgent memory compression/page combining" -ErrorRecord $_
@@ -1547,7 +1547,7 @@ function Invoke-KernelSecurityTweaks {
     foreach ($entry in $registryEntries) {
         $result = Set-RegistryValueSafe -Path $entry.Path -Name $entry.Name -Value $entry.Value -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel $entry.Label
         if ($result -and $result.Success) {
-            Write-Host "  [+] $($entry.Label)." -ForegroundColor Green
+            Write-Host "  [OK] $($entry.Label)." -ForegroundColor Green
             if ($logger) { Write-Log "[Gaming] $($entry.Label)." }
         } else {
             Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel $entry.Label | Out-Null
@@ -1558,7 +1558,7 @@ function Invoke-KernelSecurityTweaks {
     try {
         fsutil behavior set memoryusage 2 | Out-Null
         fsutil behavior set mftzone 4 | Out-Null
-        Write-Host "  [+] NTFS memory usage and MFT zone set." -ForegroundColor Green
+        Write-Host "  [OK] NTFS memory usage and MFT zone set." -ForegroundColor Green
         if ($logger) { Write-Log "[Gaming] NTFS memoryusage=2 and mftzone=4 applied." }
     } catch {
         Invoke-ErrorHandler -Context "Applying NTFS performance tweaks" -ErrorRecord $_
@@ -1597,7 +1597,7 @@ function Invoke-GamingOptimizations {
     Invoke-ProcessPriorityHardcore -Context $Context
     Invoke-HardwareDeviceHardening -Context $Context -Level 'Gaming'
 
-    Write-Host "[+] Global Gaming Optimizations complete." -ForegroundColor Magenta
+    Write-Host "[OK] Global Gaming Optimizations complete." -ForegroundColor Magenta
 }
 
 # Description: Interactive creator for per-game QoS rules using DSCP 46 (Expedited Forwarding).
@@ -1650,7 +1650,7 @@ function Manage-GameQoS {
             }
 
             $message = "[QoS] $($service.DisplayName) ensured on Automatic start."
-            Write-Host "  [+] $message" -ForegroundColor Cyan
+            Write-Host "  [OK] $message" -ForegroundColor Cyan
             if ($logger) { Write-Log $message }
         } catch {
             Invoke-ErrorHandler -Context "Configuring service $($service.Name)" -ErrorRecord $_
@@ -1724,7 +1724,7 @@ function Manage-GameQoS {
 
         $failed = $results | Where-Object { -not ($_ -and $_.Success) }
         if (-not $failed) {
-            Write-Host "  [+] QoS rule '$ruleName' for $executable created with DSCP 46." -ForegroundColor Magenta
+            Write-Host "  [OK] QoS rule '$ruleName' for $executable created with DSCP 46." -ForegroundColor Magenta
             if ($logger) {
                 Write-Log "[QoS] Rule '$ruleName' created for $executable (DSCP 46, wildcard endpoints)."
             }

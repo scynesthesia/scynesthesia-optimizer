@@ -114,7 +114,7 @@ function Invoke-SysMainOptimization {
         try {
             Stop-Service -Name "SysMain" -ErrorAction SilentlyContinue
             Set-Service -Name "SysMain" -StartupType Disabled
-            Write-Host "  [+] SysMain disabled"
+            Write-Host "  [OK] SysMain disabled"
         } catch {
             Invoke-ErrorHandler -Context "Disabling SysMain service" -ErrorRecord $_
         }
@@ -122,7 +122,7 @@ function Invoke-SysMainOptimization {
         try {
             Set-Service -Name "SysMain" -StartupType Automatic
             Start-Service -Name "SysMain" -ErrorAction SilentlyContinue
-            Write-Host "  [+] SysMain ensured running for HDD optimization"
+            Write-Host "  [OK] SysMain ensured running for HDD optimization"
         } catch {
             Invoke-ErrorHandler -Context "Enabling SysMain service" -ErrorRecord $_
         }
@@ -130,7 +130,7 @@ function Invoke-SysMainOptimization {
         try {
             Set-Service -Name "SysMain" -StartupType Automatic
             Start-Service -Name "SysMain" -ErrorAction SilentlyContinue
-            Write-Host "  [+] SysMain enabled"
+            Write-Host "  [OK] SysMain enabled"
         } catch {
             Invoke-ErrorHandler -Context "Enabling SysMain service" -ErrorRecord $_
         }
@@ -174,7 +174,7 @@ function Invoke-PerformanceBaseline {
 
     if ($HardwareProfile.MemoryCategory -eq 'Low') {
         Set-RegistryValueSafe "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" "VisualFXSetting" 2 -Context $Context
-        Write-Host "  [+] Animations/effects tuned for performance (RAM <6GB)."
+        Write-Host "  [OK] Animations/effects tuned for performance (RAM <6GB)."
     } else {
         Write-Host "  [ ] Animations left as-is (RAM >=6GB)."
     }
@@ -192,7 +192,7 @@ function Get-UltimatePerformancePlanGuid {
     try {
         $powerPlans = powercfg -list 2>$null
         if ($powerPlans | Select-String -Pattern $ultimateTemplateGuid -SimpleMatch) {
-            Write-Host "  [+] Ultimate Performance plan already available."
+            Write-Host "  [OK] Ultimate Performance plan already available."
             return $ultimateTemplateGuid
         }
 
@@ -206,7 +206,7 @@ function Get-UltimatePerformancePlanGuid {
         }
 
         if ($existingUltimatePlanGuid) {
-            Write-Host "  [+] Ultimate Performance plan already available."
+            Write-Host "  [OK] Ultimate Performance plan already available."
             return $existingUltimatePlanGuid
         }
     } catch {
@@ -217,7 +217,7 @@ function Get-UltimatePerformancePlanGuid {
         $duplicateOutput = powercfg -duplicatescheme $ultimateTemplateGuid 2>$null
         $duplicatedGuid = ($duplicateOutput | Select-String -Pattern '[A-Fa-f0-9-]{36}' -AllMatches | Select-Object -First 1).Matches.Value
         if (-not [string]::IsNullOrWhiteSpace($duplicatedGuid)) {
-            Write-Host "  [+] Ultimate Performance plan created."
+            Write-Host "  [OK] Ultimate Performance plan created."
             return $duplicatedGuid
         }
     } catch {
@@ -239,7 +239,7 @@ function Invoke-UltimatePerformancePlan {
         Write-Warning "  [!] Ultimate Performance plan not available; switching to High performance instead."
         try {
             powercfg -setactive SCHEME_MAX 2>$null
-            Write-Host "  [+] High performance plan activated as fallback." -ForegroundColor Gray
+            Write-Host "  [OK] High performance plan activated as fallback." -ForegroundColor Gray
         } catch {
             Invoke-ErrorHandler -Context "Activating High performance fallback plan" -ErrorRecord $_
         }
@@ -247,7 +247,7 @@ function Invoke-UltimatePerformancePlan {
     }
     try {
         powercfg -setactive $guid
-        Write-Host "  [+] Ultimate Performance active."
+        Write-Host "  [OK] Ultimate Performance active."
     } catch {
         Invoke-ErrorHandler -Context "Activating Ultimate Performance power plan" -ErrorRecord $_
     }
@@ -404,7 +404,7 @@ function Invoke-MpoVisualFixDisable {
     $result = Set-RegistryValueSafe -Path $path -Name $name -Value 5 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable MPO overlay test mode'
     if ($result -and $result.Success) {
         Set-RebootRequired -Context $Context | Out-Null
-        Write-Host "  [+] MPO disabled for stability." -ForegroundColor Gray
+        Write-Host "  [OK] MPO disabled for stability." -ForegroundColor Gray
     } else {
         Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Disable MPO overlay test mode' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Disable MPO overlay test mode' -Critical) { return $true }
@@ -430,7 +430,7 @@ function Invoke-HagsPerformanceEnablement {
     $result = Set-RegistryValueSafe -Path $path -Name $name -Value 2 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Enable HAGS'
     if ($result -and $result.Success) {
         Set-RebootRequired -Context $Context | Out-Null
-        Write-Host "  [+] HAGS enabled for performance." -ForegroundColor Gray
+        Write-Host "  [OK] HAGS enabled for performance." -ForegroundColor Gray
     } else {
         Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Enable HAGS' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Enable HAGS' -Critical) { return $true }
@@ -456,7 +456,7 @@ function Invoke-PowerThrottlingDisablement {
     $result = Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable power throttling'
     if ($result -and $result.Success) {
         Set-RebootRequired -Context $Context | Out-Null
-        Write-Host "  [+] Global power throttling disabled." -ForegroundColor Gray
+        Write-Host "  [OK] Global power throttling disabled." -ForegroundColor Gray
     } else {
         Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Disable power throttling' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Disable power throttling' -Critical) { return $true }
@@ -482,7 +482,7 @@ function Invoke-PagingExecutivePerformance {
     $result = Set-RegistryValueSafe -Path $path -Name $name -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel 'Disable kernel paging'
     if ($result -and $result.Success) {
         Set-RebootRequired -Context $Context | Out-Null
-        Write-Host "  [+] Kernel paging disabled (kept in RAM)." -ForegroundColor Gray
+        Write-Host "  [OK] Kernel paging disabled (kept in RAM)." -ForegroundColor Gray
     } else {
         Register-HighImpactRegistryFailure -Context $Context -Result $result -OperationLabel 'Disable kernel paging' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $result -PresetName $presetLabel -OperationLabel 'Disable kernel paging' -Critical) { return $true }
@@ -504,7 +504,7 @@ function Invoke-MemoryCompressionOptimization {
     if ($hardware.TotalMemoryGB -ge 8) {
         Disable-MMAgent -MemoryCompression -ErrorAction SilentlyContinue
         Set-RebootRequired -Context $Context | Out-Null
-        Write-Host "  [+] Memory compression disabled (>=8GB RAM)." -ForegroundColor Gray
+        Write-Host "  [OK] Memory compression disabled (>=8GB RAM)." -ForegroundColor Gray
     } else {
         Write-Host "  [ ] Memory compression kept (RAM <8GB)." -ForegroundColor Gray
     }

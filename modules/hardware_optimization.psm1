@@ -111,7 +111,7 @@ function Invoke-HardwareDeviceHardening {
                 continue
             }
 
-            Write-Host "  [+] Disabled: $($device.FriendlyName)" -ForegroundColor Green
+            Write-Host "  [OK] Disabled: $($device.FriendlyName)" -ForegroundColor Green
             $summary.Touched++
         }
     }

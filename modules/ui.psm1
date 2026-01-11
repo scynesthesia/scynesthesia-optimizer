@@ -277,7 +277,7 @@ function Invoke-RegistryRollback {
                 $subKey.SetValue($valueName, $converted, $kind)
                 $success++
                 $msg = "[Rollback] Restored $($record.Path) -> $($record.Name) to previous value."
-                Write-Host "  [+] $msg" -ForegroundColor Green
+                Write-Host "  [OK] $msg" -ForegroundColor Green
                 if ($logger) { Write-Log -Message $msg -Level 'Info' }
             }
             elseif (-not $record.KeyExisted) {
@@ -288,7 +288,7 @@ function Invoke-RegistryRollback {
                 $baseKey.DeleteSubKeyTree($target.SubKey, $false)
                 $success++
                 $msg = "[Rollback] Removed created key $($record.Path)."
-                Write-Host "  [+] $msg" -ForegroundColor Green
+                Write-Host "  [OK] $msg" -ForegroundColor Green
                 if ($logger) { Write-Log -Message $msg -Level 'Info' }
             }
             else {
@@ -302,7 +302,7 @@ function Invoke-RegistryRollback {
                 }
                 $success++
                 $msg = "[Rollback] Removed new value at $($record.Path) -> $($record.Name)."
-                Write-Host "  [+] $msg" -ForegroundColor Green
+                Write-Host "  [OK] $msg" -ForegroundColor Green
                 if ($logger) { Write-Log -Message $msg -Level 'Info' }
             }
         }
@@ -945,14 +945,14 @@ function Write-OutcomeSummary {
     $debloatStatus = if ($DebloatApplied) { 'Applied' } else { 'Skipped' }
     $performanceStatus = if ($PerformanceApplied) { 'Applied' } else { 'Skipped' }
 
-    Write-Host "[+] Privacy hardened: $privacyStatus" -ForegroundColor Green
-    Write-Host "[+] Debloat: $debloatStatus" -ForegroundColor Green
-    Write-Host "[+] Performance tweaks: $performanceStatus" -ForegroundColor Green
+    Write-Host "[OK] Privacy hardened: $privacyStatus" -ForegroundColor Green
+    Write-Host "[OK] Debloat: $debloatStatus" -ForegroundColor Green
+    Write-Host "[OK] Performance tweaks: $performanceStatus" -ForegroundColor Green
 
     if ($Status.PackagesFailed.Count -gt 0) {
         Write-Host "[X] Some packages could not be removed ($($Status.PackagesFailed -join ', '))" -ForegroundColor Yellow
     } else {
-        Write-Host "[+] All targeted packages removed" -ForegroundColor Green
+        Write-Host "[OK] All targeted packages removed" -ForegroundColor Green
     }
 
     if ($Status -and $Status.ContainsKey('PackagesRemoved')) {

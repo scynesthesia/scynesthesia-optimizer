@@ -16,7 +16,7 @@ function Set-ClassicContextMenus {
         }
 
         Set-RegistryValueSafe -Path $path -Name '(default)' -Value '' -Type ([Microsoft.Win32.RegistryValueKind]::String) -Context $Context
-        Write-Host "[+] Classic context menu enabled." -ForegroundColor Green
+        Write-Host "[OK] Classic context menu enabled." -ForegroundColor Green
         Set-RebootRequired -Context $Context | Out-Null
     } catch {
         Invoke-ErrorHandler -Context "Enabling classic context menus" -ErrorRecord $_
@@ -59,7 +59,7 @@ function Add-TakeOwnershipMenu {
         }
 
         if ($entrySucceeded) {
-            Write-Host "[+] Take Ownership menu added for files and folders." -ForegroundColor Green
+            Write-Host "[OK] Take Ownership menu added for files and folders." -ForegroundColor Green
         }
     }
     Set-RebootRequired -Context $Context | Out-Null
@@ -78,7 +78,7 @@ function Set-ExplorerProSettings {
     try {
         Set-RegistryValueSafe -Path $path -Name 'HideFileExt' -Value 0 -Context $Context
         Set-RegistryValueSafe -Path $path -Name 'Hidden' -Value 1 -Context $Context
-        Write-Host "[+] Explorer visibility tweaks applied." -ForegroundColor Green
+        Write-Host "[OK] Explorer visibility tweaks applied." -ForegroundColor Green
         Set-RebootRequired -Context $Context | Out-Null
     } catch {
         Invoke-ErrorHandler -Context "Configuring Explorer visibility preferences" -ErrorRecord $_

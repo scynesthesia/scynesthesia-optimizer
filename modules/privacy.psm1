@@ -19,7 +19,7 @@ function Invoke-DriverTelemetry {
         Set-Service -Name $service -StartupType Disabled -ErrorAction SilentlyContinue
     }
 
-    Write-Host "  [+] Driver telemetry services disabled where present." -ForegroundColor Green
+    Write-Host "  [OK] Driver telemetry services disabled where present." -ForegroundColor Green
 }
 
 function Disable-ScheduledTaskSafe {
@@ -72,7 +72,7 @@ function Disable-ScheduledTaskSafe {
     if ($scheduledTask.Enabled) {
         try {
             $scheduledTask | Disable-ScheduledTask -ErrorAction Stop | Out-Null
-            Write-Host "  [+] Task $taskKey disabled" -ForegroundColor Green
+            Write-Host "  [OK] Task $taskKey disabled" -ForegroundColor Green
         } catch {
             Invoke-ErrorHandler -Context "$OperationLabel ($taskKey)" -ErrorRecord $_
             return $false
@@ -137,7 +137,7 @@ function Invoke-PrivacyTelemetrySafe {
         $bingResult = Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Search" "BingSearchEnabled" 0 -Context $context -ReturnResult -OperationLabel 'Disable Bing search in Start'
         $cortanaConsentResult = Set-RegistryValueSafe "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Search" "CortanaConsent" 0 -Context $context -ReturnResult -OperationLabel 'Disable Cortana consent'
         if (($bingResult -and $bingResult.Success) -and ($cortanaConsentResult -and $cortanaConsentResult.Success)) {
-            Write-Host "  [+] Cortana and Bing in Start disabled"
+            Write-Host "  [OK] Cortana and Bing in Start disabled"
         } else {
             Write-Host "  [!] Cortana/Bing search changes could not be fully applied." -ForegroundColor Yellow
         }
@@ -151,7 +151,7 @@ function Invoke-PrivacyTelemetrySafe {
         $ssPolicy01 = Set-RegistryValueSafe "$storageSense\Parameters\StoragePolicy" "01" 1 -Context $context -ReturnResult -OperationLabel 'Configure Storage Sense (01)'
         $ssPolicy04 = Set-RegistryValueSafe "$storageSense\Parameters\StoragePolicy" "04" 1 -Context $context -ReturnResult -OperationLabel 'Configure Storage Sense (04)'
         if (($ssGlobal -and $ssGlobal.Success) -and ($ssPolicy01 -and $ssPolicy01.Success) -and ($ssPolicy04 -and $ssPolicy04.Success)) {
-            Write-Host "  [+] Storage Sense enabled"
+            Write-Host "  [OK] Storage Sense enabled"
         } else {
             Write-Host "  [!] Storage Sense settings could not be fully applied." -ForegroundColor Yellow
         }
@@ -170,7 +170,7 @@ function Invoke-PrivacyTelemetrySafe {
         if ($recResults | Where-Object { -not ($_ -and $_.Success) }) {
             Write-Host "  [!] Some recommendation settings could not be changed." -ForegroundColor Yellow
         } else {
-            Write-Host "  [+] Recommendations disabled"
+            Write-Host "  [OK] Recommendations disabled"
         }
     } else {
         Write-Host "  [ ] Recommendations left as-is."
@@ -255,7 +255,7 @@ function Invoke-PrivacySafe {
             Register-HighImpactRegistryFailure -Context $context -Result $updateResult -OperationLabel 'Set Windows Update to notify only' | Out-Null
         } else {
             Set-RebootRequired -Context $context | Out-Null
-            Write-Host "[+] Windows Update set to Notify Only. A reboot is recommended." -ForegroundColor Yellow
+            Write-Host "[OK] Windows Update set to Notify Only. A reboot is recommended." -ForegroundColor Yellow
         }
     } else {
         Write-Host "  [ ] Windows Update notification mode left unchanged." -ForegroundColor DarkGray
@@ -421,7 +421,7 @@ function Invoke-PrivacyInterfaceSafe {
     if ($explorerResults | Where-Object { -not ($_ -and $_.Success) }) {
         Write-Host "  [!] Some Explorer/Search privacy settings could not be updated." -ForegroundColor Yellow
     } else {
-        Write-Host "  [+] Explorer and Search history tightened." -ForegroundColor Green
+        Write-Host "  [OK] Explorer and Search history tightened." -ForegroundColor Green
     }
 
     return $false
@@ -463,7 +463,7 @@ function Invoke-PrivacyAppPermissionsAggressive {
     if ($results | Where-Object { -not ($_ -and $_.Success) }) {
         Write-Host "  [!] Some ConsentStore permissions could not be updated." -ForegroundColor Yellow
     } else {
-        Write-Host "  [+] ConsentStore permissions enforced." -ForegroundColor Green
+        Write-Host "  [OK] ConsentStore permissions enforced." -ForegroundColor Green
     }
 
     return $false
@@ -501,7 +501,7 @@ function Invoke-PrivacyContentDeliveryGaming {
     if ($cdmResults | Where-Object { -not ($_ -and $_.Success) }) {
         Write-Host "  [!] Some Content Delivery settings could not be updated." -ForegroundColor Yellow
     } else {
-        Write-Host "  [+] Content Delivery flags disabled." -ForegroundColor Green
+        Write-Host "  [OK] Content Delivery flags disabled." -ForegroundColor Green
     }
 
     $notificationPrompt = "Disable Windows toast notifications? You will not see system alerts until reboot or revert."
@@ -510,7 +510,7 @@ function Invoke-PrivacyContentDeliveryGaming {
         if (-not ($toastResult -and $toastResult.Success)) {
             Write-Host "  [!] Toast notifications could not be fully disabled." -ForegroundColor Yellow
         } else {
-            Write-Host "  [+] Toast notifications disabled." -ForegroundColor Green
+            Write-Host "  [OK] Toast notifications disabled." -ForegroundColor Green
         }
 
     } else {
@@ -523,7 +523,7 @@ function Invoke-PrivacyContentDeliveryGaming {
         if (-not ($dndResult -and $dndResult.Success)) {
             Write-Host "  [!] Windows 11 Do Not Disturb could not be enabled." -ForegroundColor Yellow
         } else {
-            Write-Host "  [+] Windows 11 Do Not Disturb enabled." -ForegroundColor Green
+            Write-Host "  [OK] Windows 11 Do Not Disturb enabled." -ForegroundColor Green
         }
     }
 

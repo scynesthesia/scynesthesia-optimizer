@@ -48,7 +48,7 @@ function Invoke-AggressiveTweaks {
     }
 
     if (Get-Confirmation $hibernationPrompt 'y') {
-        Write-Host "  [+] Disabling hibernation"
+        Write-Host "  [OK] Disabling hibernation"
         try {
             powercfg -h off
             if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
@@ -69,19 +69,19 @@ function Invoke-AggressiveTweaks {
         }
     }
 
-    Write-Host "  [+] Blocking background apps"
+    Write-Host "  [OK] Blocking background apps"
     $backgroundAppsResult = Set-RegistryValueSafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" "LetAppsRunInBackground" 2 -Context $context -Critical -ReturnResult -OperationLabel 'Block background apps'
     if (-not ($backgroundAppsResult -and $backgroundAppsResult.Success)) {
         Register-HighImpactRegistryFailure -Context $context -Result $backgroundAppsResult -OperationLabel 'Block background apps' | Out-Null
         if (Test-RegistryResultForPresetAbort -Result $backgroundAppsResult -PresetName $presetLabel -OperationLabel 'Block background apps' -Critical) { return $true }
     }
 
-    Write-Host "  [+] Additional debloat for slow PCs"
+    Write-Host "  [OK] Additional debloat for slow PCs"
     $extra = Get-AppRemovalListFromConfig -Key "AggressiveTweaksRemove" -Context $context
     foreach ($a in $extra) {
         $pkg = $appxPackages | Where-Object { $_.Name -eq $a }
         if ($pkg) {
-            Write-Host "    [+] Removing $a"
+            Write-Host "    [OK] Removing $a"
             try {
                 $pkg | Remove-AppxPackage -ErrorAction SilentlyContinue
             } catch {
@@ -106,7 +106,7 @@ function Invoke-AggressiveTweaks {
                     Write-Warning "Failed to stop Print Spooler service: $($_.Exception.Message)"
                 }
                 Set-Service -Name "Spooler" -StartupType Disabled
-                Write-Host "  [+] Print Spooler disabled"
+                Write-Host "  [OK] Print Spooler disabled"
                 if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                     Add-SessionSummaryItem -Context $context -Bucket 'Applied' -Message 'Print Spooler disabled'
                 }
@@ -130,7 +130,7 @@ function Invoke-AggressiveTweaks {
             Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "OneDrive" -ErrorAction SilentlyContinue
             Disable-ScheduledTask -TaskPath "\\Microsoft\\OneDrive\\" -TaskName "OneDrive Standalone Update Task-S-1-5-21" -ErrorAction SilentlyContinue | Out-Null
-            Write-Host "  [+] OneDrive will not auto-start"
+            Write-Host "  [OK] OneDrive will not auto-start"
         } catch {
             Invoke-ErrorHandler -Context "Blocking OneDrive auto-start" -ErrorRecord $_
         }
@@ -157,7 +157,7 @@ function Invoke-AggressiveTweaks {
                     $scheduledTask = Get-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction SilentlyContinue
                     if ($scheduledTask) {
                         $scheduledTask | Disable-ScheduledTask -ErrorAction Stop | Out-Null
-                        Write-Host "  [+] Task $t disabled"
+                        Write-Host "  [OK] Task $t disabled"
                     } else {
                         Write-Host "  [ ] Task $t not present." -ForegroundColor DarkGray
                     }
@@ -177,7 +177,7 @@ function Invoke-AggressiveTweaks {
             Write-Host "  [ ] Copilot is not installed."
         } else {
             foreach ($pkg in $copilotPkgs | Select-Object -Unique) {
-                Write-Host "  [+] Removing $($pkg.Name)"
+                Write-Host "  [OK] Removing $($pkg.Name)"
                 try {
                     $pkg | Remove-AppxPackage -ErrorAction SilentlyContinue
                 } catch {
@@ -198,7 +198,7 @@ function Invoke-AggressiveTweaks {
 
         try {
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "com.squirrel.Teams.Teams" -ErrorAction SilentlyContinue
-            Write-Host "  [+] Auto-start for Teams (personal) disabled"
+            Write-Host "  [OK] Auto-start for Teams (personal) disabled"
         } catch {
             Invoke-ErrorHandler -Context "Disabling Teams auto-start" -ErrorRecord $_
         }
@@ -208,7 +208,7 @@ function Invoke-AggressiveTweaks {
 
     Write-Host ""
     if (Get-Confirmation "Remove OneDrive from this system?" 'n') {
-        Write-Host "  [+] Attempting to uninstall OneDrive"
+        Write-Host "  [OK] Attempting to uninstall OneDrive"
         try {
             Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
             $pathSys = "${env:SystemRoot}\System32\OneDriveSetup.exe"

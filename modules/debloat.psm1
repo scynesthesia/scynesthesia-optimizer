@@ -165,7 +165,7 @@ function New-RestorePointSafe {
                 try {
                     Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
                     $restoreEnabled = $true
-                    Write-Host "  [+] System Restore enabled on C:." -ForegroundColor Gray
+                    Write-Host "  [OK] System Restore enabled on C:." -ForegroundColor Gray
                 } catch {
                     Invoke-ErrorHandler -Context "Enabling System Restore on C:" -ErrorRecord $_
                 }
@@ -180,7 +180,7 @@ function New-RestorePointSafe {
         }
 
         Checkpoint-Computer -Description "Scynesthesia Windows Optimizer v1.0" -RestorePointType "MODIFY_SETTINGS"
-        Write-Host "  [+] Restore point created."
+        Write-Host "  [OK] Restore point created."
         $status.Created = $true
     } catch {
         Invoke-ErrorHandler -Context "Creating restore point" -ErrorRecord $_
@@ -224,7 +224,7 @@ function Clear-TempFiles {
     foreach ($p in $paths) {
         if (-not (Test-Path $p)) { continue }
 
-        Write-Host "  [+] Cleaning $p"
+        Write-Host "  [OK] Cleaning $p"
         try {
             $items = Get-ChildItem $p -Force -ErrorAction SilentlyContinue
             foreach ($item in $items) {
@@ -252,7 +252,7 @@ function Clear-TempFiles {
 
     $wu = "${env:WINDIR}\SoftwareDistribution\Download"
     if (Test-Path $wu) {
-        Write-Host "  [+] Cleaning Windows Update cache"
+        Write-Host "  [OK] Cleaning Windows Update cache"
         try {
             Get-ChildItem $wu -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
         } catch {
@@ -276,7 +276,7 @@ function Clear-DeepTempAndThumbs {
 
     $thumbDir = "${env:LOCALAPPDATA}\Microsoft\Windows\Explorer"
     if (Test-Path $thumbDir) {
-        Write-Host "  [+] Removing thumbnail cache"
+        Write-Host "  [OK] Removing thumbnail cache"
         try {
             Get-ChildItem $thumbDir -Filter "thumbcache_*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
         } catch {
@@ -328,7 +328,7 @@ function Invoke-DebloatSafe {
     $targetNames = $targets.Name
 
     foreach ($name in $targetNames) {
-        Write-Host "  [+] Removing $name"
+        Write-Host "  [OK] Removing $name"
     }
 
     if ($targets) {
@@ -422,7 +422,7 @@ function Invoke-DebloatAggressive {
     $targetNames = $targets.Name
 
     foreach ($name in $targetNames) {
-        Write-Host "  [+] Removing $name"
+        Write-Host "  [OK] Removing $name"
     }
 
     if ($targets) {
@@ -473,7 +473,7 @@ function Invoke-DebloatAggressive {
         $provisionedNames = $provisionedTargets.PackageName
 
         if ($provisionedNames) {
-            Write-Host "  [+] Removing provisioned packages: $($provisionedNames -join ', ')"
+            Write-Host "  [OK] Removing provisioned packages: $($provisionedNames -join ', ')"
 
             $provRemoveErrors = @()
             $uncapturedProvFailure = $false
