@@ -1,4 +1,3 @@
-# Depends on: ui.psm1 (loaded by main script)
 Import-Module (Join-Path $PSScriptRoot 'gaming.psm1') -Force -Scope Local
 if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
@@ -9,23 +8,14 @@ if (-not (Get-Module -Name 'network_discovery' -ErrorAction SilentlyContinue)) {
 if (-not (Get-Module -Name 'network_shared' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/network_shared.psm1') -Force -Scope Local
 }
-# Description: Retrieves active physical network adapters excluding virtual or VPN interfaces.
-# Parameters: None.
-# Returns: Collection of adapter objects; returns empty array on failure.
 function Get-PhysicalNetAdapters {
     return Get-SharedPhysicalAdapters -LoggerPrefix '[Network]' -ErrorContext 'Retrieving network adapters'
 }
 
-# Description: Maps physical adapters to their registry class paths for advanced tweaks.
-# Parameters: None.
-# Returns: Collection of objects containing adapter references and registry paths.
 function Get-NicRegistryPaths {
     return Get-SharedNicRegistryDiscovery -LoggerPrefix '[Network]'
 }
 
-# Description: Flushes the DNS cache to clear resolver entries.
-# Parameters: None.
-# Returns: None.
 function Invoke-NetworkFlush {
     Write-Host "  [OK] Flushing DNS cache" -ForegroundColor Gray
     try {
@@ -35,9 +25,6 @@ function Invoke-NetworkFlush {
     }
 }
 
-# Description: Performs a Winsock reset to rebuild network stack defaults.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Sets reboot flag on the provided context when reset runs.
 function Invoke-NetworkFullReset {
     param(
         [Parameter(Mandatory)]
@@ -58,9 +45,6 @@ function Invoke-NetworkFullReset {
     }
 }
 
-# Description: Sets Cloudflare DNS servers on eligible adapters after prompting when manual DNS exists.
-# Parameters: None.
-# Returns: None.
 function Set-NetworkDnsSafe {
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     $adapters = Get-PhysicalNetAdapters
@@ -91,9 +75,6 @@ function Set-NetworkDnsSafe {
     }
 }
 
-# Description: Enables DNS over HTTPS policy and seeds trusted resolvers.
-# Parameters: Context - Run context for logging and registry helpers.
-# Returns: None.
 function Set-DnsOverHttps {
     param(
         [pscustomobject]$Context
@@ -140,9 +121,6 @@ function Set-DnsOverHttps {
     }
 }
 
-# Description: Configures TCP autotuning level to normal for compatibility.
-# Parameters: None.
-# Returns: None.
 function Set-TcpAutotuningNormal {
     Write-Host "  [OK] Setting TCP autotuning to 'normal'" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -156,9 +134,6 @@ function Set-TcpAutotuningNormal {
     }
 }
 
-# Description: Prefers IPv4 addressing without disabling IPv6.
-# Parameters: FailureTracker - Optional tracker used for aggregating critical registry failures; Context - Run context for reboot tracking.
-# Returns: None. Sets reboot flag on the provided context after registry update.
 function Set-IPvPreferenceIPv4First {
     param(
         [pscustomobject]$FailureTracker,
@@ -188,9 +163,6 @@ function Set-IPvPreferenceIPv4First {
     }
 }
 
-# Description: Disables Link-Local Multicast Name Resolution to reduce noisy broadcasts.
-# Parameters: None.
-# Returns: None.
 function Disable-LLMNR {
     param(
         [pscustomobject]$Context
@@ -208,9 +180,6 @@ function Disable-LLMNR {
     }
 }
 
-# Description: Disables multicast DNS via policy to reduce broadcast noise.
-# Parameters: Context - Run context for logging and registry helpers.
-# Returns: None.
 function Disable-mDNS {
     param(
         [pscustomobject]$Context
@@ -228,9 +197,6 @@ function Disable-mDNS {
     }
 }
 
-# Description: Configures IGMPLevel to 0 to suppress multicast participation.
-# Parameters: Context - Run context for logging and registry helpers.
-# Returns: None.
 function Set-IgmpLevel {
     param(
         [pscustomobject]$Context
@@ -248,9 +214,6 @@ function Set-IgmpLevel {
     }
 }
 
-# Description: Disables LLTD Mapper and Responder services.
-# Parameters: Context - Run context for logging/rollback; DiscoveryAlreadyDisabled - Indicates Network Discovery was already disabled.
-# Returns: None.
 function Disable-LLTD {
     param(
         [pscustomobject]$Context,
@@ -283,9 +246,6 @@ function Disable-LLTD {
     }
 }
 
-# Description: Disables Smart Multi-Homed Name Resolution to reduce DNS leakage.
-# Parameters: Context - Run context for logging and registry helpers.
-# Returns: None.
 function Disable-SmartNameResolution {
     param(
         [pscustomobject]$Context
@@ -303,9 +263,6 @@ function Disable-SmartNameResolution {
     }
 }
 
-# Description: Disables NetBIOS over TCP/IP on eligible adapters.
-# Parameters: None.
-# Returns: None.
 function Disable-NetBIOS {
     $adapters = Get-PhysicalNetAdapters
     if ($adapters.Count -eq 0) {
@@ -344,9 +301,6 @@ function Disable-NetBIOS {
     }
 }
 
-# Description: Disables telemetry-related services and policies for networking.
-# Parameters: None.
-# Returns: None.
 function Disable-NetworkTelemetry {
     param(
         [pscustomobject]$Context
@@ -382,9 +336,6 @@ function Disable-NetworkTelemetry {
     }
 }
 
-# Description: Disables Delivery Optimization downloads and service startup.
-# Parameters: None.
-# Returns: None.
 function Disable-DeliveryOptimization {
     param(
         [pscustomobject]$Context
@@ -419,9 +370,6 @@ function Disable-DeliveryOptimization {
     }
 }
 
-# Description: Sets reservable bandwidth policy to 0% to avoid QoS reservation overhead.
-# Parameters: None.
-# Returns: None.
 function Set-ReservableBandwidth {
     param(
         [pscustomobject]$Context
@@ -439,9 +387,6 @@ function Set-ReservableBandwidth {
     }
 }
 
-# Description: Disables Remote Assistance via registry policy values.
-# Parameters: None.
-# Returns: None.
 function Disable-RemoteAssistance {
     param(
         [pscustomobject]$Context
@@ -469,9 +414,6 @@ function Disable-RemoteAssistance {
     }
 }
 
-# Description: Disables the Network Discovery firewall rule group.
-# Parameters: None.
-# Returns: None.
 function Disable-NetworkDiscovery {
     Write-Host "  [OK] Disabling Network Discovery firewall rules" -ForegroundColor Gray
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -485,9 +427,6 @@ function Disable-NetworkDiscovery {
     }
 }
 
-# Description: Disables multimedia network throttling by setting the registry index.
-# Parameters: None.
-# Returns: None.
 function Set-NetworkThrottling {
     param(
         [pscustomobject]$Context
@@ -496,9 +435,6 @@ function Set-NetworkThrottling {
     Invoke-NetworkThrottlingShared -Context $Context -LoggerPrefix '[Network]' -HostMessage 'Disabling network throttling' -OperationLabel 'Disable network throttling index' -FailureMessage 'Failed to disable network throttling (permission issue?).' | Out-Null
 }
 
-# Description: Optimizes TCP acknowledgement parameters (Nagle-related) per adapter.
-# Parameters: Context - Run context for reboot tracking and applied-tweak deduplication.
-# Returns: None. Sets reboot flag on the provided context if registry changes occur.
 function Set-NagleState {
     param(
         [Parameter(Mandatory)]
@@ -513,9 +449,6 @@ function Set-NagleState {
     }
 }
 
-# Description: Sets advanced adapter properties when matching registry keywords exist.
-# Parameters: Adapter - Target network adapter; Keywords - Patterns for registry keywords; Value - Desired registry value.
-# Returns: None.
 function Set-AdapterAdvancedPropertyIfPresent {
     param(
         [Parameter(Mandatory)][Microsoft.Management.Infrastructure.CimInstance]$Adapter,
@@ -547,9 +480,6 @@ function Set-AdapterAdvancedPropertyIfPresent {
     }
 }
 
-# Description: Disables Energy Efficient Ethernet features on applicable adapters.
-# Parameters: None.
-# Returns: None.
 function Set-EnergyEfficientEthernet {
     $adapters = Get-PhysicalNetAdapters
     if ($adapters.Count -eq 0) {
@@ -562,9 +492,6 @@ function Set-EnergyEfficientEthernet {
     }
 }
 
-# Description: Disables NIC-level power saving flags for gaming performance via registry.
-# Parameters: None.
-# Returns: None.
 function Set-NicPowerManagementGaming {
     param(
         [pscustomobject]$Context
@@ -592,9 +519,6 @@ function Set-NicPowerManagementGaming {
     Invoke-NicPowerRegistryTweaks -Context (Get-RunContext -Context $Context) -NicPaths $nicPaths -Values $powerFlags -LoggerPrefix '[Network]' -InvokeOnceId 'NicPower:Shared' -CleanupInterfaceNoise | Out-Null
 }
 
-# Description: Enables Receive Side Scaling (RSS) on supported adapters without a restart.
-# Parameters: None.
-# Returns: None.
 function Enable-RSS {
     $adapters = Get-PhysicalNetAdapters
     if ($adapters.Count -eq 0) {
@@ -635,9 +559,6 @@ function Enable-RSS {
     }
 }
 
-# Description: Disables interrupt moderation on adapters supporting the setting.
-# Parameters: None.
-# Returns: None.
 function Set-InterruptModeration {
     $adapters = Get-PhysicalNetAdapters
     if ($adapters.Count -eq 0) {
@@ -650,9 +571,6 @@ function Set-InterruptModeration {
     }
 }
 
-# Description: Applies safe network tweaks focused on stability and privacy.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None.
 function Invoke-NetworkTweaksSafe {
     param(
         [Parameter(Mandatory)]
@@ -686,9 +604,6 @@ function Invoke-NetworkTweaksSafe {
     Write-RegistryFailureSummary -Tracker $tracker
 }
 
-# Description: Applies aggressive network tweaks including autotuning and disabled discovery.
-# Parameters: Context - Optional run context for permission tracking.
-# Returns: None. May prompt for backup before changes.
 function Invoke-NetworkTweaksAggressive {
     param(
         [pscustomobject]$Context
@@ -728,9 +643,6 @@ function Invoke-NetworkTweaksAggressive {
     Set-IgmpLevel -Context $Context
 }
 
-# Description: Applies gaming-focused network tweaks for lower latency.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. May set reboot flag for certain changes.
 function Invoke-NetworkTweaksGaming {
     param(
         [Parameter(Mandatory)]
@@ -792,7 +704,6 @@ function Invoke-NetworkTweaksGaming {
     }
 }
 
-# Parses netsh TCP global output into a standardized map for rollback/restore.
 function Convert-NetshGlobalsFromText {
     [CmdletBinding()]
     param(
@@ -831,7 +742,6 @@ function Convert-NetshGlobalsFromText {
     return $result
 }
 
-# Records the current netsh TCP global state into the rollback tracker.
 function Register-NetshGlobalsForRollback {
     [CmdletBinding()]
     param(
@@ -857,7 +767,6 @@ function Register-NetshGlobalsForRollback {
     return $map
 }
 
-# Captures the current startup type and runtime state for a service into the rollback tracker.
 function Register-ServiceStateForRollback {
     [CmdletBinding()]
     param(
@@ -881,7 +790,6 @@ function Register-ServiceStateForRollback {
     }
 }
 
-# Attempts to restore service startup types/runtime states from backup entries.
 function Restore-ServiceStatesFromBackup {
     [CmdletBinding()]
     param(
@@ -917,7 +825,6 @@ function Restore-ServiceStatesFromBackup {
     return $restored
 }
 
-# Applies netsh global settings from a saved map.
 function Restore-NetshGlobalsFromMap {
     [CmdletBinding()]
     param(
@@ -965,7 +872,6 @@ function Restore-NetshGlobalsFromMap {
     return $applied
 }
 
-# Captures adapter-level hardware settings used by network tweaks for rollback.
 function Save-NetworkHardwareSnapshot {
     [CmdletBinding()]
     param(
@@ -1020,7 +926,6 @@ function Save-NetworkHardwareSnapshot {
     return $snapshotList
 }
 
-# Restores adapter hardware settings captured by Save-NetworkHardwareSnapshot.
 function Restore-NetworkHardwareSnapshot {
     [CmdletBinding()]
     param(
@@ -1082,9 +987,6 @@ function Restore-NetworkHardwareSnapshot {
     return $propertiesRestored
 }
 
-# Description: Saves current network-related registry and firewall settings to a JSON backup with a pre-check for writable storage.
-# Parameters: None.
-# Returns: PSCustomObject with Success flag, HardStop indicator, file path, and optional registry rollback snippet. Writes backup file to ProgramData when possible.
 function Save-NetworkBackupState {
     $backupDir = "C:\ProgramData\Scynesthesia"
     $file = Join-Path $backupDir "network_backup.json"
@@ -1461,9 +1363,6 @@ function Save-NetworkBackupState {
     return $result
 }
 
-# Description: Restores network settings from the saved JSON backup if present.
-# Parameters: None.
-# Returns: None.
 function Restore-NetworkBackupState {
     [CmdletBinding()]
     param(
@@ -1703,7 +1602,6 @@ function Restore-NetworkBackupState {
         }
     } catch { }
 
-    # Restore IPv6 state if it was captured for rollback.
     try {
         if ($netshGlobals -and $netshGlobals.ContainsKey('IPv6State')) {
             $desiredState = $netshGlobals['IPv6State']
@@ -1745,7 +1643,6 @@ function Restore-NetworkBackupState {
     if ($logger) { Write-Log "[Backup] Network settings restored from $file" }
 }
 
-# Restores non-registry changes using context tracking and network backup data.
 function Invoke-GlobalRollback {
     [CmdletBinding()]
     param(
@@ -1771,7 +1668,6 @@ function Invoke-GlobalRollback {
             }
         }
 
-        # Preserve legacy tracker entries for compatibility with older sessions.
         $tracker = Get-NonRegistryChangeTracker -Context $runContext
         if ($tracker -and $tracker.ServiceState) {
             $existingNames = $fallbackServices | Where-Object { $_.Name } | ForEach-Object { $_.Name }

@@ -1,15 +1,10 @@
-﻿# File saved as UTF-8 with BOM to avoid encoding issues on Windows PowerShell 5.1
-# Scynesthesia Windows Optimizer v1.0
-# Run this script as Administrator.
 
-# Allow optional debug behaviors.
 [CmdletBinding()]
 param(
     [switch]$DebugModules,
     [switch]$UnsafeMode
 )
 
-# ---------- 1. ADMIN CHECK ----------
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
     ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "[!] Run this script as Administrator." -ForegroundColor Red
@@ -17,10 +12,8 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     exit 1
 }
 
-# Capture the script root so modules and sub-menus can resolve paths reliably without global scope.
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 
-# ---------- 2. MODULE IMPORTS (Moved up to ensure dependencies load early.) ----------
 try {
     $modulesRoot = Join-Path $scriptRoot 'modules'
     $moduleMapPath = Join-Path $modulesRoot 'modules.map.psd1'
@@ -97,7 +90,6 @@ try {
     exit 1
 }
 
-# ---------- 3. CONTEXT INITIALIZATION ----------
 $Context = New-RunContext -ScriptRoot $scriptRoot
 $Context.RollbackPersistencePath = Get-RollbackPersistencePath
 Restore-RollbackState -Context $Context -Path $Context.RollbackPersistencePath | Out-Null
@@ -110,7 +102,6 @@ $script:Context.NetworkHardwareRollbackActions = if ($null -ne $Context.NetworkH
 $script:Logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 $script:UnsafeMode = $UnsafeMode
 
-# Periodically persist rollback entries so they can survive unexpected termination.
 $script:RollbackPersistTimer = [System.Timers.Timer]::new()
 $script:RollbackPersistTimer.Interval = 30000
 $script:RollbackPersistTimer.AutoReset = $true
@@ -135,9 +126,7 @@ function Stop-RollbackTimerSafely {
     }
 }
 
-# ---------- 4. LOGGING (Transcript and logging initialization.) ----------
 $TranscriptStarted = $false
-# Get-Confirmation is now available from ui.psm1.
 if (Get-Confirmation "Enable session logging to a file? (Recommended for service records)" 'n') {
     $logDir = Join-Path $env:TEMP "ScynesthesiaOptimizer"
     if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
@@ -155,7 +144,6 @@ if (Get-Confirmation "Enable session logging to a file? (Recommended for service
     }
 }
 
-# ---------- 5. LOCAL FUNCTIONS ----------
 $script:HighImpactBlocked = $false
 $script:HighImpactBlockReason = ""
 
@@ -304,9 +292,6 @@ function Confirm-HighImpactRestoreGate {
     }
 }
 
-# Description: Displays the application banner with version and active power plan details.
-# Parameters: None.
-# Returns: None.
 function Show-Banner {
     Clear-Host
     $hardwareProfile = Get-HardwareProfile
@@ -360,9 +345,6 @@ function Show-Banner {
     Write-Host "------------------------------------------------------------`n" -ForegroundColor DarkGray
 }
 
-# Description: Ensures the requested Windows power plan is active.
-# Parameters: Mode - Chooses between Balanced or HighPerformance power plans.
-# Returns: None.
 function Ensure-PowerPlan {
     param([ValidateSet('Balanced','HighPerformance')][string]$Mode = 'HighPerformance')
     Write-Host "  [i] Setting base power plan to: $Mode" -ForegroundColor Gray
@@ -492,9 +474,6 @@ function Write-EndOfSessionSummary {
     }
 }
 
-# Description: Writes a consolidated log of removed apps to the console/transcript.
-# Parameters: Context - Optional run context holding DebloatRemovalLog.
-# Returns: None.
 function Write-DebloatRemovalLog {
     param([pscustomobject]$Context)
 
@@ -515,9 +494,6 @@ function Write-DebloatRemovalLog {
     }
 }
 
-# Description: Presents optional safe tweaks and applies selections based on user input.
-# Parameters: PresetName - Label for the active preset (used in abort prompts).
-# Returns: Boolean indicating whether the caller should abort the preset.
 function Invoke-SafeOptionalPrompts {
     param([string]$PresetName = 'Safe preset')
 
@@ -555,9 +531,6 @@ function Invoke-SafeOptionalPrompts {
     return $false
 }
 
-# Description: Handles reboot prompting based on the supplied context and resets the flag afterward.
-# Parameters: Context - The current run context. OnExit - Indicates whether the prompt is shown while exiting.
-# Returns: None. Mutates Context.NeedsReboot.
 function Handle-RebootIfNeeded {
     param(
         [pscustomobject]$Context,
@@ -593,11 +566,7 @@ function Handle-RebootIfNeeded {
     Reset-NeedsReboot -Context $Context | Out-Null
 }
 
-# ---------- 6. PRESETS ----------
 
-# Description: Executes the Safe preset workflow focused on stability and baseline performance.
-# Parameters: None.
-# Returns: None. Updates global reboot flag as needed.
 function Run-SafePreset {
     $Status = @{ PackagesFailed = @(); PackagesRemoved = @(); RebootRequired = $false }
     if (-not $script:Context.PSObject.Properties.Name.Contains('RegistryPermissionFailures')) {
@@ -644,7 +613,6 @@ function Run-SafePreset {
     }
     Clear-TempFiles -Context $script:Context
 
-    # Safe Debloat (Standard list)
     $privacyAbort = Invoke-PrivacySafe -Context $script:Context
     if ($privacyAbort) {
         Write-Host "[!] Safe preset aborted by user due to critical registry failure." -ForegroundColor Red
@@ -683,9 +651,6 @@ function Run-SafePreset {
     Write-Host "[+] Safe preset applied. Restart when convenient to finalize settings." -ForegroundColor Green
 }
 
-# Description: Executes the Slow PC/Aggressive preset for deeper cleanup and performance tuning.
-# Parameters: None.
-# Returns: None. Updates global reboot flag and failed package list.
 function Run-PCSlowPreset {
     if (-not (Assert-HighImpactAllowed "The Aggressive preset")) { return }
 
@@ -741,8 +706,6 @@ function Run-PCSlowPreset {
         return
     }
 
-    # Deep cleaning using Aggressive Debloat profile.
-    # Using updated function from debloat.psm1.
     $debloatResult = Invoke-DebloatAggressive -Context $script:Context
     $Status.PackagesFailed += $debloatResult.Failed
     $Status.PackagesRemoved += $debloatResult.Removed
@@ -759,7 +722,6 @@ function Run-PCSlowPreset {
     }
     Ensure-PowerPlan -Mode 'HighPerformance'
 
-    # Additional tweaks specific to slow PCs
     $aggressivePerformanceAbort = Invoke-AggressivePerformanceTweaks -OemServices $OemServices -Context $script:Context -PresetName 'Aggressive preset'
     if ($aggressivePerformanceAbort) {
         Write-Host "[!] Aggressive preset aborted by user due to critical registry failure." -ForegroundColor Red
@@ -778,9 +740,6 @@ function Run-PCSlowPreset {
     Write-Host "[+] Slow PC / Aggressive preset applied. Please restart." -ForegroundColor Green
 }
 
-# Description: Presents the interactive menu for network tweak profiles and restoration.
-# Parameters: None.
-# Returns: None. May set global reboot flag when hardcore tweaks run.
 function Show-NetworkTweaksMenu {
     do {
         Write-Section "Network Tweaks"
@@ -892,9 +851,6 @@ function Show-NetworkTweaksMenu {
     } while ($true)
 }
 
-# Description: Presents UI and Explorer tweaks that can be applied individually or together.
-# Parameters: None.
-# Returns: None. May set global reboot flag.
 function Show-ExplorerTweaksMenu {
     do {
         Write-Section "UI & Explorer Tweaks"
@@ -923,7 +879,6 @@ function Show-ExplorerTweaksMenu {
     } while ($true)
 }
 
-# ---------- 7. MAIN LOOP ----------
 
 $exitRequested = $false
 do {

@@ -1,7 +1,3 @@
-# Depends on: ui.psm1 (loaded by main script)
-# Description: Collects hardware traits such as battery presence, memory size, and disk types.
-# Parameters: None.
-# Returns: PSCustomObject summarizing laptop status, memory category, and storage mix.
 function Get-HardwareProfile {
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
 
@@ -78,9 +74,6 @@ function Get-HardwareProfile {
     }
 }
 
-# Description: Retrieves OEM-related services based on common vendor name patterns.
-# Parameters: None.
-# Returns: Collection of services matching OEM identifiers.
 function Get-OEMServiceInfo {
     $patterns = 'Dell','Alienware','HP','Hewlett','Lenovo','Acer','ASUS','MSI','Samsung','Razer'
     $services = Get-Service -ErrorAction SilentlyContinue | Where-Object {
@@ -95,9 +88,6 @@ function Get-OEMServiceInfo {
     $services
 }
 
-# Description: Guides the user to enable or disable SysMain based on detected hardware.
-# Parameters: HardwareProfile - Hardware characteristics influencing default choices.
-# Returns: None.
 function Invoke-SysMainOptimization {
     param(
         [Parameter(Mandatory)]
@@ -139,9 +129,6 @@ function Invoke-SysMainOptimization {
     }
 }
 
-# Description: Applies baseline performance registry adjustments using hardware context.
-# Parameters: HardwareProfile - Used to select appropriate prefetch and visual effect settings; Context - Run context for reboot tracking; PresetName - Label for the active preset.
-# Returns: Boolean indicating whether the preset should abort after a critical failure prompt.
 function Invoke-PerformanceBaseline {
     param(
         [Parameter(Mandatory)]
@@ -183,9 +170,6 @@ function Invoke-PerformanceBaseline {
     return $false
 }
 
-# Description: Ensures the Ultimate Performance power plan GUID is available, duplicating if necessary.
-# Parameters: None.
-# Returns: GUID string for the Ultimate Performance power plan when found or created.
 function Get-UltimatePerformancePlanGuid {
     $ultimateTemplateGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
 
@@ -229,9 +213,6 @@ function Get-UltimatePerformancePlanGuid {
     return $null
 }
 
-# Description: Activates the Ultimate Performance power plan when available.
-# Parameters: None.
-# Returns: None. Writes warnings if activation fails.
 function Invoke-UltimatePerformancePlan {
     Write-Section "Enabling Ultimate Performance power plan"
     $guid = Get-UltimatePerformancePlanGuid
@@ -253,9 +234,6 @@ function Invoke-UltimatePerformancePlan {
     }
 }
 
-# Description: Creates or updates a registry value with logging and error handling.
-# Parameters: Path, Name, Value, Type, ContextDescription, SuccessMessage, RunContext - specify registry target, log messages, and reboot tracking context.
-# Returns: None.
 function Set-RegistryPerformanceValue {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -281,9 +259,6 @@ function Set-RegistryPerformanceValue {
     }
 }
 
-# Description: Disables NTFS Last Access time updates to reduce filesystem overhead.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Writes registry values to control last access behavior.
 function Invoke-NtfsLastAccessUpdate {
     [CmdletBinding()]
     param(
@@ -301,9 +276,6 @@ function Invoke-NtfsLastAccessUpdate {
         -RunContext $Context
 }
 
-# Description: Adjusts menu display delay for the current user to improve responsiveness.
-# Parameters: DelayMs - Desired delay in milliseconds; Context - Run context for reboot tracking.
-# Returns: None. Updates registry value controlling menu display timing.
 function Invoke-MenuShowDelay {
     [CmdletBinding()]
     param(
@@ -324,9 +296,6 @@ function Invoke-MenuShowDelay {
         -RunContext $Context
 }
 
-# Description: Disables Windows transparency effects for the current user to reduce GPU overhead.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Sets registry key to turn off transparency effects.
 function Invoke-TransparencyEffectsDisable {
     [CmdletBinding()]
     param(
@@ -344,9 +313,6 @@ function Invoke-TransparencyEffectsDisable {
         -RunContext $Context
 }
 
-# Description: Forces visual effects to the Best Performance preset for the current user.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Writes registry setting for visual effects mode.
 function Invoke-VisualEffectsBestPerformance {
     [CmdletBinding()]
     param(
@@ -364,9 +330,6 @@ function Invoke-VisualEffectsBestPerformance {
         -RunContext $Context
 }
 
-# Description: Reduces the service shutdown timeout to speed up system shutdowns.
-# Parameters: Milliseconds - Target timeout value as a string-compatible integer; Context - Run context for reboot tracking.
-# Returns: None. Updates registry value controlling service shutdown wait time.
 function Invoke-WaitToKillServiceTimeout {
     [CmdletBinding()]
     param(
@@ -386,9 +349,6 @@ function Invoke-WaitToKillServiceTimeout {
         -RunContext $Context
 }
 
-# Description: Disables Multi-Plane Overlay (MPO) to mitigate flickering and stutter issues.
-# Parameters: Context - Run context for reboot tracking; PresetName - Label for the active preset.
-# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Sets reboot flag on success.
 function Invoke-MpoVisualFixDisable {
     [CmdletBinding()]
     param(
@@ -412,9 +372,6 @@ function Invoke-MpoVisualFixDisable {
     return $false
 }
 
-# Description: Enables Hardware-accelerated GPU scheduling (HAGS) for supported GPUs.
-# Parameters: Context - Run context for reboot tracking; PresetName - Label for the active preset.
-# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Sets registry value and flags reboot requirement.
 function Invoke-HagsPerformanceEnablement {
     [CmdletBinding()]
     param(
@@ -438,9 +395,6 @@ function Invoke-HagsPerformanceEnablement {
     return $false
 }
 
-# Description: Disables global power throttling to maintain consistent CPU performance.
-# Parameters: Context - Run context for reboot tracking; PresetName - Label for the active preset.
-# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Writes registry value and flags reboot requirement.
 function Invoke-PowerThrottlingDisablement {
     [CmdletBinding()]
     param(
@@ -464,9 +418,6 @@ function Invoke-PowerThrottlingDisablement {
     return $false
 }
 
-# Description: Keeps the Windows kernel and drivers resident in physical memory.
-# Parameters: Context - Run context for reboot tracking; PresetName - Label for the active preset.
-# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Writes registry value and flags reboot requirement.
 function Invoke-PagingExecutivePerformance {
     [CmdletBinding()]
     param(
@@ -490,9 +441,6 @@ function Invoke-PagingExecutivePerformance {
     return $false
 }
 
-# Description: Disables Windows memory compression when sufficient RAM is available.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Evaluates hardware profile and adjusts compression accordingly.
 function Invoke-MemoryCompressionOptimization {
     [CmdletBinding()]
     param(
@@ -510,9 +458,6 @@ function Invoke-MemoryCompressionOptimization {
     }
 }
 
-# Description: Applies conservative performance tweaks suitable for most systems.
-# Parameters: Context - Run context for reboot tracking; PresetName - Label for the active preset.
-# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Calls supporting registry tweak functions.
 function Invoke-SafePerformanceTweaks {
     [CmdletBinding()]
     param(
@@ -530,9 +475,6 @@ function Invoke-SafePerformanceTweaks {
     return $false
 }
 
-# Description: Applies more aggressive performance tweaks for low-end systems.
-# Parameters: OemServices - OEM service list; Context - Run context for reboot tracking; PresetName - Label for the active preset.
-# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. Invokes multiple registry adjustments for responsiveness.
 function Invoke-AggressivePerformanceTweaks {
     [CmdletBinding()]
     param(

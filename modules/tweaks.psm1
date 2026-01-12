@@ -1,8 +1,4 @@
-# Depends on: ui.psm1 (loaded by main script)
 
-# Description: Forces classic Windows 10-style context menus on Windows 11 by clearing the shell handler value.
-# Parameters: Context - Run context used for reboot tracking and rollback metadata.
-# Returns: None. Sets reboot flag on the provided context.
 function Set-ClassicContextMenus {
     param(
         [Parameter(Mandatory)]
@@ -23,9 +19,6 @@ function Set-ClassicContextMenus {
     }
 }
 
-# Description: Adds Take Ownership context menu entries for files and directories using takeown and icacls.
-# Parameters: Context - Run context used for reboot tracking and rollback metadata.
-# Returns: None. Sets reboot flag on the provided context.
 function Add-TakeOwnershipMenu {
     param(
         [Parameter(Mandatory)]
@@ -65,9 +58,6 @@ function Add-TakeOwnershipMenu {
     Set-RebootRequired -Context $Context | Out-Null
 }
 
-# Description: Enables advanced Explorer visibility settings for file extensions and hidden items.
-# Parameters: Context - Run context used for reboot tracking and rollback metadata.
-# Returns: None. Sets reboot flag on the provided context.
 function Set-ExplorerProSettings {
     param(
         [Parameter(Mandatory)]

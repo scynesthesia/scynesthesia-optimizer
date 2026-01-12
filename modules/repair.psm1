@@ -1,7 +1,3 @@
-# Depends on: ui.psm1 (loaded by main script)
-# Description: Performs a basic network repair including DNS flush and IP renewal.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Can set reboot flag on the provided context if Winsock reset is run.
 function Invoke-NetworkSoftReset {
     param(
         [Parameter(Mandatory)]
@@ -26,9 +22,6 @@ function Invoke-NetworkSoftReset {
     }
 }
 
-# Description: Runs System File Checker to scan and repair Windows integrity issues.
-# Parameters: None.
-# Returns: None.
 function Invoke-SystemRepair {
     Write-Section "Windows Integrity Check (SFC)"
     Write-Host "This scans for corrupt system files and repairs them automatically." -ForegroundColor Gray

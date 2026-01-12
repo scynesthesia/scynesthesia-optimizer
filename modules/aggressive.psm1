@@ -1,4 +1,3 @@
-# Depends on: ui.psm1 (loaded by main script)
 if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
 }
@@ -6,9 +5,6 @@ if (-not (Get-Module -Name 'debloat' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'debloat.psm1') -Force -Scope Local
 }
 
-# Description: Retrieves a list of applications to remove based on the provided config key.
-# Parameters: Key - The JSON property name to extract from the app removal configuration; Context - Optional run context with ScriptRoot.
-# Returns: Array of application names corresponding to the requested key.
 function Get-AppRemovalListFromConfig {
     param(
         [Parameter(Mandatory)]
@@ -21,9 +17,6 @@ function Get-AppRemovalListFromConfig {
     return (config\Get-AppRemovalList -Mode 'Aggressive' -Key $Key -Context $context)
 }
 
-# Description: Applies aggressive performance and debloat tweaks for slow PCs.
-# Parameters: HardwareProfile - Detected system characteristics; FailedPackages - Reference to collection of failed removals; OemServices - OEM services to protect; PresetName - Label for the active preset.
-# Returns: Boolean indicating whether the preset should abort after a critical failure prompt. May update failed package list and global reboot flag.
 function Invoke-AggressiveTweaks {
     param(
         [Parameter(Mandatory)]

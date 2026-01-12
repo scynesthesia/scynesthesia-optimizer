@@ -1,7 +1,3 @@
-# Depends on: ui.psm1 (loaded by main script)
-# Description: Enables MSI Mode for supported device classes to reduce DPC latency.
-# Parameters: Target - Array of device categories (GPU, NIC, STORAGE) to evaluate; Context - Run context for reboot tracking.
-# Returns: PSCustomObject with count of devices updated; sets reboot flag on the provided context when changes occur.
 function Enable-MsiModeSafe {
     param(
         [string[]]$Target = 'GPU',
@@ -23,7 +19,6 @@ function Enable-MsiModeSafe {
         'STORAGE' = @{ Classes = @('SCSIAdapter','HDC'); ClassGuids = @('{4d36e97b-e325-11ce-bfc1-08002be10318}', '{4d36e96a-e325-11ce-bfc1-08002be10318}'); Description = 'Storage controllers' }
     }
 
-    # PCI ID opt-outs for devices known to be unstable with MSI mode despite driver age
     $msiOptOutPciIds = @{
         'NIC' = @(
             'VEN_10EC&DEV_8168', # Realtek PCIe GBE Family Controller (inconsistent MSI stability on some boards)

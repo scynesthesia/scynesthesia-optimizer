@@ -1,7 +1,3 @@
-# Depends on: ui.psm1 (loaded by main script)
-# Description: Internal helper to disable a service by setting its registry start value and stopping it.
-# Parameters: Name - Service name; Context - run context for rollback tracking.
-# Returns: None. Logs operations and handles protected service errors.
 function Disable-ServiceByRegistry {
     [CmdletBinding()]
     param(
@@ -46,9 +42,6 @@ function Disable-ServiceByRegistry {
     }
 }
 
-# Description: Applies conservative service optimizations suitable for Safe preset.
-# Parameters: None.
-# Returns: None. Disables non-essential consumer/demo services.
 function Invoke-SafeServiceOptimization {
     [CmdletBinding()]
     param(
@@ -77,9 +70,6 @@ function Invoke-SafeServiceOptimization {
     }
 }
 
-# Description: Applies aggressive service reductions with optional prompts for key services.
-# Parameters: None.
-# Returns: None. Disables telemetry and remote access services with user confirmation for printing/Bluetooth.
 function Invoke-AggressiveServiceOptimization {
     [CmdletBinding()]
     param(
@@ -155,9 +145,6 @@ function Invoke-AggressiveServiceOptimization {
     }
 }
 
-# Description: Applies gaming service optimizations layered on safe and aggressive presets.
-# Parameters: Context - Run context for rollback tracking.
-# Returns: None. Disables gaming-focused services and handles optional network-impacting services.
 function Invoke-GamingServiceOptimization {
     [CmdletBinding()]
     param(
@@ -201,9 +188,6 @@ function Invoke-GamingServiceOptimization {
     }
 }
 
-# Description: Disables GPU vendor telemetry services for gaming profile stability.
-# Parameters: None.
-# Returns: None. Stops and disables NVIDIA/AMD telemetry listeners when present.
 function Invoke-DriverTelemetryOptimization {
     [CmdletBinding()]
     param(

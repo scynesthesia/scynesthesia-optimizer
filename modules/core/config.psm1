@@ -1,11 +1,6 @@
-# Description: Shared configuration helpers for resolving script roots and loading app removal lists.
 $script:AppRemovalConfig = $null
 $script:AppRemovalConfigPath = $null
 
-# Description: Resolves the script root using the provided context when available,
-# falling back to the caller's PSScriptRoot or the invocation path when imported standalone.
-# Parameters: Context - Optional run context containing ScriptRoot; LocalRoot - Optional fallback path (defaults to the caller's PSScriptRoot if present).
-# Returns: Resolved script root path.
 function Get-ScriptRoot {
     param(
         [pscustomobject]$Context,
@@ -33,9 +28,6 @@ function Get-ScriptRoot {
     }
 }
 
-# Description: Retrieves a normalized list of applications to remove for a given mode.
-# Parameters: Mode - Debloat or Aggressive profile; Context - Optional run context with ScriptRoot; ConfigPath - Optional apps.json path override; Key - Optional config key override.
-# Returns: Array of app identifiers; empty array when the configuration cannot be loaded.
 function Get-AppRemovalList {
     param(
         [Parameter(Mandatory)]

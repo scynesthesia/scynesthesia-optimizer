@@ -1,7 +1,3 @@
-# Depends on: ui.psm1 (loaded by main script)
-# Description: Disables selected hardware devices per tier using native PnP cmdlets.
-# Parameters: Level - Safe, Aggressive, or Gaming tier; Context - Run context for rollback tracking.
-# Returns: PSCustomObject summary of devices touched.
 function Invoke-HardwareDeviceHardening {
     [CmdletBinding()]
     param(

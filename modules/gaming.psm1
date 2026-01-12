@@ -1,11 +1,7 @@
-# Depends on: ui.psm1 (loaded by main script)
 if (-not (Get-Command -Name 'Get-HardwareProfile' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'performance.psm1') -Force -Scope Local
 }
 
-# Description: Adjusts scheduler priorities to favor foreground gaming workloads.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Logs actions when logger available.
 function Optimize-GamingScheduler {
     param(
         [Parameter(Mandatory)]
@@ -53,9 +49,6 @@ function Optimize-GamingScheduler {
     }
 }
 
-# Description: Applies hardcore process priority overrides to favor critical UX and audio processes.
-# Parameters: Context - Run context for rollback tracking.
-# Returns: None. Records registry rollback data for each perf option change.
 function Invoke-ProcessPriorityHardcore {
     param(
         [Parameter(Mandatory)]
@@ -125,9 +118,6 @@ function Invoke-ProcessPriorityHardcore {
     }
 }
 
-# Description: Detects thin-and-light laptops that are more sensitive to aggressive power overrides.
-# Parameters: HardwareProfile - Object returned by Get-HardwareProfile.
-# Returns: Boolean indicating whether a conservative preset should be used.
 function Test-ThinAndLightHardware {
     param(
         [Parameter(Mandatory)]
@@ -144,9 +134,6 @@ function Test-ThinAndLightHardware {
     return $isLaptop -and ($memoryIsTight -or $ssdOnly -or (Test-ModernStandbySupported))
 }
 
-# Description: Detects Modern Standby (S0) capability to guard aggressive power overrides on laptops.
-# Parameters: None.
-# Returns: Boolean indicating Modern Standby support.
 function Test-ModernStandbySupported {
     try {
         $output = & powercfg /a 2>$null
@@ -158,9 +145,6 @@ function Test-ModernStandbySupported {
 }
 
 
-# Description: Retrieves or creates the custom 'Scynesthesia Gaming Mode' power plan.
-# Parameters: None.
-# Returns: Power plan CIM instance for the gaming profile.
 function Get-OrCreate-GamingPlan {
     $planName = "Scynesthesia Gaming Mode"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
@@ -212,9 +196,6 @@ function Get-OrCreate-GamingPlan {
     return $gamingPlan
 }
 
-# Description: Applies high-performance power settings tailored for gaming scenarios.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Activates or updates the gaming power plan.
 function Invoke-CustomGamingPowerSettings {
     param(
         [Parameter(Mandatory)]
@@ -260,22 +241,18 @@ function Invoke-CustomGamingPowerSettings {
                 throw "Unable to parse gaming power plan GUID."
             }
 
-            # 1) Disks / NVMe
             powercfg /setacvalueindex $gamingGuid SUB_DISK DISKIDLE 0
             powercfg /setacvalueindex $gamingGuid SUB_DISK 0b2d69d7-a2a1-449c-9680-f91c70521c60 0
 
-            # 2) CPU / Core parking / EPP
             powercfg /setacvalueindex $gamingGuid SUB_PROCESSOR PROCTHROTTLEMIN 100
             powercfg /setacvalueindex $gamingGuid SUB_PROCESSOR 0cc5b647-c1df-4637-891a-dec35c318583 100
             powercfg /setacvalueindex $gamingGuid SUB_PROCESSOR 36687f9e-e3a5-4dbf-b1dc-15eb381c6863 0
 
-            # 3) USB selective suspend OFF (kept on for thin-and-light/Modern Standby)
             $usbSelectiveSuspend = if ($isThinAndLight -or $hasModernStandby) { 1 } else { 0 }
             powercfg /setacvalueindex $gamingGuid `
                 2a737441-1930-4402-8d77-b2bebba308a3 `
                 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 $usbSelectiveSuspend
 
-            # 4) PCIe Link State OFF (kept on for thin-and-light/Modern Standby)
             $pcieLinkState = if ($isThinAndLight -or $hasModernStandby) { 1 } else { 0 }
             powercfg /setacvalueindex $gamingGuid `
                 501a4d13-42af-4429-9fd1-a8218c268e20 `
@@ -296,9 +273,6 @@ function Invoke-CustomGamingPowerSettings {
         Write-Host "  [ ] Hardcore power tweaks skipped." -ForegroundColor DarkGray
     }
 }
-# Description: Disables USB hub power management flags to minimize input latency.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Logs actions when logger is available.
 function Set-UsbPowerManagementHardcore {
     param(
         [Parameter(Mandatory)]
@@ -366,9 +340,6 @@ function Set-UsbPowerManagementHardcore {
     Write-Host "[OK] USB power management overrides applied." -ForegroundColor Magenta
 }
 
-# Description: Tunes HID class queue sizes to reduce input buffering latency.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Records changes when logger is present.
 function Optimize-HidLatency {
     param(
         [Parameter(Mandatory)]
@@ -400,9 +371,6 @@ function Optimize-HidLatency {
     Set-RebootRequired -Context $Context | Out-Null
 }
 
-# Description: Applies advanced keyboard/mouse peripheral optimizations.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Applies registry tuning for accessibility, USB, and keyboard response.
 function Invoke-KbmAdvancedOptimizations {
     param(
         [Parameter(Mandatory)]
@@ -518,9 +486,6 @@ function Invoke-KbmAdvancedOptimizations {
     }
 }
 
-# Description: Sets 1:1 mouse movement by disabling acceleration and setting standard curves.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Records registry rollback data for changes.
 function Optimize-MouseOneToOne {
     param(
         [Parameter(Mandatory)]
@@ -582,9 +547,6 @@ function Optimize-MouseOneToOne {
     }
 }
 
-# Description: Flattens mouse acceleration curves for 1:1 tracking.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Records registry rollback data for changes.
 function Optimize-MouseCurve {
     param(
         [Parameter(Mandatory)]
@@ -626,9 +588,6 @@ function Optimize-MouseCurve {
     }
 }
 
-# Description: Elevates csrss.exe to realtime priority for extreme latency reduction.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Records registry rollback data for changes.
 function Set-CsrssPriorityHardcore {
     param(
         [Parameter(Mandatory)]
@@ -673,9 +632,6 @@ function Set-CsrssPriorityHardcore {
     }
 }
 
-# Description: Forces latency tolerance values to minimums for power and graphics subsystems.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Records registry rollback data for changes.
 function Set-LatencyToleranceHardcore {
     param(
         [Parameter(Mandatory)]
@@ -756,9 +712,6 @@ function Set-LatencyToleranceHardcore {
     }
 }
 
-# Description: Applies NVIDIA driver registry tweaks for latency tolerance and contiguous memory usage.
-# Parameters: Context - Run context for rollback tracking.
-# Returns: None. Records registry rollback data for changes.
 function Set-NvidiaLatencyTweaks {
     param(
         [Parameter(Mandatory)]
@@ -841,9 +794,6 @@ function Set-NvidiaLatencyTweaks {
     }
 }
 
-# Description: Applies advanced NVIDIA Resource Manager and renderer internal tweaks.
-# Parameters: Context - Run context for rollback tracking.
-# Returns: None. Records registry rollback data for changes.
 function Invoke-NvidiaAdvancedInternalTweaks {
     param(
         [Parameter(Mandatory)]
@@ -894,23 +844,14 @@ function Invoke-NvidiaAdvancedInternalTweaks {
 
     foreach ($path in $nvidiaPaths) {
         try {
-            # RM: disables engine reset tracking to reduce bookkeeping latency.
             $results += Set-RegistryValueSafe -Path $path -Name 'TrackResetEngine' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set TrackResetEngine=0 at $path"
-            # RM: disables blit sub-rect validation checks to reduce render validation overhead.
             $results += Set-RegistryValueSafe -Path $path -Name 'ValidateBlitSubRects' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set ValidateBlitSubRects=0 at $path"
-            # RM: prioritize VRAM caching over system memory for faster resource residency.
             $results += Set-RegistryValueSafe -Path $path -Name 'RmCacheLoc' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set RmCacheLoc=0 at $path"
-            # RM: enable paged DMA in FBSR to optimize memory transfers.
             $results += Set-RegistryValueSafe -Path $path -Name 'RmFbsrPagedDMA' -Value 1 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set RmFbsrPagedDMA=1 at $path"
-            # RM: lower acceleration level to reduce driver overhead in internal scheduling.
             $results += Set-RegistryValueSafe -Path $path -Name 'Acceleration.Level' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set Acceleration.Level=0 at $path"
-            # RM: disable kernel filter support flag to streamline device filtering paths.
             $results += Set-RegistryValueSafe -Path $path -Name 'NVDeviceSupportKFilter' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set NVDeviceSupportKFilter=0 at $path"
-            # RM: remove desktop stereo shortcuts to reduce UI bloat.
             $results += Set-RegistryValueSafe -Path $path -Name 'DesktopStereoShortcuts' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set DesktopStereoShortcuts=0 at $path"
-            # RM: set feature control level to reduce extra driver UI components.
             $results += Set-RegistryValueSafe -Path $path -Name 'FeatureControl' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set FeatureControl=4 at $path"
-            # RM: allow profiling without admin requirement to enable telemetry access.
             $results += Set-RegistryValueSafe -Path $path -Name 'RmProfilingAdminOnly' -Value 0 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -Critical -ReturnResult -OperationLabel "Set RmProfilingAdminOnly=0 at $path"
 
             if ($logger) {
@@ -936,9 +877,6 @@ function Invoke-NvidiaAdvancedInternalTweaks {
     }
 }
 
-# Description: Applies deep NVIDIA driver optimizations for latency, telemetry, and power savings removal.
-# Parameters: Context - Run context for rollback tracking.
-# Returns: None. Records registry rollback data and disables scheduled tasks.
 function Invoke-NvidiaHardcoreTweaks {
     param(
         [Parameter(Mandatory)]
@@ -1062,9 +1000,6 @@ function Invoke-NvidiaHardcoreTweaks {
     }
 }
 
-# Description: Disables NVIDIA dynamic P-States and Windows TDR for maximum GPU stability.
-# Parameters: Context - Run context for rollback tracking.
-# Returns: None. Records registry rollback data for changes.
 function Invoke-VideoStabilityHardcore {
     param(
         [Parameter(Mandatory)]
@@ -1149,9 +1084,6 @@ function Invoke-VideoStabilityHardcore {
         Set-RebootRequired -Context $Context | Out-Null
     }
 }
-# Description: Tunes processor scheduling registry settings for lower input latency.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Records changes when logger is present.
 function Optimize-ProcessorScheduling {
     param(
         [Parameter(Mandatory)]
@@ -1169,8 +1101,6 @@ function Optimize-ProcessorScheduling {
         return
     }
 
-    # 0x28 (40 decimal): Short intervals + Fixed Quantum.
-    # Better for consistent frametimes in games; not the classic dynamic foreground "boost."
     if (Get-Confirmation "Apply Fixed Priority Separation (28 Hex) for lower input latency?" 'n') {
         $result = Set-RegistryValueSafe $priorityPath "Win32PrioritySeparation" 40 -Context $Context -Critical -ReturnResult -OperationLabel 'Set Win32PrioritySeparation to 0x28'
         if ($result -and $result.Success) {
@@ -1188,9 +1118,6 @@ function Optimize-ProcessorScheduling {
     }
 }
 
-# Description: Disables Game DVR/Bar capture mechanisms to avoid overlay glitches.
-# Parameters: Context - Run context used for rollback tracking.
-# Returns: None. Records registry rollback data for all changes.
 function Disable-GameDVR {
     param(
         [Parameter(Mandatory)]
@@ -1230,9 +1157,6 @@ function Disable-GameDVR {
     }
 }
 
-# Description: Optimizes FSO, MPO, and WGO settings for modern display modes on Windows 10/11.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Applies registry overrides and flags reboot requirement.
 function Optimize-ModernDisplayModes {
     param(
         [Parameter(Mandatory)]
@@ -1296,9 +1220,6 @@ function Optimize-ModernDisplayModes {
     }
 }
 
-# Description: Disables UDP Segmentation Offload globally and on physical adapters to reduce burst-related latency.
-# Parameters: Context - Run context for rollback/logging helpers.
-# Returns: None. Reports adapters touched and warns when not supported.
 function Disable-UdpSegmentOffload {
     param(
         [pscustomobject]$Context
@@ -1357,9 +1278,6 @@ function Disable-UdpSegmentOffload {
     }
 }
 
-# Description: Enables TCP Fast Open to reduce handshake latency for supporting applications.
-# Parameters: Context - Optional run context for rollback/logging.
-# Returns: None. Logs the action and surfaces compatibility warnings.
 function Enable-TcpFastOpen {
     param(
         [pscustomobject]$Context
@@ -1376,9 +1294,6 @@ function Enable-TcpFastOpen {
     }
 }
 
-# Description: Disables ARP and Neighbor Solicitation offload on physical adapters for steadier packet pacing.
-# Parameters: Context - Optional run context for rollback/logging.
-# Returns: None. Reports adapters touched and warns on unsupported drivers.
 function Disable-ArpNsOffload {
     param(
         [pscustomobject]$Context
@@ -1432,9 +1347,6 @@ function Disable-ArpNsOffload {
     }
 }
 
-# Description: Ensures Windows Game Mode auto-priority is enabled for scheduler improvements.
-# Parameters: Context - Run context for rollback tracking.
-# Returns: None. Records registry rollback data for the change.
 function Enable-WindowsGameMode {
     param(
         [Parameter(Mandatory)]
@@ -1454,9 +1366,6 @@ function Enable-WindowsGameMode {
     }
 }
 
-# Description: Applies kernel-level timers and security mitigation overrides for gaming.
-# Parameters: Context - Run context for rollback tracking.
-# Returns: None. Records BCD and registry changes and flags reboot requirement.
 function Invoke-KernelSecurityTweaks {
     param(
         [Parameter(Mandatory)]
@@ -1567,9 +1476,6 @@ function Invoke-KernelSecurityTweaks {
     Set-RebootRequired -Context $Context | Out-Null
 }
 
-# Description: Runs the complete Gaming preset sequence following modular standards.
-# Parameters: Context - Run context for reboot tracking.
-# Returns: None. Sequentially applies gaming optimizations and reports completion.
 function Invoke-GamingOptimizations {
     param(
         [Parameter(Mandatory)]
@@ -1600,9 +1506,6 @@ function Invoke-GamingOptimizations {
     Write-Host "[OK] Global Gaming Optimizations complete." -ForegroundColor Magenta
 }
 
-# Description: Interactive creator for per-game QoS rules using DSCP 46 (Expedited Forwarding).
-# Parameters: Context - Run context for rollback tracking.
-# Returns: None. Registers registry and service changes for rollback via the provided context.
 function Manage-GameQoS {
     param(
         [Parameter(Mandatory)]

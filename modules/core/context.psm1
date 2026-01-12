@@ -1,7 +1,4 @@
-# Description: Provides a per-run context object and helpers to track execution state.
 
-# Creates a new run context with defaults suitable for a single execution.
-# Returns: PSCustomObject with ScriptRoot, NeedsReboot, RollbackActions, LogPath.
 function New-RunContext {
     [CmdletBinding()]
     param(
@@ -39,11 +36,6 @@ function New-RunContext {
     }
 }
 
-# Ensures an action runs only once per identifier within the provided context.
-# Parameters:
-#   Context - Run context tracking applied tweaks.
-#   Id      - Unique identifier for the action.
-#   Action  - Script block to execute when not previously applied.
 function Invoke-Once {
     [CmdletBinding()]
     param(
@@ -71,8 +63,6 @@ function Invoke-Once {
     return $true
 }
 
-# Returns the provided context or creates a new one when none is supplied.
-# Parameters: Context - Optional existing PSCustomObject to reuse.
 function Get-RunContext {
     [CmdletBinding()]
     param(
@@ -83,8 +73,6 @@ function Get-RunContext {
     return New-RunContext
 }
 
-# Marks that a reboot is required on the provided context.
-# Parameters: Context - Run context to update.
 function Set-RebootRequired {
     [CmdletBinding()]
     param(
@@ -96,8 +84,6 @@ function Set-RebootRequired {
     return $Context
 }
 
-# Retrieves the reboot-required flag from the provided context.
-# Parameters: Context - Run context to inspect.
 function Get-RebootRequired {
     [CmdletBinding()]
     param(
@@ -108,8 +94,6 @@ function Get-RebootRequired {
     return [bool]$Context.NeedsReboot
 }
 
-# Marks the supplied context as requiring a reboot.
-# Parameters: Context - The run context to update.
 function Set-NeedsReboot {
     [CmdletBinding()]
     param(
@@ -120,8 +104,6 @@ function Set-NeedsReboot {
     return Set-RebootRequired -Context $Context
 }
 
-# Retrieves the reboot flag from the supplied context.
-# Parameters: Context - The run context to inspect.
 function Get-NeedsReboot {
     [CmdletBinding()]
     param(
@@ -132,8 +114,6 @@ function Get-NeedsReboot {
     return Get-RebootRequired -Context $Context
 }
 
-# Resets the reboot flag on the supplied context and clears the module fallback mirror.
-# Parameters: Context - The run context to update.
 function Reset-NeedsReboot {
     [CmdletBinding()]
     param(
@@ -145,8 +125,6 @@ function Reset-NeedsReboot {
     return $Context
 }
 
-# Ensures the context exposes a NonRegistryChanges tracker with ServiceState and NetshGlobal buckets.
-# Parameters: Context - Run context to initialize or return.
 function Get-NonRegistryChangeTracker {
     [CmdletBinding()]
     param(
@@ -183,8 +161,6 @@ function Get-NonRegistryChangeTracker {
     return $runContext.NonRegistryChanges
 }
 
-# Records a non-registry change (services/netsh) into the provided context if not already tracked.
-# Parameters: Context - Run context; Area - ServiceState or NetshGlobal; Key - Identifier (service name/setting); Value - Original state data.
 function Add-NonRegistryChange {
     [CmdletBinding()]
     param(
@@ -207,7 +183,6 @@ function Add-NonRegistryChange {
     return $tracker[$Area][$Key]
 }
 
-# Ensures the context exposes rollback collections for registry, service, and netsh actions.
 function Initialize-RollbackCollections {
     [CmdletBinding()]
     param(
@@ -252,7 +227,6 @@ function Initialize-RollbackCollections {
     return $runContext
 }
 
-# Adds or retrieves a service rollback snapshot keyed by service name.
 function Add-ServiceRollbackAction {
     [CmdletBinding()]
     param(
@@ -275,7 +249,6 @@ function Add-ServiceRollbackAction {
     return $record
 }
 
-# Adds or updates a netsh global rollback entry keyed by setting name.
 function Add-NetshRollbackAction {
     [CmdletBinding()]
     param(
@@ -299,7 +272,6 @@ function Add-NetshRollbackAction {
     return $record
 }
 
-# Returns the persistence path for registry rollback actions and, optionally, creates the parent directory.
 function Get-RollbackPersistencePath {
     [CmdletBinding()]
     param(
@@ -314,7 +286,6 @@ function Get-RollbackPersistencePath {
     return Join-Path $root $FileName
 }
 
-# Persists rollback actions from the context to disk so they can be restored after crashes.
 function Save-RollbackState {
     [CmdletBinding()]
     param(
@@ -369,7 +340,6 @@ function Save-RollbackState {
     return $targetPath
 }
 
-# Maintains backward compatibility for callers expecting registry-only persistence.
 function Save-RegistryRollbackState {
     [CmdletBinding()]
     param(
@@ -381,7 +351,6 @@ function Save-RegistryRollbackState {
     return Save-RollbackState -Context $Context -Path $Path
 }
 
-# Restores rollback actions from disk into the supplied context.
 function Restore-RollbackState {
     [CmdletBinding()]
     param(
@@ -442,7 +411,6 @@ function Restore-RollbackState {
     }
 }
 
-# Maintains backward compatibility for callers expecting registry-only restoration.
 function Restore-RegistryRollbackState {
     [CmdletBinding()]
     param(

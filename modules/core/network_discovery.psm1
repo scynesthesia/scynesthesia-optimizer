@@ -1,4 +1,3 @@
-# Description: Shared network discovery helpers.
 
 function Resolve-CoreNormalizedGuid {
     param($Value)
@@ -36,14 +35,6 @@ function Invoke-CoreError {
     }
 }
 
-# Description: Maps network adapters to their registry class paths.
-# Parameters:
-#   AdapterResolver - ScriptBlock returning adapter objects (defaults to Get-NetAdapter -Physical).
-#   ClassGuid - Registry class GUID string.
-#   AllowOwnershipFallback - Attempt temporary ownership to read class entries when access is denied.
-#   LoggerPrefix - Optional prefix for log messages.
-#   AccessDeniedFlag - [ref] flag set when registry access is blocked.
-# Returns: Objects containing AdapterName, InterfaceGuid, NetCfgInstanceId, RegistryPath, IfIndex, AdapterObject.
 function Get-NicRegistryMap {
     param(
         [ScriptBlock]$AdapterResolver,
