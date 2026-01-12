@@ -1,7 +1,3 @@
-# Depends on: ui.psm1 (loaded by main script)
-# Description: Applies privacy-focused registry changes suitable for the Safe preset.
-# Parameters: Context - Optional run context for rollback tracking; PresetName - Label for the active preset.
-# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
 function Invoke-DriverTelemetry {
     Write-Section "Disabling GPU driver telemetry services"
 
@@ -185,9 +181,6 @@ function Invoke-PrivacyTelemetrySafe {
     return $false
 }
 
-# Description: Applies baseline privacy tweaks (Safe layer) for telemetry and advertising controls.
-# Parameters: Context - Optional run context for rollback tracking.
-# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
 function Invoke-PrivacySafe {
     param(
         [pscustomobject]$Context
@@ -264,9 +257,6 @@ function Invoke-PrivacySafe {
     return $false
 }
 
-# Description: Extends privacy tweaks with app permission and Edge hardening (Aggressive layer).
-# Parameters: Context - Optional run context for rollback tracking.
-# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
 function Invoke-PrivacyAggressive {
     param(
         [pscustomobject]$Context
@@ -338,9 +328,6 @@ function Invoke-PrivacyAggressive {
     return $false
 }
 
-# Description: Applies additional privacy tweaks for activity history and background sync (Gaming layer).
-# Parameters: Context - Optional run context for rollback tracking.
-# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
 function Invoke-PrivacyGaming {
     param(
         [pscustomobject]$Context
@@ -398,9 +385,6 @@ function Invoke-PrivacyGaming {
     return $false
 }
 
-# Description: Applies privacy UX tweaks for Explorer and Search history.
-# Parameters: Context - Optional run context for rollback tracking.
-# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
 function Invoke-PrivacyInterfaceSafe {
     param(
         [pscustomobject]$Context
@@ -427,9 +411,6 @@ function Invoke-PrivacyInterfaceSafe {
     return $false
 }
 
-# Description: Applies aggressive app permission lockdown using ConsentStore.
-# Parameters: Context - Optional run context for rollback tracking.
-# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
 function Invoke-PrivacyAppPermissionsAggressive {
     param(
         [pscustomobject]$Context
@@ -469,9 +450,6 @@ function Invoke-PrivacyAppPermissionsAggressive {
     return $false
 }
 
-# Description: Applies content delivery and smart notification controls for gaming focus.
-# Parameters: Context - Optional run context for rollback tracking.
-# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
 function Invoke-PrivacyContentDeliveryGaming {
     param(
         [pscustomobject]$Context
@@ -530,9 +508,6 @@ function Invoke-PrivacyContentDeliveryGaming {
     return $false
 }
 
-# Description: Configures user experience preferences for Explorer, mouse, and keyboard behavior.
-# Parameters: Context - Optional run context used for rollback and permission tracking; PresetName - Label for the active preset.
-# Returns: Boolean indicating whether the caller should abort the preset after a critical failure prompt.
 function Invoke-PreferencesSafe {
     param(
         [pscustomobject]$Context,

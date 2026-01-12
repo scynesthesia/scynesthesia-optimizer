@@ -1,20 +1,13 @@
-# Depends on: ui.psm1 (loaded by main script)
 $script:RegistryRollbackActions = [System.Collections.Generic.List[object]]::new()
 $script:DefaultLogDirectory = Join-Path $env:TEMP 'ScynesthesiaOptimizer'
 $script:DefaultLogPath = Join-Path $script:DefaultLogDirectory 'Scynesthesia_Runtime.log'
 
-# Description: Prints a formatted section header to the console.
-# Parameters: Text - Section title to display.
-# Returns: None.
 function Write-Section {
     param([string]$Text)
     Write-Host ""
     Write-Host "========== $Text ==========" -ForegroundColor Cyan
 }
 
-# Description: Writes a timestamped log message to the console and log file with optional structured metadata.
-# Parameters: Message - Text to log; Level - Severity level (Info, Warning, Error); Data - Optional structured metadata; NoConsole - Suppresses console output when set.
-# Returns: None.
 function Write-Log {
     param(
         [Parameter(Mandatory)]
@@ -242,7 +235,6 @@ function Invoke-RegistryRollback {
     $success = 0
     $failed = 0
 
-    # Roll back in reverse order to mirror application order.
     for ($i = $records.Count - 1; $i -ge 0; $i--) {
         $record = $records[$i]
         $valueName = if ($record.Name -eq '(default)' -or [string]::IsNullOrWhiteSpace($record.Name)) { '' } else { $record.Name }
@@ -281,7 +273,6 @@ function Invoke-RegistryRollback {
                 if ($logger) { Write-Log -Message $msg -Level 'Info' }
             }
             elseif (-not $record.KeyExisted) {
-                # Key did not exist before; remove it entirely if present.
                 if ($subKey) {
                     $subKey.Dispose(); $subKey = $null
                 }
@@ -292,12 +283,10 @@ function Invoke-RegistryRollback {
                 if ($logger) { Write-Log -Message $msg -Level 'Info' }
             }
             else {
-                # Value did not exist before; remove it if present.
                 if ($subKey) {
                     try {
                         $subKey.DeleteValue($valueName, $false)
                     } catch [System.ArgumentException] {
-                        # Value already absent; treat as successful cleanup.
                     }
                 }
                 $success++
@@ -396,9 +385,6 @@ function Invoke-OptimizationAudit {
     }
 }
 
-# Description: Normalizes GUID input into uppercase brace-enclosed string form.
-# Parameters: Value - Input GUID or string representation.
-# Returns: Normalized GUID string or null when conversion fails.
 function Get-NormalizedGuid {
     param($Value)
 
@@ -421,9 +407,6 @@ function Get-NormalizedGuid {
     }
 }
 
-# Description: Logs and displays a structured error block with remediation hints.
-# Parameters: Context - Operation being performed; ErrorRecord - Error details from the exception; Path/Key/Value/Command - Optional explicit metadata about the failing operation.
-# Returns: None.
 function Invoke-ErrorHandler {
     param(
         [Parameter(Mandatory)]
@@ -529,9 +512,6 @@ function Invoke-ErrorHandler {
     foreach ($line in $block) { Write-Host $line -ForegroundColor Yellow }
 }
 
-# Description: Prompts the user for a yes/no response with default handling.
-# Parameters: Question - Prompt text; Default - Default answer when input is empty.
-# Returns: Boolean indicating user choice.
 function Get-Confirmation {
     param(
         [string]$Question,
@@ -585,9 +565,6 @@ function Get-Confirmation {
     }
 }
 
-# Description: Reads user input until a valid menu option is provided.
-# Parameters: Prompt - Displayed prompt text; ValidOptions - Allowed option values.
-# Returns: The selected option string.
 function Read-MenuChoice {
     param(
         [string]$Prompt,
@@ -601,9 +578,6 @@ function Read-MenuChoice {
     }
 }
 
-# Description: Adds a permission failure entry to the run context for later reporting.
-# Parameters: Context - Run context that stores permission failures; Result - Result object produced by Set-RegistryValueSafe; Operation - Friendly label for the attempted operation.
-# Returns: Boolean indicating whether a failure was recorded.
 function Add-RegistryPermissionFailure {
     param(
         [pscustomobject]$Context,
@@ -634,9 +608,6 @@ function Add-RegistryPermissionFailure {
     return $true
 }
 
-# Description: Produces a user-facing reason for why a registry write failed based on the result metadata.
-# Parameters: Result - Result object produced by Set-RegistryValueSafe.
-# Returns: String describing the likely reason for the failure.
 function Get-RegistryFailureReason {
     param([pscustomobject]$Result)
 
@@ -652,9 +623,6 @@ function Get-RegistryFailureReason {
     }
 }
 
-# Description: Records a failed high-impact registry write in the session summary and surfaces the cause.
-# Parameters: Context - Run context used for summary tracking; Result - Result object produced by Set-RegistryValueSafe; OperationLabel - Friendly description for the attempted tweak.
-# Returns: Boolean indicating whether a failure was logged.
 function Register-HighImpactRegistryFailure {
     param(
         [pscustomobject]$Context,
@@ -688,9 +656,6 @@ function Register-HighImpactRegistryFailure {
     return $true
 }
 
-# Description: Safely creates or updates a registry value with validation, logging, rollback capture, and optional result reporting.
-# Parameters: Path - Registry path; Name - Value name; Value - Data to set; Type - Registry value type; Critical - Stop on error when specified; Context - optional run context that can hold RegistryRollbackActions; ReturnResult - emits a result object with Success/WasCreated/ErrorCategory.
-# Returns: Nothing by default; when -ReturnResult is passed, returns a PSCustomObject with Success, WasCreated, ErrorCategory, Path, and Name.
 function Set-RegistryValueSafe {
     [CmdletBinding()]
     param(
@@ -843,9 +808,6 @@ function Set-RegistryValueSafe {
     if ($ReturnResult) { return $result }
 }
 
-# Description: Checks a registry result and prompts the user to abort the active preset when a critical failure occurs.
-# Parameters: Result - Registry result object; PresetName - Label for the active preset; OperationLabel - Friendly description of the registry operation; Critical - Treat the failure as abort-worthy.
-# Returns: Boolean indicating whether the caller should abort the preset.
 function Test-RegistryResultForPresetAbort {
     param(
         [pscustomobject]$Result,
@@ -885,9 +847,6 @@ function Test-RegistryResultForPresetAbort {
     return $abort
 }
 
-# Description: Initializes a tracker for counting critical registry write failures within a module.
-# Parameters: Name - Module or feature label for reporting.
-# Returns: PSCustomObject with Name, CriticalFailures, and Abort flag.
 function New-RegistryFailureTracker {
     param([Parameter(Mandatory)][string]$Name)
 
@@ -898,9 +857,6 @@ function New-RegistryFailureTracker {
     }
 }
 
-# Description: Registers the outcome of a registry write and marks the tracker for aborting when a critical failure occurs.
-# Parameters: Tracker - Tracker object created by New-RegistryFailureTracker; Result - Result object returned by Set-RegistryValueSafe; Critical - Treat failure as abort-worthy.
-# Returns: Boolean indicating whether the module should abort further actions.
 function Register-RegistryResult {
     param(
         [Parameter(Mandatory)][pscustomobject]$Tracker,
@@ -917,9 +873,6 @@ function Register-RegistryResult {
     return $true
 }
 
-# Description: Emits a single summary line when critical registry failures were encountered in a module.
-# Parameters: Tracker - Tracker object created by New-RegistryFailureTracker.
-# Returns: None.
 function Write-RegistryFailureSummary {
     param([pscustomobject]$Tracker)
 
@@ -928,9 +881,6 @@ function Write-RegistryFailureSummary {
     }
 }
 
-# Description: Prints a summary of tweak results including package removal and reboot status.
-# Parameters: Status - Hashtable containing outcome details such as PackagesFailed and RebootRequired.
-# Returns: None.
 function Write-OutcomeSummary {
     param(
         [hashtable]$Status,

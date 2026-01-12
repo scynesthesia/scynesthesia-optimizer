@@ -1,7 +1,4 @@
-# Scynesthesia Windows Optimizer - Remote Installer
-# This script downloads the full repository to handle modular dependencies.
 
-# Enforce TLS 1.2 without removing existing flags
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
 $repoUrls = @(
@@ -105,7 +102,6 @@ function Invoke-RepositoryDownload {
     }
 }
 
-# Clear any stale payload from previous runs to avoid mixed versions being executed
 if (Test-Path $tempDir) {
     try {
         $fullTemp = [System.IO.Path]::GetFullPath($tempDir)
@@ -120,7 +116,6 @@ if (Test-Path $tempDir) {
     }
 }
 
-# Create temp directory if it doesn't exist
 if (-not (Test-Path $tempDir)) {
     try {
         New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
@@ -147,7 +142,6 @@ try {
     exit 1
 }
 
-# Locate the main orchestrator within the extracted folder
 $mainScript = Get-ChildItem -Path $tempDir -Filter 'scynesthesiaoptimizer.ps1' -Recurse -File | Select-Object -First 1
 
 if (-not $mainScript) {
@@ -162,4 +156,4 @@ $launchPath = Join-Path $scriptRoot 'scynesthesiaoptimizer.ps1'
 
 Write-Host "[+] Launching Optimizer..." -ForegroundColor Green
 Set-Location $scriptRoot
-Start-Process powershell.exe -ArgumentList '-NoExit', '-ExecutionPolicy Bypass', '-File', "`"$launchPath`"" -WorkingDirectory $scriptRoot
+Start-Process powershell.exe -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-File", "\"$launchPath\"" -WorkingDirectory $scriptRoot

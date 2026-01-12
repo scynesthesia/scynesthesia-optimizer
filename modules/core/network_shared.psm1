@@ -1,4 +1,3 @@
-# Description: Shared helpers for network tweaks reused across presets.
 
 function Get-SharedPhysicalAdapters {
     param(

@@ -1,4 +1,3 @@
-# Depends on: ui.psm1 (loaded by main script)
 if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
 }
@@ -104,9 +103,6 @@ function Get-InstalledAppxPackages {
     return $script:AppxPackageCache
 }
 
-# Description: Retrieves an app removal list from the configuration JSON using the specified key.
-# Parameters: Key - Config property to read; Path - Optional path to the apps configuration file; Context - Optional run context with ScriptRoot.
-# Returns: Array of app package names; empty array when config missing or invalid.
 function Get-AppRemovalList {
     param(
         [Parameter(Mandatory)]
@@ -120,9 +116,6 @@ function Get-AppRemovalList {
     return (config\Get-AppRemovalList -Mode 'Debloat' -ConfigPath $Path -Key $Key -Context $context)
 }
 
-# Description: Creates a system restore point for rollback safety.
-# Parameters: None.
-# Returns: None.
 function New-RestorePointSafe {
     Write-Section "Creating restore point"
 
@@ -189,9 +182,6 @@ function New-RestorePointSafe {
     return $status
 }
 
-# Description: Clears common temporary directories and Windows Update cache.
-# Parameters: Context - Optional run context to align cleanup with ScriptRoot.
-# Returns: None.
 function Clear-TempFiles {
     param(
         [pscustomobject]$Context
@@ -205,7 +195,6 @@ function Clear-TempFiles {
         "${env:WINDIR}\Temp"
     )
 
-    # Avoid deleting the currently running payload (downloaded into %TEMP% by setup.ps1).
     $protectedRoots = @()
     if ($context -and $context.ScriptRoot) {
         try {
@@ -261,9 +250,6 @@ function Clear-TempFiles {
     }
 }
 
-# Description: Performs deeper cleanup including thumbnail cache removal.
-# Parameters: Context - Optional run context to align cleanup with ScriptRoot.
-# Returns: None.
 function Clear-DeepTempAndThumbs {
     param(
         [pscustomobject]$Context
@@ -285,9 +271,6 @@ function Clear-DeepTempAndThumbs {
     }
 }
 
-# Description: Removes common bloatware while preserving core Windows Store functionality.
-# Parameters: AppList - Optional list of packages to remove instead of default SafeRemove list; Context - Optional run context with ScriptRoot.
-# Returns: PSCustomObject containing any failed package removals.
 function Invoke-DebloatSafe {
     param(
         [string[]] $AppList,
@@ -379,9 +362,6 @@ function Invoke-DebloatSafe {
     }
 }
 
-# Description: Removes a broader set of apps and optionally provisioned packages.
-# Parameters: AppList - Optional list of packages to remove instead of default AggressiveRemove list; Context - Optional run context with ScriptRoot.
-# Returns: PSCustomObject containing any failed package removals.
 function Invoke-DebloatAggressive {
     param(
         [string[]] $AppList,

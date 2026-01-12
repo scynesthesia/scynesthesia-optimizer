@@ -1,4 +1,3 @@
-﻿# Depends on: ui.psm1 (loaded by main script)
 Import-Module (Join-Path $PSScriptRoot 'network.psm1') -Force -Scope Local
 if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
@@ -13,16 +12,10 @@ if (-not (Get-Module -Name 'network_shared' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/network_shared.psm1') -Force -Scope Local
 }
 
-# Description: Retrieves active physical adapters excluding virtual or VPN interfaces.
-# Parameters: None.
-# Returns: Collection of eligible adapters or empty array on failure.
 function Get-EligibleNetAdapters {
     return Get-SharedPhysicalAdapters -RequireUp -LoggerPrefix '[NetworkHardcore]' -ErrorContext 'Retrieving physical network adapters'
 }
 
-# Description: Determines whether the current PowerShell session is elevated.
-# Parameters: None.
-# Returns: Boolean indicating administrative context.
 function Test-IsAdminSession {
     try {
         $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -33,9 +26,6 @@ function Test-IsAdminSession {
     }
 }
 
-# Description: Detects whether the current machine is server-class to guard RDMA tweaks.
-# Parameters: None.
-# Returns: Boolean indicating likely server hardware/OS.
 function Test-IsServerClassHardware {
     try {
         $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
@@ -60,9 +50,6 @@ function Test-IsServerClassHardware {
     return $false
 }
 
-# Description: Disables RDMA/NetworkDirect on non-server hardware to avoid compatibility issues.
-# Parameters: Context - Optional run context for logging/summaries.
-# Returns: None.
 function Disable-NetworkDirect {
     param(
         [pscustomobject]$Context
@@ -101,9 +88,6 @@ function Disable-NetworkDirect {
     }
 }
 
-# Description: Disables packet coalescing to avoid artificial latency from driver aggregation.
-# Parameters: Context - Optional run context for logging/summaries.
-# Returns: None.
 function Disable-PacketCoalescing {
     param(
         [pscustomobject]$Context
@@ -136,9 +120,6 @@ function Disable-PacketCoalescing {
     }
 }
 
-# Description: Enables TCP HyStart when supported to optimize early connection slow start behavior.
-# Parameters: Context - Optional run context for logging/summaries.
-# Returns: None.
 function Enable-TcpHyStart {
     param(
         [pscustomobject]$Context
@@ -178,9 +159,6 @@ function Enable-TcpHyStart {
     }
 }
 
-# Description: Classifies adapters for hardcore tweaks, including fragile Wi-Fi detection.
-# Parameters: Adapter - NetAdapter object to evaluate.
-# Returns: Object describing Wi-Fi/fragility status.
 function Get-HardcoreAdapterProfile {
     param(
         [Parameter(Mandatory)][object]$Adapter
@@ -231,9 +209,6 @@ function Get-HardcoreAdapterProfile {
     }
 }
 
-# Description: Evaluates a network adapter for legacy driver risks.
-# Parameters: Adapter - NetAdapter object to evaluate.
-# Returns: Object indicating whether Interrupt Moderation/MSI should be skipped along with metadata.
 function Get-NicLegacyDriverAssessment {
     param(
         [Parameter(Mandatory)][object]$Adapter
@@ -327,9 +302,6 @@ function Get-NicLegacyDriverAssessment {
     return $result
 }
 
-# Description: Determines whether low-level socket tweaks should be skipped for compatibility.
-# Parameters: BuildNumber - Current OS build; Adapters - Optional list of adapters for fragility detection.
-# Returns: Collection of objects with Name/Reason for each skipped tweak.
 function Get-LowLevelSocketTweakSkips {
     param(
         [int]$BuildNumber,
@@ -382,9 +354,6 @@ function Get-LowLevelSocketTweakSkips {
     return $skips
 }
 
-# Description: Applies advanced TCP/IP registry parameters for performance tuning.
-# Parameters: Context - Optional run context for reboot tracking; FailureTracker - Optional tracker for critical registry failures.
-# Returns: None. Sets reboot flag after changes.
 function Set-TcpIpAdvancedParameters {
     param(
         [object]$Context,
@@ -464,9 +433,6 @@ function Set-TcpIpAdvancedParameters {
     }
 }
 
-# Description: Disables network throttling via registry for maximum throughput.
-# Parameters: Context - Optional run context for reboot tracking.
-# Returns: None. Sets reboot flag on success.
 function Set-NetworkThrottlingHardcore {
     param(
         [object]$Context
@@ -475,9 +441,6 @@ function Set-NetworkThrottlingHardcore {
     Invoke-NetworkThrottlingShared -Context $Context -LoggerPrefix '[NetworkHardcore]' -HostMessage 'Disabling network throttling' -OperationLabel 'Hardcore network throttling index' -SuccessMessage 'NetworkThrottlingIndex set to maximum performance.' -FailureMessage 'NetworkThrottlingIndex could not be set (permission issue?).' -MarkReboot | Out-Null
 }
 
-# Description: Configures TCP/IP service provider priorities for resolution order.
-# Parameters: Context - Optional run context for reboot tracking; FailureTracker - Optional tracker for critical registry failures.
-# Returns: None. Sets reboot flag after applying values.
 function Set-ServicePriorities {
     param(
         [object]$Context,
@@ -487,9 +450,6 @@ function Set-ServicePriorities {
     Invoke-ServiceProviderPrioritiesShared -Context $Context -FailureTracker $FailureTracker -LoggerPrefix '[NetworkHardcore]' -HostMessage 'Configuring Service Provider priorities' -MarkReboot | Out-Null
 }
 
-# Description: Applies Winsock parameter adjustments to align socket behavior.
-# Parameters: Context - Optional run context for reboot tracking; FailureTracker - Optional tracker for critical registry failures.
-# Returns: None. Sets reboot flag when updates are made.
 function Set-WinsockOptimizations {
     param(
         [object]$Context,
@@ -534,9 +494,6 @@ function Set-WinsockOptimizations {
     }
 }
 
-# Description: Tunes LanmanServer parameters for reduced latency and connection stability.
-# Parameters: Context - Optional run context for reboot tracking.
-# Returns: None. Sets reboot flag when registry changes occur.
 function Optimize-LanmanServer {
     param(
         [object]$Context
@@ -582,9 +539,6 @@ function Optimize-LanmanServer {
     }
 }
 
-# Description: Runs netsh commands to set advanced TCP/IP global options for performance.
-# Parameters: Context - Optional run context for reboot tracking.
-# Returns: None. Sets reboot flag following configuration.
 function Set-NetshHardcoreGlobals {
     param(
         [object]$Context
@@ -762,9 +716,6 @@ function Set-NetshHardcoreGlobals {
 $script:NicRegistryAccessDenied = $false
 $script:NicRegistryTweaksApplied = $false
 
-# Description: Maps physical adapters to their registry class paths for advanced tweaks.
-# Parameters: None.
-# Returns: Collection of objects containing adapter references and registry paths.
 function Get-NicRegistryPaths {
     if ($script:NicRegistryAccessDenied) {
         Write-Host "  [!] NIC registry access was previously denied; skipping registry mapping." -ForegroundColor Yellow
@@ -774,9 +725,6 @@ function Get-NicRegistryPaths {
     return Get-SharedNicRegistryDiscovery -RequireUp -AllowOwnershipFallback -LoggerPrefix '[NetworkHardcore]' -AccessDeniedFlag ([ref]$script:NicRegistryAccessDenied)
 }
 
-# Description: Applies hardcore NIC registry tweaks for power, wake, and latency behaviors.
-# Parameters: Context - Optional run context for reboot tracking.
-# Returns: None. Sets reboot flag after applying changes.
 function Set-NicRegistryHardcore {
     param(
         [object]$Context
@@ -822,7 +770,6 @@ function Set-NicRegistryHardcore {
             'S5WakeOnLan'          = '0'
             'WakeOnLink'           = '0'
             'WakeOnDisconnect'     = '0'
-            # Keep the shutdown link at full speed to avoid wake triggers from low-power renegotiation.
             'WolShutdownLinkSpeed' = '2'
         }
 
@@ -983,9 +930,6 @@ function Set-NicRegistryHardcore {
     }
 }
 
-# Description: Identifies the primary adapters based on speed and connection status.
-# Parameters: Adapters - Collection of adapters to evaluate.
-# Returns: Array of primary adapters or empty array when none qualify.
 function Get-PrimaryNetAdapter {
     try {
         $adapters = Get-EligibleNetAdapters
@@ -1004,9 +948,6 @@ function Get-PrimaryNetAdapter {
     }
 }
 
-# Description: Hardens Wake-on-LAN settings through registry and adapter UI properties.
-# Parameters: Context - Optional run context for permission tracking.
-# Returns: None. Sets global reboot flag after changes.
 function Set-WakeOnLanHardcore {
     param(
         [object]$Context
@@ -1062,7 +1003,6 @@ function Set-WakeOnLanHardcore {
         'S5WakeOnLan'          = '0'
         'WakeOnLink'           = '0'
         'WakeOnDisconnect'     = '0'
-        # "2" = Not Speed Down to keep the link at full speed during shutdown states.
         'WolShutdownLinkSpeed' = '2'
     }
 
@@ -1126,9 +1066,6 @@ function Set-WakeOnLanHardcore {
     }
 }
 
-# Description: Tests whether a given ICMP payload size passes without fragmentation.
-# Parameters: PayloadSize - Size of the ICMP payload; Target - Host to ping.
-# Returns: Object indicating Success/Fragmented flags plus raw output metadata.
 function Test-MtuSize {
     param(
         [Parameter(Mandatory)][int]$PayloadSize,
@@ -1153,9 +1090,6 @@ function Test-MtuSize {
     }
 }
 
-# Description: Performs a binary search to discover the optimal MTU for the target host.
-# Parameters: Target - Hostname or IP used for MTU discovery.
-# Returns: Integer MTU size when successful, otherwise null.
 function Find-OptimalMtu {
     param(
         [string]$Target = '1.1.1.1',
@@ -1315,9 +1249,6 @@ function Find-OptimalMtu {
     }
 }
 
-# Description: Applies a specified MTU to a collection of adapters.
-# Parameters: Mtu - MTU value to set; Adapters - Target adapters.
-# Returns: None.
 function Invoke-MtuToAdapters {
     param(
         [Parameter(Mandatory)][int]$Mtu,
@@ -1447,9 +1378,6 @@ function Invoke-MtuToAdapters {
     }
 }
 
-# Description: Estimates hardware age in years based on BIOS release date.
-# Parameters: None.
-# Returns: Integer years when available, otherwise null.
 function Get-HardwareAgeYears {
     try {
         $tryParseDate = {
@@ -1524,9 +1452,6 @@ function Get-HardwareAgeYears {
     }
 }
 
-# Description: Suggests core affinity ranges for network IRQs to improve latency.
-# Parameters: None.
-# Returns: None.
 function Suggest-NetworkIrqCores {
     try {
         $logical = [Environment]::ProcessorCount
@@ -1538,9 +1463,6 @@ function Suggest-NetworkIrqCores {
     }
 }
 
-# Description: Configures the TCP congestion provider, preferring BBR when available.
-# Parameters: Context - Optional run context for summary tracking.
-# Returns: None. Writes status messages for chosen provider.
 function Set-TcpCongestionProvider {
     param(
         [pscustomobject]$Context
@@ -1595,9 +1517,6 @@ function Set-TcpCongestionProvider {
     }
 }
 
-# Description: Disables legacy IPv6 tunneling mechanisms (Teredo/ISATAP) via netsh.
-# Parameters: None.
-# Returns: None. Writes status messages for each action.
 function Disable-NetworkTunneling {
     try {
         Write-Host "  [>] Desactivando túneles heredados (Teredo/ISATAP)..." -ForegroundColor Magenta
@@ -1625,9 +1544,6 @@ function Disable-NetworkTunneling {
     }
 }
 
-# Description: Enables Weak Host Send/Receive for eligible adapters and tracks rollback state.
-# Parameters: Context - Optional run context for rollback tracking.
-# Returns: None.
 function Optimize-WeakHostModel {
     param(
         [pscustomobject]$Context
@@ -1685,9 +1601,6 @@ function Optimize-WeakHostModel {
     }
 }
 
-# Description: Applies advanced network optimizations including registry, driver, MTU, and congestion tweaks.
-# Parameters: Context - Optional run context for reboot tracking.
-# Returns: None. Sets reboot flag due to extensive changes.
 function Invoke-NetworkTweaksHardcore {
     param(
         [object]$Context
@@ -1747,7 +1660,6 @@ function Invoke-NetworkTweaksHardcore {
 
     Invoke-NetworkTweaksGaming -Context $Context
 
-    # Capture IPv6 state for rollback before making optional changes.
     $ipv6Bindings = @()
     try {
         $ipv6Bindings = Get-NetAdapterBinding -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue |
