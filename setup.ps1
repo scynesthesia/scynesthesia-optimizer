@@ -162,4 +162,4 @@ $launchPath = Join-Path $scriptRoot 'scynesthesiaoptimizer.ps1'
 
 Write-Host "[+] Launching Optimizer..." -ForegroundColor Green
 Set-Location $scriptRoot
-& $launchPath
+Start-Process powershell.exe -ArgumentList '-NoExit', '-ExecutionPolicy Bypass', '-File', "`"$launchPath`"" -WorkingDirectory $scriptRoot
