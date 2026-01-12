@@ -34,6 +34,9 @@ try {
     }
 
     $moduleMap = Import-PowerShellDataFile -Path $moduleMapPath -ErrorAction Stop
+    if ($null -eq $moduleMap -or $moduleMap.Count -eq 0) {
+        throw 'El mapa de módulos está vacío o es inválido. Revisa modules/modules.map.psd1.'
+    }
     $orderedModules = @()
 
     if ($moduleMap.Core) { $orderedModules += $moduleMap.Core }
