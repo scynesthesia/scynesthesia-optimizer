@@ -78,7 +78,7 @@ try {
         } else {
             "loaded"
         }
-        Write-Host "[OK] Module $status: $moduleFileName" -ForegroundColor Green
+        Write-Host "[OK] Module ${status}: $moduleFileName" -ForegroundColor Green
     }
 
     Write-Host "Modules loaded successfully." -ForegroundColor Green
