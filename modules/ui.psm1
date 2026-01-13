@@ -89,13 +89,13 @@ function Resolve-RegistryPathComponents {
     param([Parameter(Mandatory)][string]$Path)
 
     $normalized = $Path.Trim()
-    $firstSeparator = $normalized.IndexOf('\\')
+    $firstSeparator = $normalized.IndexOf('\')
     if ($firstSeparator -lt 0) {
         throw [System.ArgumentException]::new("Registry path is missing a subkey: $Path")
     }
 
     $hiveSegment = $normalized.Substring(0, $firstSeparator).TrimEnd(':')
-    $subPath = $normalized.Substring($firstSeparator).TrimStart('\\')
+    $subPath = $normalized.Substring($firstSeparator).TrimStart('\')
 
     $hiveName = $hiveSegment.ToUpperInvariant()
     $hiveEnum = switch ($hiveName) {

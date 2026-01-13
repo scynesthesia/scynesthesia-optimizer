@@ -713,7 +713,8 @@ function Run-PCSlowPreset {
     $restoreStatus = New-RestorePointSafe
     $restoreGatePassed = Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Aggressive preset"
     if ($script:Logger) {
-        Write-Log -Message "Restore point gate evaluated." -Level (if ($restoreGatePassed) { 'Info' } else { 'Warning' }) -Data @{
+        $restoreGateLevel = if ($restoreGatePassed) { 'Info' } else { 'Warning' }
+        Write-Log -Message "Restore point gate evaluated." -Level $restoreGateLevel -Data @{
             preset         = 'Aggressive'
             restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
             restoreEnabled = if ($null -ne $restoreStatus) { [bool]$restoreStatus.Enabled } else { $null }
@@ -727,7 +728,8 @@ function Run-PCSlowPreset {
         if ($script:UnsafeMode) {
             $proceedUnsafely = Get-Confirmation -Question "A restore point could not be created. Continue in UNSAFE mode anyway?" -Default 'n'
             if ($script:Logger) {
-                Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level (if ($proceedUnsafely) { 'Warning' } else { 'Info' }) -Data @{
+                $unsafeConfirmLevel = if ($proceedUnsafely) { 'Warning' } else { 'Info' }
+                Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level $unsafeConfirmLevel -Data @{
                     preset         = 'Aggressive'
                     unsafeMode     = [bool]$script:UnsafeMode
                     userConfirmed  = [bool]$proceedUnsafely
