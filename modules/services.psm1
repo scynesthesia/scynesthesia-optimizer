@@ -36,7 +36,15 @@ function Disable-ServiceByRegistry {
             Invoke-ErrorHandler -Context "Disabling protected service $Name (TrustedInstaller)" -ErrorRecord $errorRecord
         }
 
-        Stop-Service -Name $Name -Force -ErrorAction SilentlyContinue
+        if ($service) {
+            $isDriver = ($service.ServiceType -band [System.ServiceProcess.ServiceType]::KernelDriver) -or
+                ($service.ServiceType -band [System.ServiceProcess.ServiceType]::FileSystemDriver)
+            if ($isDriver) {
+                Write-Host "  [ ] Skipping stop for driver service $Name." -ForegroundColor DarkGray
+            } else {
+                Stop-Service -Name $Name -Force -NoWait -ErrorAction SilentlyContinue
+            }
+        }
     } catch {
         Invoke-ErrorHandler -Context "Disabling service $Name" -ErrorRecord $_
     }
