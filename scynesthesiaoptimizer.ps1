@@ -90,6 +90,50 @@ try {
     exit 1
 }
 
+function Ensure-ModuleCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$CommandName,
+        [Parameter(Mandatory)]
+        [string]$ModuleRelativePath
+    )
+
+    if (Get-Command -Name $CommandName -ErrorAction SilentlyContinue) {
+        return $true
+    }
+
+    $modulePath = Join-Path $scriptRoot $ModuleRelativePath
+    if (-not (Test-Path $modulePath)) {
+        Write-Error "Required module file not found: $modulePath (needed for $CommandName)"
+        return $false
+    }
+
+    try {
+        Import-Module -Name $modulePath -Force -Global -ErrorAction Stop
+    } catch {
+        Write-Error "Failed to load module for $CommandName ($modulePath): $($_.Exception.Message)"
+        return $false
+    }
+
+    if (-not (Get-Command -Name $CommandName -ErrorAction SilentlyContinue)) {
+        Write-Error "Command $CommandName is still unavailable after loading $modulePath."
+        return $false
+    }
+
+    return $true
+}
+
+if (-not (Ensure-ModuleCommand -CommandName 'Get-NeedsReboot' -ModuleRelativePath 'modules/core/context.psm1')) {
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+if (-not (Ensure-ModuleCommand -CommandName 'Read-MenuChoice' -ModuleRelativePath 'modules/ui.psm1')) {
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
 $Context = New-RunContext -ScriptRoot $scriptRoot
 $Context.RollbackPersistencePath = Get-RollbackPersistencePath
 Restore-RollbackState -Context $Context -Path $Context.RollbackPersistencePath | Out-Null
