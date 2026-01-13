@@ -14,6 +14,18 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 
+function Stop-RollbackTimerSafely {
+    try {
+        if (Get-Command -Name Stop-RollbackPersistenceTimer -ErrorAction SilentlyContinue) {
+            Stop-RollbackPersistenceTimer -Timer $script:RollbackPersistTimer -Subscription $script:RollbackPersistSubscription -SourceIdentifier 'RegistryRollbackPersistence'
+        }
+    } catch { }
+
+    if ($script:RollbackPersistTimer) {
+        try { $script:RollbackPersistTimer.Dispose() } catch { }
+    }
+}
+
 try {
     $modulesRoot = Join-Path $scriptRoot 'modules'
     $moduleMapPath = Join-Path $modulesRoot 'modules.map.psd1'
@@ -63,7 +75,7 @@ try {
             continue
         }
 
-        $importParams = @{ Path = $resolvedPath; ErrorAction = 'Stop' }
+        $importParams = @{ Name = $resolvedPath; ErrorAction = 'Stop'; DisableNameChecking = $true; WarningAction = 'SilentlyContinue' }
         if ($shouldForceReload) { $importParams.Force = $true }
 
         Import-Module @importParams
@@ -86,6 +98,50 @@ try {
     }
     Stop-RollbackTimerSafely
     Write-Host "Make sure the 'modules' folder is next to this script."
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+function Ensure-ModuleCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$CommandName,
+        [Parameter(Mandatory)]
+        [string]$ModuleRelativePath
+    )
+
+    if (Get-Command -Name $CommandName -ErrorAction SilentlyContinue) {
+        return $true
+    }
+
+    $modulePath = Join-Path $scriptRoot $ModuleRelativePath
+    if (-not (Test-Path $modulePath)) {
+        Write-Error "Required module file not found: $modulePath (needed for $CommandName)"
+        return $false
+    }
+
+    try {
+        Import-Module -Name $modulePath -Force -Global -ErrorAction Stop
+    } catch {
+        Write-Error "Failed to load module for $CommandName ($modulePath): $($_.Exception.Message)"
+        return $false
+    }
+
+    if (-not (Get-Command -Name $CommandName -ErrorAction SilentlyContinue)) {
+        Write-Error "Command $CommandName is still unavailable after loading $modulePath."
+        return $false
+    }
+
+    return $true
+}
+
+if (-not (Ensure-ModuleCommand -CommandName 'Get-NeedsReboot' -ModuleRelativePath 'modules/core/context.psm1')) {
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+if (-not (Ensure-ModuleCommand -CommandName 'Read-MenuChoice' -ModuleRelativePath 'modules/ui.psm1')) {
     Read-Host "Press Enter to exit"
     exit 1
 }
@@ -116,16 +172,6 @@ $script:RollbackPersistSubscription = Register-ObjectEvent -InputObject $script:
 } -ErrorAction SilentlyContinue
 $script:RollbackPersistTimer.Start()
 
-function Stop-RollbackTimerSafely {
-    try {
-        Stop-RollbackPersistenceTimer -Timer $script:RollbackPersistTimer -Subscription $script:RollbackPersistSubscription -SourceIdentifier 'RegistryRollbackPersistence'
-    } catch { }
-
-    if ($script:RollbackPersistTimer) {
-        try { $script:RollbackPersistTimer.Dispose() } catch { }
-    }
-}
-
 $TranscriptStarted = $false
 if (Get-Confirmation "Enable session logging to a file? (Recommended for service records)" 'n') {
     $logDir = Join-Path $env:TEMP "ScynesthesiaOptimizer"
@@ -138,7 +184,8 @@ if (Get-Confirmation "Enable session logging to a file? (Recommended for service
         Start-Transcript -Path $logFile -Append -ErrorAction Stop
         $TranscriptStarted = $true
         Write-Host "Logging started: $logFile" -ForegroundColor Gray
-        $Global:ScynesthesiaLogPath = $logFile
+        $Global:ScynesthesiaTranscriptPath = $logFile
+        $Global:ScynesthesiaLogPath = Join-Path $logDir "Scynesthesia_Runtime_$timestamp.jsonl"
     } catch {
         Write-Warning "Could not start logging. Check permissions."
     }
@@ -244,7 +291,8 @@ function Confirm-HighImpactRestoreGate {
     $gatePassed = Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel $ActionLabel
 
     if ($script:Logger) {
-        Write-Log -Message "Restore point gate evaluated." -Level (if ($gatePassed) { 'Info' } else { 'Warning' }) -Data @{
+        $restoreGateLevel = if ($gatePassed) { 'Info' } else { 'Warning' }
+        Write-Log -Message "Restore point gate evaluated." -Level $restoreGateLevel -Data @{
             action         = $ActionLabel
             restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
             restoreEnabled = if ($null -ne $restoreStatus) { [bool]$restoreStatus.Enabled } else { $null }
@@ -264,7 +312,8 @@ function Confirm-HighImpactRestoreGate {
     if ($AllowUnsafeOverride -and $script:UnsafeMode) {
         $proceedUnsafely = Get-Confirmation -Question "A restore point could not be created for $ActionLabel. Continue in UNSAFE mode anyway?" -Default 'n'
         if ($script:Logger) {
-            Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level (if ($proceedUnsafely) { 'Warning' } else { 'Info' }) -Data @{
+            $unsafeConfirmLevel = if ($proceedUnsafely) { 'Warning' } else { 'Info' }
+            Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level $unsafeConfirmLevel -Data @{
                 action         = $ActionLabel
                 unsafeMode     = [bool]$script:UnsafeMode
                 userConfirmed  = [bool]$proceedUnsafely
@@ -667,7 +716,8 @@ function Run-PCSlowPreset {
     $restoreStatus = New-RestorePointSafe
     $restoreGatePassed = Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Aggressive preset"
     if ($script:Logger) {
-        Write-Log -Message "Restore point gate evaluated." -Level (if ($restoreGatePassed) { 'Info' } else { 'Warning' }) -Data @{
+        $restoreGateLevel = if ($restoreGatePassed) { 'Info' } else { 'Warning' }
+        Write-Log -Message "Restore point gate evaluated." -Level $restoreGateLevel -Data @{
             preset         = 'Aggressive'
             restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
             restoreEnabled = if ($null -ne $restoreStatus) { [bool]$restoreStatus.Enabled } else { $null }
@@ -678,20 +728,27 @@ function Run-PCSlowPreset {
 
     if (-not $restoreGatePassed) {
         $proceedUnsafely = $false
-        if ($script:UnsafeMode) {
-            $proceedUnsafely = Get-Confirmation -Question "A restore point could not be created. Continue in UNSAFE mode anyway?" -Default 'n'
-            if ($script:Logger) {
-                Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level (if ($proceedUnsafely) { 'Warning' } else { 'Info' }) -Data @{
-                    preset         = 'Aggressive'
-                    unsafeMode     = [bool]$script:UnsafeMode
-                    userConfirmed  = [bool]$proceedUnsafely
-                    restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
-                }
+        $proceedPrompt = if ($script:UnsafeMode) {
+            "A restore point could not be created. Continue in UNSAFE mode anyway?"
+        } else {
+            "A restore point could not be created. Continue anyway (Unsafe mode)?"
+        }
+        $proceedUnsafely = Get-Confirmation -Question $proceedPrompt -Default 'n'
+        if ($proceedUnsafely -and -not $script:UnsafeMode) {
+            $script:UnsafeMode = $true
+        }
+        if ($script:Logger) {
+            $unsafeConfirmLevel = if ($proceedUnsafely) { 'Warning' } else { 'Info' }
+            Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level $unsafeConfirmLevel -Data @{
+                preset         = 'Aggressive'
+                unsafeMode     = [bool]$script:UnsafeMode
+                userConfirmed  = [bool]$proceedUnsafely
+                restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
             }
         }
 
         if (-not $proceedUnsafely) {
-            Write-Warning "[Safety] Aggressive preset aborted because a restore point is required. Re-run with -UnsafeMode to override."
+            Write-Warning "[Safety] Aggressive preset aborted because a restore point is required."
             Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "Aggressive preset blocked: restore point unavailable (UnsafeMode=$($script:UnsafeMode))"
             return
         }
