@@ -22,32 +22,73 @@ function Disable-ServiceByRegistry {
         $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name"
 
         if ($result -and $result.ErrorCategory -eq 'PermissionDenied') {
-            $message = "[Services] $Name registry update denied. Attempting take ownership and grant S-1-5-32-544 full control."
-            Write-Host "  [!] $message" -ForegroundColor Yellow
-            Write-Log -Message $message -Level 'Warning'
+            $adminSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
 
-            $ownershipApplied = $false
-            try {
-                $adminGroup = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
-                $acl = Get-Acl -Path $serviceKeyPath -ErrorAction Stop
-                $acl.SetOwner($adminGroup)
-                $accessRule = New-Object System.Security.AccessControl.RegistryAccessRule(
-                    $adminGroup,
-                    'FullControl',
-                    'ContainerInherit,ObjectInherit',
-                    'None',
-                    'Allow'
-                )
-                $acl.SetAccessRule($accessRule)
-                Set-Acl -Path $serviceKeyPath -AclObject $acl -ErrorAction Stop
-                $ownershipApplied = $true
-                Write-Log -Message "[Services] Ownership updated for $serviceKeyPath." -Level 'Info'
-            } catch {
-                Write-Log -Message "[Services] Failed to update ownership for $serviceKeyPath. Error: $($_.Exception.Message)" -Level 'Warning'
+            if ($Name -in @('DPS', 'WdiServiceHost', 'WdiSystemHost')) {
+                $message = "[Services] $Name registry update denied. Attempting .NET access control update for S-1-5-32-544."
+                Write-Host "  [!] $message" -ForegroundColor Yellow
+                Write-Log -Message $message -Level 'Warning'
+
+                $netAclApplied = $false
+                try {
+                    $regKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
+                        "SYSTEM\\CurrentControlSet\\Services\\$Name",
+                        [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+                        [System.Security.AccessControl.RegistryRights]::ChangePermissions
+                    )
+                    if ($regKey) {
+                        $regAcl = $regKey.GetAccessControl()
+                        $regRule = New-Object System.Security.AccessControl.RegistryAccessRule(
+                            $adminSid,
+                            'FullControl',
+                            'ContainerInherit,ObjectInherit',
+                            'None',
+                            'Allow'
+                        )
+                        $regAcl.SetAccessRule($regRule)
+                        $regKey.SetAccessControl($regAcl)
+                        $regKey.Close()
+                        $netAclApplied = $true
+                        Write-Log -Message "[Services] .NET ACL applied for $serviceKeyPath." -Level 'Info'
+                    } else {
+                        Write-Log -Message "[Services] .NET ACL update skipped. Registry key not found for $serviceKeyPath." -Level 'Warning'
+                    }
+                } catch {
+                    Write-Log -Message "[Services] Failed .NET ACL update for $serviceKeyPath. Error: $($_.Exception.Message)" -Level 'Warning'
+                }
+
+                if ($netAclApplied) {
+                    $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name (post-.NET ACL)"
+                }
             }
 
-            if ($ownershipApplied) {
-                $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name (post-ownership)"
+            if ($result -and $result.ErrorCategory -eq 'PermissionDenied') {
+                $message = "[Services] $Name registry update denied. Attempting take ownership and grant S-1-5-32-544 full control."
+                Write-Host "  [!] $message" -ForegroundColor Yellow
+                Write-Log -Message $message -Level 'Warning'
+
+                $ownershipApplied = $false
+                try {
+                    $acl = Get-Acl -Path $serviceKeyPath -ErrorAction Stop
+                    $acl.SetOwner($adminSid)
+                    $accessRule = New-Object System.Security.AccessControl.RegistryAccessRule(
+                        $adminSid,
+                        'FullControl',
+                        'ContainerInherit,ObjectInherit',
+                        'None',
+                        'Allow'
+                    )
+                    $acl.SetAccessRule($accessRule)
+                    Set-Acl -Path $serviceKeyPath -AclObject $acl -ErrorAction Stop
+                    $ownershipApplied = $true
+                    Write-Log -Message "[Services] Ownership updated for $serviceKeyPath." -Level 'Info'
+                } catch {
+                    Write-Log -Message "[Services] Failed to update ownership for $serviceKeyPath. Error: $($_.Exception.Message)" -Level 'Warning'
+                }
+
+                if ($ownershipApplied) {
+                    $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name (post-ownership)"
+                }
             }
         }
 
