@@ -26,14 +26,13 @@ function Disable-ServiceByRegistry {
         }
 
         if ($result -and $result.ErrorCategory -eq 'PermissionDenied') {
-            $exception = [System.UnauthorizedAccessException]::new("Registry update denied for service $Name.")
-            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                $exception,
-                'ServiceRegistryAccessDenied',
-                [System.Management.Automation.ErrorCategory]::PermissionDenied,
-                $Name
-            )
-            Invoke-ErrorHandler -Context "Disabling protected service $Name (TrustedInstaller)" -ErrorRecord $errorRecord
+            $message = "[Services] $Name registry update denied (protected service)."
+            Write-Host "  [!] $message" -ForegroundColor Yellow
+            Write-Log -Message $message -Level 'Warning'
+            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message $message
+            }
+            return
         }
 
         if ($service) {
