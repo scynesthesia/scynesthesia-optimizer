@@ -31,13 +31,7 @@ function Invoke-AggressiveTweaks {
     $context = Get-RunContext -Context $Context
     $presetLabel = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     Write-Section "Additional tweaks for slow PCs (more aggressive)"
-    $appxCommand = Get-Command -Name 'Get-InstalledAppxPackages' -ErrorAction SilentlyContinue
-    if ($appxCommand) {
-        $appxPackages = @(& $appxCommand)
-    } else {
-        $appxPackages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
-        Write-Warning "Get-InstalledAppxPackages not available; falling back to Get-AppxPackage."
-    }
+    $appxPackages = @(Get-InstalledAppxPackages)
 
     $hibernationWarning = "WARNING: Disabling hibernation on laptops will disable Fast Startup and may prevent the system from saving state if the battery dies."
     $hibernationPrompt = if ($HardwareProfile.IsLaptop) {
