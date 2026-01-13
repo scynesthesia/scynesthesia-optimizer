@@ -1157,13 +1157,13 @@ function Find-OptimalMtu {
         $baseSuccess = $false
         foreach ($candidate in $candidateTargets) {
             if (& $isProbeTimedOut) {
-                Write-Host "  [!] MTU probe timed out while selecting target. Using safe MTU fallback of 1500." -ForegroundColor Yellow
-                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = "Probe timeout (${effectiveSeconds}s)" }
+                Write-Host '  [!] MTU probe timed out while selecting target. Using safe MTU fallback of 1500.' -ForegroundColor Yellow
+                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = ('Probe timeout ({0}s)' -f $effectiveSeconds) }
             }
             $probe = & $testBasicPing $candidate
             if ($probe.Success) {
                 if ($candidate -ne $Target) {
-                    Write-Host "  [i] Switching MTU probe target to $candidate after connectivity probe failure." -ForegroundColor Cyan
+                    Write-Host ('  [i] Switching MTU probe target to {0} after connectivity probe failure.' -f $candidate) -ForegroundColor Cyan
                 }
                 $selectedTarget = $candidate
                 $baseSuccess = $true
@@ -1171,17 +1171,17 @@ function Find-OptimalMtu {
             }
 
             if (-not $probe.TimedOut -and $candidate -eq $Target -and $gateway) {
-                Write-Host "  [!] Default target $Target refused MTU probe; trying gateway $gateway." -ForegroundColor Yellow
+                Write-Host ('  [!] Default target {0} refused MTU probe; trying gateway {1}.' -f $Target, $gateway) -ForegroundColor Yellow
             }
         }
 
         if (& $isProbeTimedOut) {
-            Write-Host "  [!] MTU probe exceeded ${($maxProbeDuration.TotalSeconds)}s. Using safe default 1500." -ForegroundColor Yellow
-            return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = "Probe timeout (${effectiveSeconds}s)" }
+            Write-Host ('  [!] MTU probe exceeded {0}s. Using safe default 1500.' -f $maxProbeDuration.TotalSeconds) -ForegroundColor Yellow
+            return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = ('Probe timeout ({0}s)' -f $effectiveSeconds) }
         }
 
         if (-not $baseSuccess) {
-            Write-Host "  [!] ISP/Router blocks DF packets; using safe MTU fallback of 1500." -ForegroundColor Yellow
+            Write-Host '  [!] ISP/Router blocks DF packets; using safe MTU fallback of 1500.' -ForegroundColor Yellow
             return [pscustomobject]@{ Mtu = 1500; WasFallback = $true }
         }
 
@@ -1194,12 +1194,12 @@ function Find-OptimalMtu {
 
         while ($low -le $high) {
             if (& $isProbeTimedOut) {
-                Write-Host "  [!] MTU probe exceeded ${($maxProbeDuration.TotalSeconds)}s. Using safe default 1500." -ForegroundColor Yellow
-                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = "Probe timeout (${effectiveSeconds}s)" }
+                Write-Host ('  [!] MTU probe exceeded {0}s. Using safe default 1500.' -f $maxProbeDuration.TotalSeconds) -ForegroundColor Yellow
+                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = ('Probe timeout ({0}s)' -f $effectiveSeconds) }
             }
             $mid = [int](($low + $high) / 2)
             $mtuCandidate = $mid + 28
-            Write-Host "  [>] MTU test step ${step}: payload $mid bytes (candidate MTU $mtuCandidate)" -ForegroundColor Cyan
+            Write-Host ('  [>] MTU test step {0}: payload {1} bytes (candidate MTU {2})' -f $step, $mid, $mtuCandidate) -ForegroundColor Cyan
             $attempt = 0
             $testResult = $null
             do {
@@ -1207,7 +1207,7 @@ function Find-OptimalMtu {
                 $testResult = Test-MtuSize -PayloadSize $mid -Target $selectedTarget
                 if ($testResult.Success -or $testResult.Fragmented) { break }
                 if ($attempt -lt $maxPingRetries) {
-                    Write-Host "      ~ Ping attempt $attempt/$maxPingRetries failed without fragmentation; retrying to rule out jitter." -ForegroundColor Gray
+                    Write-Host ('      ~ Ping attempt {0}/{1} failed without fragmentation; retrying to rule out jitter.' -f $attempt, $maxPingRetries) -ForegroundColor Gray
                 }
             } while ($attempt -lt $maxPingRetries)
 
@@ -1215,13 +1215,13 @@ function Find-OptimalMtu {
                 $best = $mid
                 $success = $true
                 $low = $mid + 1
-                Write-Host "      ✓ Success, raising floor to $low" -ForegroundColor Green
+                Write-Host ('      OK: Success, raising floor to {0}' -f $low) -ForegroundColor Green
             } else {
                 if ($testResult.Fragmented) {
                     $high = $mid - 1
-                    Write-Host "      x Fragmentation detected, lowering ceiling to $high" -ForegroundColor Yellow
+                    Write-Host ('      x Fragmentation detected, lowering ceiling to {0}' -f $high) -ForegroundColor Yellow
                 } else {
-                    Write-Host "      x Ping failed without fragmentation (code $($testResult.ExitCode)); stopping probe." -ForegroundColor Yellow
+                    Write-Host ('      x Ping failed without fragmentation (code {0}); stopping probe.' -f $testResult.ExitCode) -ForegroundColor Yellow
                     break
                 }
             }
@@ -1230,18 +1230,18 @@ function Find-OptimalMtu {
 
         if (-not $success) {
             $fallbackMtu = 1500
-            Write-Host "  [!] No successful MTU probe responses. Using safe default $fallbackMtu" -ForegroundColor Yellow
+            Write-Host ('  [!] No successful MTU probe responses. Using safe default {0}' -f $fallbackMtu) -ForegroundColor Yellow
             return [pscustomobject]@{ Mtu = $fallbackMtu; WasFallback = $true }
         }
 
         $mtu = $best + 28
         if ($mtu -lt 1400) {
             $fallbackMtu = 1500
-            Write-Host "  [!] Discovered MTU $mtu is below the 1400-byte safety threshold. Retaining default MTU $fallbackMtu." -ForegroundColor Yellow
+            Write-Host ('  [!] Discovered MTU {0} is below the 1400-byte safety threshold. Retaining default MTU {1}.' -f $mtu, $fallbackMtu) -ForegroundColor Yellow
             return [pscustomobject]@{ Mtu = $fallbackMtu; WasFallback = $true }
         }
 
-        Write-Host "  [OK] Optimal MTU discovered: $mtu bytes" -ForegroundColor Green
+        Write-Host ('  [OK] Optimal MTU discovered: {0} bytes' -f $mtu) -ForegroundColor Green
         return [pscustomobject]@{ Mtu = $mtu; WasFallback = $false }
     } catch {
         Invoke-ErrorHandler -Context 'Discovering optimal MTU' -ErrorRecord $_
@@ -1261,8 +1261,8 @@ function Invoke-MtuToAdapters {
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     $mtuSafetyThreshold = 1400
     if ($Mtu -lt $mtuSafetyThreshold) {
-        Write-Host "  [ ] MTU $Mtu is below the $mtuSafetyThreshold-byte safety threshold; skipping MTU changes." -ForegroundColor Gray
-        if ($logger) { Write-Log "[NetworkHardcore] MTU change skipped because $Mtu is below safety threshold $mtuSafetyThreshold." -Level 'Warning' }
+        Write-Host ('  [ ] MTU {0} is below the {1}-byte safety threshold; skipping MTU changes.' -f $Mtu, $mtuSafetyThreshold) -ForegroundColor Gray
+        if ($logger) { Write-Log ('[NetworkHardcore] MTU change skipped because {0} is below safety threshold {1}.' -f $Mtu, $mtuSafetyThreshold) -Level 'Warning' }
         return
     }
 
@@ -1291,7 +1291,7 @@ function Invoke-MtuToAdapters {
             if ($legacyInfo -and $legacyInfo.IsLegacy) { $reasonParts += "legacy driver (${legacyInfo.Reason})" }
             $reason = ($reasonParts -join '; ')
             Write-Host "  [ ] Skipping MTU change on $($adapter.Name) due to $reason." -ForegroundColor Gray
-            if ($logger) { Write-Log "[NetworkHardcore] MTU skipped on $($adapter.Name): $reason." -Level 'Warning' }
+            if ($logger) { Write-Log ('[NetworkHardcore] MTU skipped on {0}: {1}.' -f $adapter.Name, $reason) -Level 'Warning' }
             continue
         }
 
@@ -1329,7 +1329,7 @@ function Invoke-MtuToAdapters {
             Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu $Mtu -AddressFamily IPv4 -ErrorAction Stop | Out-Null
             Write-Host "  [OK] MTU $Mtu applied to $($adapter.Name) (IPv4)." -ForegroundColor Green
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-                Write-Log "[NetworkHardcore] MTU set to $Mtu on $($adapter.Name) (IPv4)."
+                Write-Log ('[NetworkHardcore] MTU set to {0} on {1} (IPv4).' -f $Mtu, $adapter.Name)
             }
 
             $connectivityOk = $false
@@ -1367,7 +1367,7 @@ function Invoke-MtuToAdapters {
                 try {
                     Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu $originalMtu -AddressFamily IPv4 -ErrorAction Stop | Out-Null
                     Write-Host "  [!] Connectivity check failed after MTU change on $($adapter.Name); rolled back to $originalMtu." -ForegroundColor Yellow
-                    if ($logger) { Write-Log "[NetworkHardcore] Rolled back MTU on $($adapter.Name) to $originalMtu after failed connectivity check." -Level 'Warning' }
+                    if ($logger) { Write-Log ('[NetworkHardcore] Rolled back MTU on {0} to {1} after failed connectivity check.' -f $adapter.Name, $originalMtu) -Level 'Warning' }
                 } catch {
                     Invoke-ErrorHandler -Context "Rolling back MTU on $($adapter.Name)" -ErrorRecord $_
                 }
@@ -1457,7 +1457,8 @@ function Suggest-NetworkIrqCores {
         $logical = [Environment]::ProcessorCount
         $half = [int][Math]::Ceiling($logical / 2)
         $range = "0-$(if ($half -gt 0) { $half - 1 } else { 0 })"
-        Write-Host "  [i] Suggestion: Pin network IRQs to early cores (e.g., $range) for lowest latency." -ForegroundColor Cyan
+        $irqMessage = '  [i] Suggestion: Pin network IRQs to early cores (e.g., {0}) for lowest latency.' -f $range
+        Write-Host $irqMessage -ForegroundColor Cyan
     } catch {
         Invoke-ErrorHandler -Context 'Suggesting IRQ core distribution' -ErrorRecord $_
     }
@@ -1493,8 +1494,8 @@ function Set-TcpCongestionProvider {
         if ($bbrAvailable -and (Get-Confirmation "Enable experimental BBR congestion control?" 'n')) {
             try {
                 netsh int tcp set global congestionprovider=bbr | Out-Null
-                Write-Host "  [OK] TCP congestion provider set to BBR (experimental, favors throughput and latency)." -ForegroundColor Green
-                if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] TCP congestion provider set to BBR." }
+                Write-Host '  [OK] TCP congestion provider set to BBR (experimental, favors throughput and latency).' -ForegroundColor Green
+                if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log '[NetworkHardcore] TCP congestion provider set to BBR.' }
                 if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                     Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'BBR congestion provider enabled'
                 }
@@ -1713,7 +1714,7 @@ function Invoke-NetworkTweaksHardcore {
 
     $primary = Get-PrimaryNetAdapter
     if (-not $primary) {
-        Write-Host "  [!] Unable to determine primary adapter; using all adapters for tweaks." -ForegroundColor Yellow
+        Write-Host '  [!] Unable to determine primary adapter; using all adapters for tweaks.' -ForegroundColor Yellow
         $primaryAdapters = $adapters
     } else {
         $primaryAdapters = @($primary)
@@ -1801,7 +1802,8 @@ function Invoke-NetworkTweaksHardcore {
                     $linkBits = Convert-LinkSpeedToBits -LinkSpeed $adapter.LinkSpeed
                     if ($linkBits -and $linkBits -lt 1e9) {
                         $speedLabel = "{0} Mbps" -f ([math]::Round($linkBits / 1e6, 0))
-                        Write-Host "  [i] RSS is a Gigabit+ feature; $($adapter.Name) is running at $speedLabel. Skipping RSS quietly." -ForegroundColor Gray
+                        $rssMessage = '  [i] RSS is a Gigabit+ feature; {0} is running at {1}. Skipping RSS quietly.' -f $adapter.Name, $speedLabel
+                        Write-Host $rssMessage -ForegroundColor Gray
                     } else {
                         Write-Host "  [i] RSS not exposed by this hardware; skipping." -ForegroundColor Gray
                     }
@@ -1810,7 +1812,7 @@ function Invoke-NetworkTweaksHardcore {
 
                 Set-NetAdapterRss -Name $adapter.Name -Profile Closest -ErrorAction Stop | Out-Null
                 Write-Host "  [OK] RSS profile set to Closest on $($adapter.Name)." -ForegroundColor Green
-                if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to Closest on $($adapter.Name)." }
+                if ($logger) { Write-Log ('[NetworkHardcore] RSS profile set to Closest on {0}.' -f $adapter.Name) }
             } catch {
                 Invoke-ErrorHandler -Context "Configuring RSS on $($adapter.Name)" -ErrorRecord $_
             }
@@ -1832,17 +1834,17 @@ function Invoke-NetworkTweaksHardcore {
     $ageSummaryLabel = if (-not $ageKnown) { 'Unknown' } elseif ($ageYears -le 0) { 'Less than a year' } else { "~$ageYears years" }
     if ($ageYears -ne $null) {
         $reason = if ($autotuneLevel -eq 'highlyrestricted') {
-            "Older hardware ($ageSummaryLabel) detected; using safer autotuning."
+            'Older hardware ({0}) detected; using safer autotuning.' -f $ageSummaryLabel
         } else {
-            "Modern hardware ($ageSummaryLabel) detected; disabling autotuning for latency."
+            'Modern hardware ({0}) detected; disabling autotuning for latency.' -f $ageSummaryLabel
         }
-        Write-Host "  [i] $reason" -ForegroundColor Cyan
+        Write-Host ("  [i] {0}" -f $reason) -ForegroundColor Cyan
     }
     $netshGlobals = @(
         @{ Command = 'int tcp set global ecncapability=disabled'; Description = 'ECN capability disabled.'; LogMessage = '[NetworkHardcore] ECN capability disabled.' },
         @{ Command = 'int tcp set global timestamps=disabled'; Description = 'TCP timestamps disabled.'; LogMessage = '[NetworkHardcore] TCP timestamps disabled.' },
         @{ Command = 'int tcp set global initialrto=2000'; Description = 'Initial RTO set to 2000ms.'; LogMessage = '[NetworkHardcore] InitialRTO set to 2000ms.' },
-        @{ Command = "int tcp set global autotuninglevel=$autotuneLevel"; Description = "Network autotuning set to $autotuneLevel (hardware age: $ageLabel)."; LogMessage = "[NetworkHardcore] Autotuning level set to $autotuneLevel (hardware age: $ageLabel)." }
+        @{ Command = ('int tcp set global autotuninglevel={0}' -f $autotuneLevel); Description = ('Network autotuning set to {0} (hardware age: {1}).' -f $autotuneLevel, $ageLabel); LogMessage = ('[NetworkHardcore] Autotuning level set to {0} (hardware age: {1}).' -f $autotuneLevel, $ageLabel) }
     )
 
     $netshScriptContent = ($netshGlobals | ForEach-Object { $_.Command }) -join [Environment]::NewLine
@@ -1898,7 +1900,7 @@ function Invoke-NetworkTweaksHardcore {
             Invoke-MtuToAdapters -Mtu $mtuResult.Mtu -Adapters $mtuAdapters -Context $Context -AdapterProfiles $adapterProfiles -LegacyAssessments $legacyAssessmentMap
         }
     } else {
-        Write-Host "  [ ] Skipping MTU discovery and application because only wireless adapters were detected and Wi-Fi opt-in was declined." -ForegroundColor Gray
+            Write-Host '  [ ] Skipping MTU discovery and application because only wireless adapters were detected and Wi-Fi opt-in was declined.' -ForegroundColor Gray
     }
 
     Set-TcpCongestionProvider -Context $Context
@@ -1906,7 +1908,7 @@ function Invoke-NetworkTweaksHardcore {
     Write-RegistryFailureSummary -Tracker $failureTracker
     if ($failureTracker -and $failureTracker.Abort) { return }
 
-    Write-Host "  [OK] Hardcore network tweaks complete." -ForegroundColor Green
+    Write-Host '  [OK] Hardcore network tweaks complete.' -ForegroundColor Green
     Set-NeedsReboot -Context $Context | Out-Null
 }
 

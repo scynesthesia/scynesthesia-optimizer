@@ -774,7 +774,7 @@ function Invoke-AdvancedNetworkPipeline {
             Save-NetworkHardwareSnapshot -Context $context | Out-Null
         } catch {
             if ($logger) {
-                Write-Log "$LoggerPrefix Failed to capture adapter hardware snapshot before $ProfileName: $($_.Exception.Message)" -Level 'Warning'
+                Write-Log "$LoggerPrefix Failed to capture adapter hardware snapshot before ${ProfileName}: $($_.Exception.Message)" -Level 'Warning'
             }
         }
     }

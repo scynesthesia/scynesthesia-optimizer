@@ -89,13 +89,13 @@ function Resolve-RegistryPathComponents {
     param([Parameter(Mandatory)][string]$Path)
 
     $normalized = $Path.Trim()
-    $firstSeparator = $normalized.IndexOf('\\')
+    $firstSeparator = $normalized.IndexOf('\')
     if ($firstSeparator -lt 0) {
         throw [System.ArgumentException]::new("Registry path is missing a subkey: $Path")
     }
 
     $hiveSegment = $normalized.Substring(0, $firstSeparator).TrimEnd(':')
-    $subPath = $normalized.Substring($firstSeparator).TrimStart('\\')
+    $subPath = $normalized.Substring($firstSeparator).TrimStart('\')
 
     $hiveName = $hiveSegment.ToUpperInvariant()
     $hiveEnum = switch ($hiveName) {
@@ -833,7 +833,7 @@ function Test-RegistryResultForPresetAbort {
 
     $preset = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     $categoryNote = if ($Result -and $Result.ErrorCategory) { " (Category: $($Result.ErrorCategory))" } else { "" }
-    $message = "Critical registry change failed$categoryNote: $operation"
+    $message = "Critical registry change failed${categoryNote}: $operation"
     Write-Host "  [!] $message" -ForegroundColor Red
     Write-Log -Message "[PresetGuard] $message" -Level 'Error'
 
