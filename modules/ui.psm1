@@ -50,7 +50,21 @@ function Write-Log {
             New-Item -ItemType File -Path $logPath -Force | Out-Null
         }
 
-        Add-Content -Path $logPath -Value $logLine
+        $maxRetries = 3
+        for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+            try {
+                $fileStream = [System.IO.File]::Open($logPath, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+                $writer = New-Object System.IO.StreamWriter($fileStream)
+                $writer.WriteLine($logLine)
+                $writer.Flush()
+                $writer.Dispose()
+                $fileStream.Dispose()
+                break
+            } catch {
+                if ($attempt -eq $maxRetries) { throw }
+                Start-Sleep -Milliseconds (50 * $attempt)
+            }
+        }
     } catch {
         if (-not $NoConsole) {
             Write-Host "Logging failure: $($_.Exception.Message)" -ForegroundColor Red
