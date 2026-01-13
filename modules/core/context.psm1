@@ -334,7 +334,7 @@ function Save-RollbackState {
         $json = $payload | ConvertTo-Json -Depth 8 -ErrorAction Stop
         Set-Content -Path $targetPath -Value $json -Encoding UTF8 -ErrorAction Stop
     } catch {
-        Write-Warning "Failed to persist rollback actions to $targetPath: $($_.Exception.Message)"
+        Write-Warning "Failed to persist rollback actions to ${targetPath}: $($_.Exception.Message)"
     }
 
     return $targetPath
@@ -406,7 +406,7 @@ function Restore-RollbackState {
         $runContext.NetworkHardwareRollbackActions = $hardwareList
         return $true
     } catch {
-        Write-Warning "Failed to restore rollback actions from $targetPath: $($_.Exception.Message)"
+        Write-Warning "Failed to restore rollback actions from ${targetPath}: $($_.Exception.Message)"
         return $false
     }
 }

@@ -14,6 +14,18 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 
+function Stop-RollbackTimerSafely {
+    try {
+        if (Get-Command -Name Stop-RollbackPersistenceTimer -ErrorAction SilentlyContinue) {
+            Stop-RollbackPersistenceTimer -Timer $script:RollbackPersistTimer -Subscription $script:RollbackPersistSubscription -SourceIdentifier 'RegistryRollbackPersistence'
+        }
+    } catch { }
+
+    if ($script:RollbackPersistTimer) {
+        try { $script:RollbackPersistTimer.Dispose() } catch { }
+    }
+}
+
 try {
     $modulesRoot = Join-Path $scriptRoot 'modules'
     $moduleMapPath = Join-Path $modulesRoot 'modules.map.psd1'
@@ -63,7 +75,7 @@ try {
             continue
         }
 
-        $importParams = @{ Path = $resolvedPath; ErrorAction = 'Stop' }
+        $importParams = @{ Name = $resolvedPath; ErrorAction = 'Stop' }
         if ($shouldForceReload) { $importParams.Force = $true }
 
         Import-Module @importParams
@@ -159,16 +171,6 @@ $script:RollbackPersistSubscription = Register-ObjectEvent -InputObject $script:
     }
 } -ErrorAction SilentlyContinue
 $script:RollbackPersistTimer.Start()
-
-function Stop-RollbackTimerSafely {
-    try {
-        Stop-RollbackPersistenceTimer -Timer $script:RollbackPersistTimer -Subscription $script:RollbackPersistSubscription -SourceIdentifier 'RegistryRollbackPersistence'
-    } catch { }
-
-    if ($script:RollbackPersistTimer) {
-        try { $script:RollbackPersistTimer.Dispose() } catch { }
-    }
-}
 
 $TranscriptStarted = $false
 if (Get-Confirmation "Enable session logging to a file? (Recommended for service records)" 'n') {
