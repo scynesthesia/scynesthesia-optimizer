@@ -1,5 +1,5 @@
 if (-not (Get-Command -Name 'Get-HardwareProfile' -ErrorAction SilentlyContinue)) {
-    Import-Module (Join-Path $PSScriptRoot 'performance.psm1') -Force -Scope Local
+    Import-Module (Join-Path $PSScriptRoot 'performance.psm1') -Force -Scope Local -DisableNameChecking -WarningAction SilentlyContinue
 }
 
 function Optimize-GamingScheduler {

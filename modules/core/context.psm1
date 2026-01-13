@@ -334,7 +334,7 @@ function Save-RollbackState {
         $json = $payload | ConvertTo-Json -Depth 8 -ErrorAction Stop
         Set-Content -Path $targetPath -Value $json -Encoding UTF8 -ErrorAction Stop
     } catch {
-        Write-Warning "Failed to persist rollback actions to $targetPath: $($_.Exception.Message)"
+        Write-Warning "Failed to persist rollback actions to ${targetPath}: $($_.Exception.Message)"
     }
 
     return $targetPath
@@ -406,7 +406,7 @@ function Restore-RollbackState {
         $runContext.NetworkHardwareRollbackActions = $hardwareList
         return $true
     } catch {
-        Write-Warning "Failed to restore rollback actions from $targetPath: $($_.Exception.Message)"
+        Write-Warning "Failed to restore rollback actions from ${targetPath}: $($_.Exception.Message)"
         return $false
     }
 }
@@ -507,11 +507,11 @@ function Invoke-RegistryTransaction {
         param([Parameter(Mandatory)][string]$Path)
 
         $normalized = $Path.Trim()
-        $firstSeparator = $normalized.IndexOf('\\')
+        $firstSeparator = $normalized.IndexOf('\')
         if ($firstSeparator -lt 0) { throw [System.ArgumentException]::new("Registry path is missing a subkey: $Path") }
 
         $hiveSegment = $normalized.Substring(0, $firstSeparator).TrimEnd(':')
-        $subPath = $normalized.Substring($firstSeparator).TrimStart('\\')
+        $subPath = $normalized.Substring($firstSeparator).TrimStart('\')
         $hiveName = $hiveSegment.ToUpperInvariant()
         $hiveEnum = switch ($hiveName) {
             'HKLM' { [Microsoft.Win32.RegistryHive]::LocalMachine }
