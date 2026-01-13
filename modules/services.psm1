@@ -140,17 +140,22 @@ function Invoke-AggressiveServiceOptimization {
     )
 
     foreach ($svc in $aggressiveServices + $aggressiveDrivers) {
-        Disable-ServiceByRegistry -Name $svc -Context $Context
+        if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
+            Disable-ServiceByRegistry -Name $svc -Context $Context
+        }
     }
 
-    $windowsUpdatePath = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\wuauserv"
-    $wuResult = Set-RegistryValueSafe -Path $windowsUpdatePath -Name 'Start' -Value 3 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Set Windows Update to manual'
-    if ($wuResult -and $wuResult.Success) {
-        Write-Host "  [OK] [Services] wuauserv set to manual start (Start=3)." -ForegroundColor Gray
-        Write-Log -Message "[Services] wuauserv set to manual start (Start=3)." -Level 'Info'
-    } else {
-        Write-Host "  [!] [Services] Failed to set wuauserv to manual start." -ForegroundColor Yellow
-        Write-Log -Message "[Services] Failed to set wuauserv to manual start (Start=3)." -Level 'Warning'
+    $windowsUpdateKey = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\wuauserv"
+    if (Test-Path $windowsUpdateKey) {
+        $windowsUpdatePath = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\wuauserv"
+        $wuResult = Set-RegistryValueSafe -Path $windowsUpdatePath -Name 'Start' -Value 3 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Set Windows Update to manual'
+        if ($wuResult -and $wuResult.Success) {
+            Write-Host "  [OK] [Services] wuauserv set to manual start (Start=3)." -ForegroundColor Gray
+            Write-Log -Message "[Services] wuauserv set to manual start (Start=3)." -Level 'Info'
+        } else {
+            Write-Host "  [!] [Services] Failed to set wuauserv to manual start." -ForegroundColor Yellow
+            Write-Log -Message "[Services] Failed to set wuauserv to manual start (Start=3)." -Level 'Warning'
+        }
     }
 
     $skipSpooler = $OemServices -and $OemServices.Count -gt 0
@@ -164,7 +169,9 @@ function Invoke-AggressiveServiceOptimization {
         }
     } else {
         if (Get-Confirmation "Disable Print Spooler service?" 'n') {
-            Disable-ServiceByRegistry -Name 'Spooler' -Context $Context
+            if (Get-Service -Name 'Spooler' -ErrorAction SilentlyContinue) {
+                Disable-ServiceByRegistry -Name 'Spooler' -Context $Context
+            }
             if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                 Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'Print Spooler disabled'
             }
@@ -177,7 +184,9 @@ function Invoke-AggressiveServiceOptimization {
     }
 
     if (Get-Confirmation "Disable Bluetooth Support service?" 'n') {
-        Disable-ServiceByRegistry -Name 'bthserv' -Context $Context
+        if (Get-Service -Name 'bthserv' -ErrorAction SilentlyContinue) {
+            Disable-ServiceByRegistry -Name 'bthserv' -Context $Context
+        }
     } else {
         Write-Host "  [ ] Bluetooth Support kept enabled." -ForegroundColor DarkGray
     }
