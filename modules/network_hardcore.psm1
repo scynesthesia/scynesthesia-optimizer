@@ -1291,7 +1291,7 @@ function Invoke-MtuToAdapters {
             if ($legacyInfo -and $legacyInfo.IsLegacy) { $reasonParts += "legacy driver (${legacyInfo.Reason})" }
             $reason = ($reasonParts -join '; ')
             Write-Host "  [ ] Skipping MTU change on $($adapter.Name) due to $reason." -ForegroundColor Gray
-            if ($logger) { Write-Log "[NetworkHardcore] MTU skipped on $($adapter.Name): $reason." -Level 'Warning' }
+            if ($logger) { Write-Log ('[NetworkHardcore] MTU skipped on {0}: {1}.' -f $adapter.Name, $reason) -Level 'Warning' }
             continue
         }
 
@@ -1329,7 +1329,7 @@ function Invoke-MtuToAdapters {
             Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu $Mtu -AddressFamily IPv4 -ErrorAction Stop | Out-Null
             Write-Host "  [OK] MTU $Mtu applied to $($adapter.Name) (IPv4)." -ForegroundColor Green
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-                Write-Log "[NetworkHardcore] MTU set to $Mtu on $($adapter.Name) (IPv4)."
+                Write-Log ('[NetworkHardcore] MTU set to {0} on {1} (IPv4).' -f $Mtu, $adapter.Name)
             }
 
             $connectivityOk = $false
@@ -1367,7 +1367,7 @@ function Invoke-MtuToAdapters {
                 try {
                     Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu $originalMtu -AddressFamily IPv4 -ErrorAction Stop | Out-Null
                     Write-Host "  [!] Connectivity check failed after MTU change on $($adapter.Name); rolled back to $originalMtu." -ForegroundColor Yellow
-                    if ($logger) { Write-Log "[NetworkHardcore] Rolled back MTU on $($adapter.Name) to $originalMtu after failed connectivity check." -Level 'Warning' }
+                    if ($logger) { Write-Log ('[NetworkHardcore] Rolled back MTU on {0} to {1} after failed connectivity check.' -f $adapter.Name, $originalMtu) -Level 'Warning' }
                 } catch {
                     Invoke-ErrorHandler -Context "Rolling back MTU on $($adapter.Name)" -ErrorRecord $_
                 }
@@ -1457,7 +1457,7 @@ function Suggest-NetworkIrqCores {
         $logical = [Environment]::ProcessorCount
         $half = [int][Math]::Ceiling($logical / 2)
         $range = "0-$(if ($half -gt 0) { $half - 1 } else { 0 })"
-        Write-Host "  [i] Suggestion: Pin network IRQs to early cores (e.g., $range) for lowest latency." -ForegroundColor Cyan
+        Write-Host ("  [i] Suggestion: Pin network IRQs to early cores (e.g., {0}) for lowest latency." -f $range) -ForegroundColor Cyan
     } catch {
         Invoke-ErrorHandler -Context 'Suggesting IRQ core distribution' -ErrorRecord $_
     }
@@ -1494,7 +1494,7 @@ function Set-TcpCongestionProvider {
             try {
                 netsh int tcp set global congestionprovider=bbr | Out-Null
                 Write-Host "  [OK] TCP congestion provider set to BBR (experimental, favors throughput and latency)." -ForegroundColor Green
-                if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] TCP congestion provider set to BBR." }
+                if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log '[NetworkHardcore] TCP congestion provider set to BBR.' }
                 if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                     Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'BBR congestion provider enabled'
                 }
@@ -1713,7 +1713,7 @@ function Invoke-NetworkTweaksHardcore {
 
     $primary = Get-PrimaryNetAdapter
     if (-not $primary) {
-        Write-Host "  [!] Unable to determine primary adapter; using all adapters for tweaks." -ForegroundColor Yellow
+        Write-Host '  [!] Unable to determine primary adapter; using all adapters for tweaks.' -ForegroundColor Yellow
         $primaryAdapters = $adapters
     } else {
         $primaryAdapters = @($primary)
@@ -1801,7 +1801,7 @@ function Invoke-NetworkTweaksHardcore {
                     $linkBits = Convert-LinkSpeedToBits -LinkSpeed $adapter.LinkSpeed
                     if ($linkBits -and $linkBits -lt 1e9) {
                         $speedLabel = "{0} Mbps" -f ([math]::Round($linkBits / 1e6, 0))
-                        Write-Host "  [i] RSS is a Gigabit+ feature; $($adapter.Name) is running at $speedLabel. Skipping RSS quietly." -ForegroundColor Gray
+                        Write-Host ("  [i] RSS is a Gigabit+ feature; {0} is running at {1}. Skipping RSS quietly." -f $adapter.Name, $speedLabel) -ForegroundColor Gray
                     } else {
                         Write-Host "  [i] RSS not exposed by this hardware; skipping." -ForegroundColor Gray
                     }
@@ -1810,7 +1810,7 @@ function Invoke-NetworkTweaksHardcore {
 
                 Set-NetAdapterRss -Name $adapter.Name -Profile Closest -ErrorAction Stop | Out-Null
                 Write-Host "  [OK] RSS profile set to Closest on $($adapter.Name)." -ForegroundColor Green
-                if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to Closest on $($adapter.Name)." }
+                if ($logger) { Write-Log ('[NetworkHardcore] RSS profile set to Closest on {0}.' -f $adapter.Name) }
             } catch {
                 Invoke-ErrorHandler -Context "Configuring RSS on $($adapter.Name)" -ErrorRecord $_
             }
