@@ -173,6 +173,21 @@ function New-RestorePointSafe {
         }
 
         try {
+            $requiredServices = @('VSS', 'swprv', 'srservice')
+            $disabledServices = @()
+            foreach ($svc in $requiredServices) {
+                $service = Get-Service -Name $svc -ErrorAction SilentlyContinue
+                if ($service -and $service.StartType -eq 'Disabled') {
+                    $disabledServices += $service.Name
+                }
+            }
+
+            if ($disabledServices.Count -gt 0) {
+                Write-Warning "System Restore dependencies are disabled: $($disabledServices -join ', '). Restore point skipped."
+                $status.Enabled = $false
+                return $status
+            }
+
             Checkpoint-Computer -Description "Scynesthesia Windows Optimizer v1.0" -RestorePointType "MODIFY_SETTINGS" -ErrorAction Stop
             Write-Host "  [OK] Restore point created." -ForegroundColor Green
             $status.Created = $true

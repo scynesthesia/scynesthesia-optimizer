@@ -533,7 +533,7 @@ function Invoke-PreferencesSafe {
 
     $crashControlResult = Set-RegistryValueSafe "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" "DisplayParameters" 1 -Context $context -Critical -ReturnResult -OperationLabel 'Show crash control parameters'
 
-    $numLockResult = Set-RegistryValueSafe "HKCU\Control Panel\Keyboard" "InitialKeyboardIndicators" 2147483650 -Context $context -ReturnResult -OperationLabel 'Enable num lock at startup'
+    $numLockResult = Set-RegistryValueSafe "HKCU\Control Panel\Keyboard" "InitialKeyboardIndicators" "2147483650" ([Microsoft.Win32.RegistryValueKind]::String) -Context $context -ReturnResult -OperationLabel 'Enable num lock at startup'
 
     $results = @(
         @{ Result = $hiddenResult; Label = 'Show hidden files' },
