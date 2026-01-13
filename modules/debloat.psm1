@@ -183,6 +183,8 @@ function New-RestorePointSafe {
             Write-Host "  [i] Attempting to enable System Restore on C: automatically." -ForegroundColor Gray
             try {
                 Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
+                Set-Service -Name srservice -StartupType Automatic -ErrorAction SilentlyContinue
+                Start-Service -Name srservice -ErrorAction SilentlyContinue
                 Write-Host "  [OK] System Restore enabled on C:." -ForegroundColor Gray
             } catch {
                 Invoke-ErrorHandler -Context "Enabling System Restore on C:" -ErrorRecord $_

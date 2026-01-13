@@ -255,21 +255,14 @@ function Handle-RestorePointGate {
         [string]$ActionLabel
     )
 
-    if ($RestoreStatus -and -not $RestoreStatus.Enabled) {
-        $isHighImpactPreset = $ActionLabel -match 'Aggressive|Gaming'
-        if ($isHighImpactPreset) {
-            Write-Host "  [i] Attempting to enable System Restore on C: for high-impact preset." -ForegroundColor Gray
-            try {
-                Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
-                $RestoreStatus = New-RestorePointSafe
-            } catch {
-                Invoke-ErrorHandler -Context "Enabling System Restore on C: for $ActionLabel" -ErrorRecord $_
-            }
-        }
-    }
-
     if ($RestoreStatus -and $RestoreStatus.Created) {
         Reset-HighImpactBlock
+        return $true
+    }
+
+    if ($script:UnsafeMode) {
+        Write-Warning "[Safety] Proceeding without a restore point because UnsafeMode is enabled."
+        Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "$ActionLabel proceeded without restore point (unsafe mode)"
         return $true
     }
 
@@ -992,9 +985,13 @@ do {
         '3' {
             Write-Section "Gaming Mode / FPS Boost"
             $restoreStatus = Invoke-RestorePointWithAutoEnable
-            if (-not (Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "Gaming Mode")) { 
-                Write-Warning "[Safety] Gaming Mode aborted because no restore point is available."
-                break
+            if (-not (Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "Gaming Mode")) {
+                $continueUnsafely = Get-Confirmation -Question "Unable to ensure a restore point. Continue at your own risk?" -Default 'n'
+                if (-not $continueUnsafely) {
+                    Write-Warning "[Safety] Gaming Mode aborted because no restore point is available."
+                    break
+                }
+                Write-Warning "[Safety] Proceeding without a restore point at user request."
             }
             $privacyAbort = Invoke-PrivacyGaming -Context $script:Context
             if ($privacyAbort) {
