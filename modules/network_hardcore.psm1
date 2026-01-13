@@ -1457,7 +1457,8 @@ function Suggest-NetworkIrqCores {
         $logical = [Environment]::ProcessorCount
         $half = [int][Math]::Ceiling($logical / 2)
         $range = "0-$(if ($half -gt 0) { $half - 1 } else { 0 })"
-        Write-Host ("  [i] Suggestion: Pin network IRQs to early cores (e.g., {0}) for lowest latency." -f $range) -ForegroundColor Cyan
+        $irqMessage = '  [i] Suggestion: Pin network IRQs to early cores (e.g., {0}) for lowest latency.' -f $range
+        Write-Host $irqMessage -ForegroundColor Cyan
     } catch {
         Invoke-ErrorHandler -Context 'Suggesting IRQ core distribution' -ErrorRecord $_
     }
@@ -1493,7 +1494,7 @@ function Set-TcpCongestionProvider {
         if ($bbrAvailable -and (Get-Confirmation "Enable experimental BBR congestion control?" 'n')) {
             try {
                 netsh int tcp set global congestionprovider=bbr | Out-Null
-                Write-Host "  [OK] TCP congestion provider set to BBR (experimental, favors throughput and latency)." -ForegroundColor Green
+                Write-Host '  [OK] TCP congestion provider set to BBR (experimental, favors throughput and latency).' -ForegroundColor Green
                 if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log '[NetworkHardcore] TCP congestion provider set to BBR.' }
                 if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                     Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'BBR congestion provider enabled'
@@ -1801,7 +1802,8 @@ function Invoke-NetworkTweaksHardcore {
                     $linkBits = Convert-LinkSpeedToBits -LinkSpeed $adapter.LinkSpeed
                     if ($linkBits -and $linkBits -lt 1e9) {
                         $speedLabel = "{0} Mbps" -f ([math]::Round($linkBits / 1e6, 0))
-                        Write-Host ("  [i] RSS is a Gigabit+ feature; {0} is running at {1}. Skipping RSS quietly." -f $adapter.Name, $speedLabel) -ForegroundColor Gray
+                        $rssMessage = '  [i] RSS is a Gigabit+ feature; {0} is running at {1}. Skipping RSS quietly.' -f $adapter.Name, $speedLabel
+                        Write-Host $rssMessage -ForegroundColor Gray
                     } else {
                         Write-Host "  [i] RSS not exposed by this hardware; skipping." -ForegroundColor Gray
                     }
@@ -1832,17 +1834,17 @@ function Invoke-NetworkTweaksHardcore {
     $ageSummaryLabel = if (-not $ageKnown) { 'Unknown' } elseif ($ageYears -le 0) { 'Less than a year' } else { "~$ageYears years" }
     if ($ageYears -ne $null) {
         $reason = if ($autotuneLevel -eq 'highlyrestricted') {
-            "Older hardware ($ageSummaryLabel) detected; using safer autotuning."
+            'Older hardware ({0}) detected; using safer autotuning.' -f $ageSummaryLabel
         } else {
-            "Modern hardware ($ageSummaryLabel) detected; disabling autotuning for latency."
+            'Modern hardware ({0}) detected; disabling autotuning for latency.' -f $ageSummaryLabel
         }
-        Write-Host "  [i] $reason" -ForegroundColor Cyan
+        Write-Host ("  [i] {0}" -f $reason) -ForegroundColor Cyan
     }
     $netshGlobals = @(
         @{ Command = 'int tcp set global ecncapability=disabled'; Description = 'ECN capability disabled.'; LogMessage = '[NetworkHardcore] ECN capability disabled.' },
         @{ Command = 'int tcp set global timestamps=disabled'; Description = 'TCP timestamps disabled.'; LogMessage = '[NetworkHardcore] TCP timestamps disabled.' },
         @{ Command = 'int tcp set global initialrto=2000'; Description = 'Initial RTO set to 2000ms.'; LogMessage = '[NetworkHardcore] InitialRTO set to 2000ms.' },
-        @{ Command = "int tcp set global autotuninglevel=$autotuneLevel"; Description = "Network autotuning set to $autotuneLevel (hardware age: $ageLabel)."; LogMessage = "[NetworkHardcore] Autotuning level set to $autotuneLevel (hardware age: $ageLabel)." }
+        @{ Command = ('int tcp set global autotuninglevel={0}' -f $autotuneLevel); Description = ('Network autotuning set to {0} (hardware age: {1}).' -f $autotuneLevel, $ageLabel); LogMessage = ('[NetworkHardcore] Autotuning level set to {0} (hardware age: {1}).' -f $autotuneLevel, $ageLabel) }
     )
 
     $netshScriptContent = ($netshGlobals | ForEach-Object { $_.Command }) -join [Environment]::NewLine
@@ -1906,7 +1908,7 @@ function Invoke-NetworkTweaksHardcore {
     Write-RegistryFailureSummary -Tracker $failureTracker
     if ($failureTracker -and $failureTracker.Abort) { return }
 
-    Write-Host "  [OK] Hardcore network tweaks complete." -ForegroundColor Green
+    Write-Host '  [OK] Hardcore network tweaks complete.' -ForegroundColor Green
     Set-NeedsReboot -Context $Context | Out-Null
 }
 
