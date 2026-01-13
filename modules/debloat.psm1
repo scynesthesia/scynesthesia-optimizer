@@ -558,4 +558,4 @@ function Invoke-DebloatAggressive {
     }
 }
 
-Export-ModuleMember -Function New-RestorePointSafe, Clear-TempFiles, Clear-DeepTempAndThumbs, Invoke-DebloatSafe, Invoke-DebloatAggressive
+Export-ModuleMember -Function Get-InstalledAppxPackages, New-RestorePointSafe, Clear-TempFiles, Clear-DeepTempAndThumbs, Invoke-DebloatSafe, Invoke-DebloatAggressive
