@@ -1,15 +1,15 @@
-Import-Module (Join-Path $PSScriptRoot 'network.psm1') -Force -Scope Local
+Import-Module (Join-Path $PSScriptRoot 'network.psm1') -Force -Scope Local -DisableNameChecking -WarningAction SilentlyContinue
 if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
-    Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local
+    Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local -DisableNameChecking -WarningAction SilentlyContinue
 }
 if (-not (Get-Module -Name 'context' -ErrorAction SilentlyContinue)) {
-    Import-Module (Join-Path $PSScriptRoot 'core/context.psm1') -Force -Scope Local
+    Import-Module (Join-Path $PSScriptRoot 'core/context.psm1') -Force -Scope Local -DisableNameChecking -WarningAction SilentlyContinue
 }
 if (-not (Get-Module -Name 'network_discovery' -ErrorAction SilentlyContinue)) {
-    Import-Module (Join-Path $PSScriptRoot 'core/network_discovery.psm1') -Force -Scope Local
+    Import-Module (Join-Path $PSScriptRoot 'core/network_discovery.psm1') -Force -Scope Local -DisableNameChecking -WarningAction SilentlyContinue
 }
 if (-not (Get-Module -Name 'network_shared' -ErrorAction SilentlyContinue)) {
-    Import-Module (Join-Path $PSScriptRoot 'core/network_shared.psm1') -Force -Scope Local
+    Import-Module (Join-Path $PSScriptRoot 'core/network_shared.psm1') -Force -Scope Local -DisableNameChecking -WarningAction SilentlyContinue
 }
 
 function Get-EligibleNetAdapters {

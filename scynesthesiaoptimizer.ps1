@@ -75,7 +75,7 @@ try {
             continue
         }
 
-        $importParams = @{ Name = $resolvedPath; ErrorAction = 'Stop'; DisableNameChecking = $true }
+        $importParams = @{ Name = $resolvedPath; ErrorAction = 'Stop'; DisableNameChecking = $true; WarningAction = 'SilentlyContinue' }
         if ($shouldForceReload) { $importParams.Force = $true }
 
         Import-Module @importParams
@@ -290,7 +290,8 @@ function Confirm-HighImpactRestoreGate {
     $gatePassed = Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel $ActionLabel
 
     if ($script:Logger) {
-        Write-Log -Message "Restore point gate evaluated." -Level (if ($gatePassed) { 'Info' } else { 'Warning' }) -Data @{
+        $restoreGateLevel = if ($gatePassed) { 'Info' } else { 'Warning' }
+        Write-Log -Message "Restore point gate evaluated." -Level $restoreGateLevel -Data @{
             action         = $ActionLabel
             restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
             restoreEnabled = if ($null -ne $restoreStatus) { [bool]$restoreStatus.Enabled } else { $null }
@@ -310,7 +311,8 @@ function Confirm-HighImpactRestoreGate {
     if ($AllowUnsafeOverride -and $script:UnsafeMode) {
         $proceedUnsafely = Get-Confirmation -Question "A restore point could not be created for $ActionLabel. Continue in UNSAFE mode anyway?" -Default 'n'
         if ($script:Logger) {
-            Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level (if ($proceedUnsafely) { 'Warning' } else { 'Info' }) -Data @{
+            $unsafeConfirmLevel = if ($proceedUnsafely) { 'Warning' } else { 'Info' }
+            Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level $unsafeConfirmLevel -Data @{
                 action         = $ActionLabel
                 unsafeMode     = [bool]$script:UnsafeMode
                 userConfirmed  = [bool]$proceedUnsafely
@@ -725,21 +727,27 @@ function Run-PCSlowPreset {
 
     if (-not $restoreGatePassed) {
         $proceedUnsafely = $false
-        if ($script:UnsafeMode) {
-            $proceedUnsafely = Get-Confirmation -Question "A restore point could not be created. Continue in UNSAFE mode anyway?" -Default 'n'
-            if ($script:Logger) {
-                $unsafeConfirmLevel = if ($proceedUnsafely) { 'Warning' } else { 'Info' }
-                Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level $unsafeConfirmLevel -Data @{
-                    preset         = 'Aggressive'
-                    unsafeMode     = [bool]$script:UnsafeMode
-                    userConfirmed  = [bool]$proceedUnsafely
-                    restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
-                }
+        $proceedPrompt = if ($script:UnsafeMode) {
+            "A restore point could not be created. Continue in UNSAFE mode anyway?"
+        } else {
+            "A restore point could not be created. Continue anyway (Unsafe mode)?"
+        }
+        $proceedUnsafely = Get-Confirmation -Question $proceedPrompt -Default 'n'
+        if ($proceedUnsafely -and -not $script:UnsafeMode) {
+            $script:UnsafeMode = $true
+        }
+        if ($script:Logger) {
+            $unsafeConfirmLevel = if ($proceedUnsafely) { 'Warning' } else { 'Info' }
+            Write-Log -Message "Unsafe mode confirmation after restore gate failure." -Level $unsafeConfirmLevel -Data @{
+                preset         = 'Aggressive'
+                unsafeMode     = [bool]$script:UnsafeMode
+                userConfirmed  = [bool]$proceedUnsafely
+                restoreCreated = [bool]($restoreStatus -and $restoreStatus.Created)
             }
         }
 
         if (-not $proceedUnsafely) {
-            Write-Warning "[Safety] Aggressive preset aborted because a restore point is required. Re-run with -UnsafeMode to override."
+            Write-Warning "[Safety] Aggressive preset aborted because a restore point is required."
             Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "Aggressive preset blocked: restore point unavailable (UnsafeMode=$($script:UnsafeMode))"
             return
         }
