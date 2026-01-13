@@ -1157,13 +1157,13 @@ function Find-OptimalMtu {
         $baseSuccess = $false
         foreach ($candidate in $candidateTargets) {
             if (& $isProbeTimedOut) {
-                Write-Host "  [!] MTU probe timed out while selecting target. Using safe MTU fallback of 1500." -ForegroundColor Yellow
-                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = "Probe timeout (${effectiveSeconds}s)" }
+                Write-Host '  [!] MTU probe timed out while selecting target. Using safe MTU fallback of 1500.' -ForegroundColor Yellow
+                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = ('Probe timeout ({0}s)' -f $effectiveSeconds) }
             }
             $probe = & $testBasicPing $candidate
             if ($probe.Success) {
                 if ($candidate -ne $Target) {
-                    Write-Host "  [i] Switching MTU probe target to $candidate after connectivity probe failure." -ForegroundColor Cyan
+                    Write-Host ('  [i] Switching MTU probe target to {0} after connectivity probe failure.' -f $candidate) -ForegroundColor Cyan
                 }
                 $selectedTarget = $candidate
                 $baseSuccess = $true
@@ -1171,17 +1171,17 @@ function Find-OptimalMtu {
             }
 
             if (-not $probe.TimedOut -and $candidate -eq $Target -and $gateway) {
-                Write-Host "  [!] Default target $Target refused MTU probe; trying gateway $gateway." -ForegroundColor Yellow
+                Write-Host ('  [!] Default target {0} refused MTU probe; trying gateway {1}.' -f $Target, $gateway) -ForegroundColor Yellow
             }
         }
 
         if (& $isProbeTimedOut) {
-            Write-Host "  [!] MTU probe exceeded ${($maxProbeDuration.TotalSeconds)}s. Using safe default 1500." -ForegroundColor Yellow
-            return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = "Probe timeout (${effectiveSeconds}s)" }
+            Write-Host ('  [!] MTU probe exceeded {0}s. Using safe default 1500.' -f $maxProbeDuration.TotalSeconds) -ForegroundColor Yellow
+            return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = ('Probe timeout ({0}s)' -f $effectiveSeconds) }
         }
 
         if (-not $baseSuccess) {
-            Write-Host "  [!] ISP/Router blocks DF packets; using safe MTU fallback of 1500." -ForegroundColor Yellow
+            Write-Host '  [!] ISP/Router blocks DF packets; using safe MTU fallback of 1500.' -ForegroundColor Yellow
             return [pscustomobject]@{ Mtu = 1500; WasFallback = $true }
         }
 
@@ -1194,12 +1194,12 @@ function Find-OptimalMtu {
 
         while ($low -le $high) {
             if (& $isProbeTimedOut) {
-                Write-Host "  [!] MTU probe exceeded ${($maxProbeDuration.TotalSeconds)}s. Using safe default 1500." -ForegroundColor Yellow
-                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = "Probe timeout (${effectiveSeconds}s)" }
+                Write-Host ('  [!] MTU probe exceeded {0}s. Using safe default 1500.' -f $maxProbeDuration.TotalSeconds) -ForegroundColor Yellow
+                return [pscustomobject]@{ Mtu = 1500; WasFallback = $true; SkippedReason = ('Probe timeout ({0}s)' -f $effectiveSeconds) }
             }
             $mid = [int](($low + $high) / 2)
             $mtuCandidate = $mid + 28
-            Write-Host "  [>] MTU test step ${step}: payload $mid bytes (candidate MTU $mtuCandidate)" -ForegroundColor Cyan
+            Write-Host ('  [>] MTU test step {0}: payload {1} bytes (candidate MTU {2})' -f $step, $mid, $mtuCandidate) -ForegroundColor Cyan
             $attempt = 0
             $testResult = $null
             do {
@@ -1207,7 +1207,7 @@ function Find-OptimalMtu {
                 $testResult = Test-MtuSize -PayloadSize $mid -Target $selectedTarget
                 if ($testResult.Success -or $testResult.Fragmented) { break }
                 if ($attempt -lt $maxPingRetries) {
-                    Write-Host "      ~ Ping attempt $attempt/$maxPingRetries failed without fragmentation; retrying to rule out jitter." -ForegroundColor Gray
+                    Write-Host ('      ~ Ping attempt {0}/{1} failed without fragmentation; retrying to rule out jitter.' -f $attempt, $maxPingRetries) -ForegroundColor Gray
                 }
             } while ($attempt -lt $maxPingRetries)
 
@@ -1215,13 +1215,13 @@ function Find-OptimalMtu {
                 $best = $mid
                 $success = $true
                 $low = $mid + 1
-                Write-Host "      ✓ Success, raising floor to $low" -ForegroundColor Green
+                Write-Host ('      OK: Success, raising floor to {0}' -f $low) -ForegroundColor Green
             } else {
                 if ($testResult.Fragmented) {
                     $high = $mid - 1
-                    Write-Host "      x Fragmentation detected, lowering ceiling to $high" -ForegroundColor Yellow
+                    Write-Host ('      x Fragmentation detected, lowering ceiling to {0}' -f $high) -ForegroundColor Yellow
                 } else {
-                    Write-Host "      x Ping failed without fragmentation (code $($testResult.ExitCode)); stopping probe." -ForegroundColor Yellow
+                    Write-Host ('      x Ping failed without fragmentation (code {0}); stopping probe.' -f $testResult.ExitCode) -ForegroundColor Yellow
                     break
                 }
             }
@@ -1230,18 +1230,18 @@ function Find-OptimalMtu {
 
         if (-not $success) {
             $fallbackMtu = 1500
-            Write-Host "  [!] No successful MTU probe responses. Using safe default $fallbackMtu" -ForegroundColor Yellow
+            Write-Host ('  [!] No successful MTU probe responses. Using safe default {0}' -f $fallbackMtu) -ForegroundColor Yellow
             return [pscustomobject]@{ Mtu = $fallbackMtu; WasFallback = $true }
         }
 
         $mtu = $best + 28
         if ($mtu -lt 1400) {
             $fallbackMtu = 1500
-            Write-Host "  [!] Discovered MTU $mtu is below the 1400-byte safety threshold. Retaining default MTU $fallbackMtu." -ForegroundColor Yellow
+            Write-Host ('  [!] Discovered MTU {0} is below the 1400-byte safety threshold. Retaining default MTU {1}.' -f $mtu, $fallbackMtu) -ForegroundColor Yellow
             return [pscustomobject]@{ Mtu = $fallbackMtu; WasFallback = $true }
         }
 
-        Write-Host "  [OK] Optimal MTU discovered: $mtu bytes" -ForegroundColor Green
+        Write-Host ('  [OK] Optimal MTU discovered: {0} bytes' -f $mtu) -ForegroundColor Green
         return [pscustomobject]@{ Mtu = $mtu; WasFallback = $false }
     } catch {
         Invoke-ErrorHandler -Context 'Discovering optimal MTU' -ErrorRecord $_
@@ -1261,8 +1261,8 @@ function Invoke-MtuToAdapters {
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
     $mtuSafetyThreshold = 1400
     if ($Mtu -lt $mtuSafetyThreshold) {
-        Write-Host "  [ ] MTU $Mtu is below the $mtuSafetyThreshold-byte safety threshold; skipping MTU changes." -ForegroundColor Gray
-        if ($logger) { Write-Log "[NetworkHardcore] MTU change skipped because $Mtu is below safety threshold $mtuSafetyThreshold." -Level 'Warning' }
+        Write-Host ('  [ ] MTU {0} is below the {1}-byte safety threshold; skipping MTU changes.' -f $Mtu, $mtuSafetyThreshold) -ForegroundColor Gray
+        if ($logger) { Write-Log ('[NetworkHardcore] MTU change skipped because {0} is below safety threshold {1}.' -f $Mtu, $mtuSafetyThreshold) -Level 'Warning' }
         return
     }
 
@@ -1900,7 +1900,7 @@ function Invoke-NetworkTweaksHardcore {
             Invoke-MtuToAdapters -Mtu $mtuResult.Mtu -Adapters $mtuAdapters -Context $Context -AdapterProfiles $adapterProfiles -LegacyAssessments $legacyAssessmentMap
         }
     } else {
-        Write-Host "  [ ] Skipping MTU discovery and application because only wireless adapters were detected and Wi-Fi opt-in was declined." -ForegroundColor Gray
+            Write-Host '  [ ] Skipping MTU discovery and application because only wireless adapters were detected and Wi-Fi opt-in was declined.' -ForegroundColor Gray
     }
 
     Set-TcpCongestionProvider -Context $Context
