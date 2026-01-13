@@ -19,13 +19,13 @@ function Disable-ServiceByRegistry {
         $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name"
 
         if ($result -and $result.ErrorCategory -eq 'PermissionDenied') {
-            $message = "[Services] $Name registry update denied. Attempting take ownership and grant Administrators full control."
+            $message = "[Services] $Name registry update denied. Attempting take ownership and grant S-1-5-32-544 full control."
             Write-Host "  [!] $message" -ForegroundColor Yellow
             Write-Log -Message $message -Level 'Warning'
 
             $ownershipApplied = $false
             try {
-                $adminGroup = New-Object System.Security.Principal.NTAccount('Administrators')
+                $adminGroup = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
                 $acl = Get-Acl -Path $serviceKeyPath -ErrorAction Stop
                 $acl.SetOwner($adminGroup)
                 $accessRule = New-Object System.Security.AccessControl.RegistryAccessRule(
