@@ -50,11 +50,36 @@ function Write-Log {
             New-Item -ItemType File -Path $logPath -Force | Out-Null
         }
 
-        Add-Content -Path $logPath -Value $logLine
+        $maxRetries = 3
+        for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+            try {
+                $fileStream = [System.IO.File]::Open($logPath, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+                $writer = New-Object System.IO.StreamWriter($fileStream)
+                $writer.WriteLine($logLine)
+                $writer.Flush()
+                $writer.Dispose()
+                $fileStream.Dispose()
+                break
+            } catch {
+                if ($attempt -eq $maxRetries) { throw }
+                Start-Sleep -Milliseconds (50 * $attempt)
+            }
+        }
     } catch {
         if (-not $NoConsole) {
             Write-Host "Logging failure: $($_.Exception.Message)" -ForegroundColor Red
         }
+        try {
+            $fallbackPath = $script:DefaultLogPath
+            if ($fallbackPath -and $fallbackPath -ne $logPath) {
+                $fileStream = [System.IO.File]::Open($fallbackPath, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+                $writer = New-Object System.IO.StreamWriter($fileStream)
+                $writer.WriteLine($logLine)
+                $writer.Flush()
+                $writer.Dispose()
+                $fileStream.Dispose()
+            }
+        } catch { }
     }
 }
 
@@ -89,13 +114,13 @@ function Resolve-RegistryPathComponents {
     param([Parameter(Mandatory)][string]$Path)
 
     $normalized = $Path.Trim()
-    $firstSeparator = $normalized.IndexOf('\\')
+    $firstSeparator = $normalized.IndexOf('\')
     if ($firstSeparator -lt 0) {
         throw [System.ArgumentException]::new("Registry path is missing a subkey: $Path")
     }
 
     $hiveSegment = $normalized.Substring(0, $firstSeparator).TrimEnd(':')
-    $subPath = $normalized.Substring($firstSeparator).TrimStart('\\')
+    $subPath = $normalized.Substring($firstSeparator).TrimStart('\')
 
     $hiveName = $hiveSegment.ToUpperInvariant()
     $hiveEnum = switch ($hiveName) {
@@ -833,7 +858,7 @@ function Test-RegistryResultForPresetAbort {
 
     $preset = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     $categoryNote = if ($Result -and $Result.ErrorCategory) { " (Category: $($Result.ErrorCategory))" } else { "" }
-    $message = "Critical registry change failed$categoryNote: $operation"
+    $message = "Critical registry change failed${categoryNote}: $operation"
     Write-Host "  [!] $message" -ForegroundColor Red
     Write-Log -Message "[PresetGuard] $message" -Level 'Error'
 
