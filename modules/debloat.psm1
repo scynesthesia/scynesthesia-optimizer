@@ -2,8 +2,6 @@ if (-not (Get-Module -Name 'config' -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $PSScriptRoot 'core/config.psm1') -Force -Scope Local -DisableNameChecking -WarningAction SilentlyContinue
 }
 
-$script:AppxPackageCache = $null
-
 function Initialize-DebloatRemovalLog {
     param([pscustomobject]$Context)
 
@@ -96,11 +94,7 @@ function Confirm-XboxAppRemoval {
 }
 
 function Get-InstalledAppxPackages {
-    if ($null -eq $script:AppxPackageCache) {
-        $script:AppxPackageCache = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
-    }
-
-    return $script:AppxPackageCache
+    return Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue
 }
 
 function Get-AppRemovalList {
@@ -397,10 +391,6 @@ function Invoke-DebloatSafe {
             $removed += $successful
         }
 
-        if ($successful) {
-            $script:AppxPackageCache = $script:AppxPackageCache | Where-Object { $successful -notcontains $_.Name }
-        }
-
         $failed = $failedNames
     }
 
@@ -486,10 +476,6 @@ function Invoke-DebloatAggressive {
 
         if ($successful) {
             $removed += $successful
-        }
-
-        if ($successful) {
-            $script:AppxPackageCache = $script:AppxPackageCache | Where-Object { $successful -notcontains $_.Name }
         }
 
         $failed = $failedNames
