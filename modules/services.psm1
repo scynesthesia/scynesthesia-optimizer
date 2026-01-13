@@ -6,11 +6,14 @@ function Disable-ServiceByRegistry {
     )
 
     try {
+        $isDebug = $DebugPreference -ne 'SilentlyContinue'
         $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
         if (-not $service) {
-            $message = "[Services] Service not found: $Name"
-            Write-Host "  [!] $message" -ForegroundColor Yellow
-            Write-Log -Message $message -Level 'Warning'
+            if ($isDebug) {
+                $message = "[Services] Service not found: $Name"
+                Write-Host "  [!] $message" -ForegroundColor Yellow
+                Write-Log -Message $message -Level 'Warning'
+            }
             return
         }
 
@@ -243,12 +246,13 @@ function Invoke-DriverTelemetryOptimization {
 
     Write-Section "Driver telemetry cleanup"
     $logger = Get-Command Write-Log -ErrorAction SilentlyContinue
+    $isDebug = $DebugPreference -ne 'SilentlyContinue'
 
     $nvidiaServices = @('NvTelemetryContainer')
     foreach ($svc in $nvidiaServices) {
         if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
             Disable-ServiceByRegistry -Name $svc -Context $Context
-        } else {
+        } elseif ($isDebug) {
             $message = "[Services] NVIDIA telemetry service not found: $svc"
             Write-Host "  [ ] $message" -ForegroundColor DarkGray
             if ($logger) { Write-Log -Message $message -Level 'Warning' }
@@ -259,7 +263,7 @@ function Invoke-DriverTelemetryOptimization {
     foreach ($svc in $amdServices) {
         if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
             Disable-ServiceByRegistry -Name $svc -Context $Context
-        } else {
+        } elseif ($isDebug) {
             $message = "[Services] AMD telemetry service not found: $svc"
             Write-Host "  [ ] $message" -ForegroundColor DarkGray
             if ($logger) { Write-Log -Message $message -Level 'Warning' }

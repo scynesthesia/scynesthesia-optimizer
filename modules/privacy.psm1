@@ -28,6 +28,7 @@ function Disable-ScheduledTaskSafe {
         [string]$OperationLabel = 'Disable scheduled task'
     )
 
+    $isDebug = $DebugPreference -ne 'SilentlyContinue'
     $context = Get-RunContext -Context $Context
     $tracker = Get-NonRegistryChangeTracker -Context $context
     if (-not $tracker.ContainsKey('ScheduledTasks')) {
@@ -52,7 +53,9 @@ function Disable-ScheduledTaskSafe {
     }
 
     if (-not $scheduledTask) {
-        Write-Host "  [ ] Task $Task not present." -ForegroundColor DarkGray
+        if ($isDebug) {
+            Write-Host "  [ ] Task $Task not present." -ForegroundColor DarkGray
+        }
         return $false
     }
 
