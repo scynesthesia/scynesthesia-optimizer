@@ -157,8 +157,6 @@ function Invoke-AggressiveTweaks {
                     if ($scheduledTask) {
                         $scheduledTask | Disable-ScheduledTask -ErrorAction Stop | Out-Null
                         Write-Host "  [OK] Task $t disabled"
-                    } else {
-                        Write-Host "  [ ] Task $t not present." -ForegroundColor DarkGray
                     }
                 } catch {
                     Invoke-ErrorHandler -Context "Disabling scheduled task $t" -ErrorRecord $_
@@ -172,9 +170,7 @@ function Invoke-AggressiveTweaks {
     if (Get-Confirmation "Do you use Copilot? If not, uninstall it?" 'n') {
         $copilotPkgs = $appxPackages | Where-Object { $_.Name -like 'Microsoft.Copilot' -or $_.Name -like '*Copilot*' }
 
-        if ($copilotPkgs.Count -eq 0) {
-            Write-Host "  [ ] Copilot is not installed."
-        } else {
+        if ($copilotPkgs.Count -gt 0) {
             foreach ($pkg in $copilotPkgs | Select-Object -Unique) {
                 Write-Host "  [OK] Removing $($pkg.Name)"
                 try {
