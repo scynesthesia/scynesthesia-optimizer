@@ -255,6 +255,19 @@ function Handle-RestorePointGate {
         [string]$ActionLabel
     )
 
+    if ($RestoreStatus -and -not $RestoreStatus.Enabled) {
+        $isHighImpactPreset = $ActionLabel -match 'Aggressive|Gaming'
+        if ($isHighImpactPreset) {
+            Write-Host "  [i] Attempting to enable System Restore on C: for high-impact preset." -ForegroundColor Gray
+            try {
+                Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
+                $RestoreStatus = New-RestorePointSafe
+            } catch {
+                Invoke-ErrorHandler -Context "Enabling System Restore on C: for $ActionLabel" -ErrorRecord $_
+            }
+        }
+    }
+
     if ($RestoreStatus -and $RestoreStatus.Created) {
         Reset-HighImpactBlock
         return $true
@@ -953,6 +966,7 @@ function Show-ExplorerTweaksMenu {
 
 $exitRequested = $false
 do {
+    Reset-HighImpactBlock
     Show-Banner
     Write-Host "[ Automated Presets ]" -ForegroundColor Cyan
     Write-Host "1) Safe preset (Stability/Browsing)"
@@ -976,8 +990,6 @@ do {
         '1' { Run-SafePreset }
         '2' { Run-PCSlowPreset }
         '3' {
-            if (-not (Assert-HighImpactAllowed "Gaming Mode")) { break }
-
             Write-Section "Gaming Mode / FPS Boost"
             $restoreStatus = Invoke-RestorePointWithAutoEnable
             if (-not (Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "Gaming Mode")) { 
