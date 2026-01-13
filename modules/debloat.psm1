@@ -349,12 +349,6 @@ function Invoke-DebloatSafe {
     } else {
         $AppList
     }
-    $missing = $effectiveAppList | Where-Object { $targetNames -notcontains $_ }
-
-    foreach ($name in $missing) {
-        Write-Host "  [ ] $name is not installed."
-    }
-
     $failed = @()
     $removed = @()
     $targetNames = $targets.Name
@@ -436,12 +430,6 @@ function Invoke-DebloatAggressive {
     } else {
         $AppList
     }
-    $missing = $effectiveAppList | Where-Object { $targetNames -notcontains $_ }
-
-    foreach ($name in $missing) {
-        Write-Host "  [ ] $name is not installed."
-    }
-
     $failed = @()
     $removed = @()
     $targetNames = $targets.Name

@@ -122,7 +122,12 @@ function Invoke-AggressiveTweaks {
         try {
             Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "OneDrive" -ErrorAction SilentlyContinue
-            Disable-ScheduledTask -TaskPath "\\Microsoft\\OneDrive\\" -TaskName "OneDrive Standalone Update Task-S-1-5-21" -ErrorAction SilentlyContinue | Out-Null
+            $oneDriveTaskPath = "\\Microsoft\\OneDrive\\"
+            $oneDriveTaskName = "OneDrive Standalone Update Task-S-1-5-21"
+            $oneDriveTask = Get-ScheduledTask -TaskName $oneDriveTaskName -TaskPath $oneDriveTaskPath -ErrorAction SilentlyContinue
+            if ($oneDriveTask) {
+                $oneDriveTask | Disable-ScheduledTask -ErrorAction SilentlyContinue | Out-Null
+            }
             Write-Host "  [OK] OneDrive will not auto-start"
         } catch {
             Invoke-ErrorHandler -Context "Blocking OneDrive auto-start" -ErrorRecord $_
@@ -197,14 +202,15 @@ function Invoke-AggressiveTweaks {
 
     Write-Host ""
     if (Get-Confirmation "Remove OneDrive from this system?" 'n') {
-        Write-Host "  [OK] Attempting to uninstall OneDrive"
         try {
             Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
             $pathSys = "${env:SystemRoot}\System32\OneDriveSetup.exe"
             $pathWow = "${env:SystemRoot}\SysWOW64\OneDriveSetup.exe"
             if (Test-Path $pathWow) {
+                Write-Host "  [OK] Removing OneDrive"
                 & $pathWow /uninstall
             } elseif (Test-Path $pathSys) {
+                Write-Host "  [OK] Removing OneDrive"
                 & $pathSys /uninstall
             }
         } catch {
