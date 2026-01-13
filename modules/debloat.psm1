@@ -172,9 +172,16 @@ function New-RestorePointSafe {
             return $status
         }
 
-        Checkpoint-Computer -Description "Scynesthesia Windows Optimizer v1.0" -RestorePointType "MODIFY_SETTINGS"
-        Write-Host "  [OK] Restore point created."
-        $status.Created = $true
+        try {
+            Checkpoint-Computer -Description "Scynesthesia Windows Optimizer v1.0" -RestorePointType "MODIFY_SETTINGS" -ErrorAction Stop
+            Write-Host "  [OK] Restore point created." -ForegroundColor Green
+            $status.Created = $true
+        } catch {
+            $status.Created = $false
+            $status.Enabled = $false
+            Write-Warning "Restore point creation failed. System Restore may be disabled."
+            Invoke-ErrorHandler -Context "Creating restore point" -ErrorRecord $_
+        }
     } catch {
         Invoke-ErrorHandler -Context "Creating restore point" -ErrorRecord $_
     }
