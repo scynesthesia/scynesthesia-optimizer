@@ -15,7 +15,38 @@ function Disable-ServiceByRegistry {
         }
 
         $servicePath = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\$Name"
+        $serviceKeyPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\$Name"
         $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name"
+
+        if ($result -and $result.ErrorCategory -eq 'PermissionDenied') {
+            $message = "[Services] $Name registry update denied. Attempting take ownership and grant Administrators full control."
+            Write-Host "  [!] $message" -ForegroundColor Yellow
+            Write-Log -Message $message -Level 'Warning'
+
+            $ownershipApplied = $false
+            try {
+                $adminGroup = New-Object System.Security.Principal.NTAccount('Administrators')
+                $acl = Get-Acl -Path $serviceKeyPath -ErrorAction Stop
+                $acl.SetOwner($adminGroup)
+                $accessRule = New-Object System.Security.AccessControl.RegistryAccessRule(
+                    $adminGroup,
+                    'FullControl',
+                    'ContainerInherit,ObjectInherit',
+                    'None',
+                    'Allow'
+                )
+                $acl.SetAccessRule($accessRule)
+                Set-Acl -Path $serviceKeyPath -AclObject $acl -ErrorAction Stop
+                $ownershipApplied = $true
+                Write-Log -Message "[Services] Ownership updated for $serviceKeyPath." -Level 'Info'
+            } catch {
+                Write-Log -Message "[Services] Failed to update ownership for $serviceKeyPath. Error: $($_.Exception.Message)" -Level 'Warning'
+            }
+
+            if ($ownershipApplied) {
+                $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name (post-ownership)"
+            }
+        }
 
         if ($result -and $result.Success) {
             Write-Host "  [OK] [Services] $Name disabled (Start=4)." -ForegroundColor Gray
