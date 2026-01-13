@@ -122,7 +122,6 @@ function New-RestorePointSafe {
         $restoreEnabled = $true
         $disableReasons = @()
         $driveRestoreEnabled = $true
-        $autoEnableRestore = [bool]$global:ScynesthesiaRestoreAutoEnable
 
         $srserviceRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\srservice"
         $driveConfigPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore\Cfg\C:"
@@ -181,27 +180,55 @@ function New-RestorePointSafe {
         if (-not $restoreEnabled -or -not $driveRestoreEnabled) {
             $reasonText = if ($disableReasons) { " ($($disableReasons -join ', '))" } else { "" }
             Write-Warning "System Restore appears to be disabled$reasonText."
-            if ($autoEnableRestore) {
-                Write-Host "  [i] Attempting to enable System Restore on C: automatically." -ForegroundColor Gray
+            Write-Host "  [i] Attempting to enable System Restore on C: automatically." -ForegroundColor Gray
+            try {
+                Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
+                Write-Host "  [OK] System Restore enabled on C:." -ForegroundColor Gray
+            } catch {
+                Invoke-ErrorHandler -Context "Enabling System Restore on C:" -ErrorRecord $_
+            }
+
+            $srserviceService = Get-Service -Name 'srservice' -ErrorAction SilentlyContinue
+            if ($srserviceService -and $srserviceService.Status -ne 'Running') {
                 try {
-                    Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
-                    $restoreEnabled = $true
-                    $driveRestoreEnabled = $true
-                    Write-Host "  [OK] System Restore enabled on C:." -ForegroundColor Gray
+                    Start-Service -Name 'srservice' -ErrorAction Stop
+                    $srserviceService = Get-Service -Name 'srservice' -ErrorAction SilentlyContinue
+                    Write-Host "  [OK] System Restore service started." -ForegroundColor Gray
                 } catch {
-                    Invoke-ErrorHandler -Context "Enabling System Restore on C:" -ErrorRecord $_
+                    Invoke-ErrorHandler -Context "Starting System Restore service" -ErrorRecord $_
                 }
-            } elseif (Get-Confirmation "Enable System Restore on drive C: before proceeding?" 'y') {
-                try {
-                    Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
-                    $restoreEnabled = $true
-                    $driveRestoreEnabled = $true
-                    Write-Host "  [OK] System Restore enabled on C:." -ForegroundColor Gray
-                } catch {
-                    Invoke-ErrorHandler -Context "Enabling System Restore on C:" -ErrorRecord $_
+            }
+
+            $restoreEnabled = $true
+            $driveRestoreEnabled = $true
+            if (Test-Path $driveConfigPath) {
+                $driveConfig = Get-ItemProperty -Path $driveConfigPath -ErrorAction SilentlyContinue
+                if ($driveConfig.DisableSR -eq 1) {
+                    $driveRestoreEnabled = $false
                 }
             } else {
-                Write-Warning "Proceeding without a restore point may limit rollback options."
+                $driveRestoreEnabled = $false
+            }
+
+            if (Test-Path $policyPath) {
+                $policyProps = Get-ItemProperty -Path $policyPath -ErrorAction SilentlyContinue
+                if ($policyProps.DisableSR -eq 1) {
+                    $restoreEnabled = $false
+                }
+                if ($policyProps.DisableConfig -eq 1) {
+                    $restoreEnabled = $false
+                }
+            }
+
+            if (Test-Path $configPath) {
+                $configProps = Get-ItemProperty -Path $configPath -ErrorAction SilentlyContinue
+                if ($configProps.DisableSR -eq 1) {
+                    $restoreEnabled = $false
+                }
+            }
+
+            if (-not $srserviceService -or $srserviceService.Status -ne 'Running') {
+                $restoreEnabled = $false
             }
         }
 
