@@ -1291,7 +1291,7 @@ function Invoke-MtuToAdapters {
             if ($legacyInfo -and $legacyInfo.IsLegacy) { $reasonParts += "legacy driver (${legacyInfo.Reason})" }
             $reason = ($reasonParts -join '; ')
             Write-Host "  [ ] Skipping MTU change on $($adapter.Name) due to $reason." -ForegroundColor Gray
-            if ($logger) { Write-Log "[NetworkHardcore] MTU skipped on $($adapter.Name): $reason." -Level 'Warning' }
+            if ($logger) { Write-Log ('[NetworkHardcore] MTU skipped on {0}: {1}.' -f $adapter.Name, $reason) -Level 'Warning' }
             continue
         }
 
@@ -1329,7 +1329,7 @@ function Invoke-MtuToAdapters {
             Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu $Mtu -AddressFamily IPv4 -ErrorAction Stop | Out-Null
             Write-Host "  [OK] MTU $Mtu applied to $($adapter.Name) (IPv4)." -ForegroundColor Green
             if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
-                Write-Log "[NetworkHardcore] MTU set to $Mtu on $($adapter.Name) (IPv4)."
+                Write-Log ('[NetworkHardcore] MTU set to {0} on {1} (IPv4).' -f $Mtu, $adapter.Name)
             }
 
             $connectivityOk = $false
@@ -1367,7 +1367,7 @@ function Invoke-MtuToAdapters {
                 try {
                     Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -NlMtu $originalMtu -AddressFamily IPv4 -ErrorAction Stop | Out-Null
                     Write-Host "  [!] Connectivity check failed after MTU change on $($adapter.Name); rolled back to $originalMtu." -ForegroundColor Yellow
-                    if ($logger) { Write-Log "[NetworkHardcore] Rolled back MTU on $($adapter.Name) to $originalMtu after failed connectivity check." -Level 'Warning' }
+                    if ($logger) { Write-Log ('[NetworkHardcore] Rolled back MTU on {0} to {1} after failed connectivity check.' -f $adapter.Name, $originalMtu) -Level 'Warning' }
                 } catch {
                     Invoke-ErrorHandler -Context "Rolling back MTU on $($adapter.Name)" -ErrorRecord $_
                 }
@@ -1457,7 +1457,8 @@ function Suggest-NetworkIrqCores {
         $logical = [Environment]::ProcessorCount
         $half = [int][Math]::Ceiling($logical / 2)
         $range = "0-$(if ($half -gt 0) { $half - 1 } else { 0 })"
-        Write-Host "  [i] Suggestion: Pin network IRQs to early cores (e.g., $range) for lowest latency." -ForegroundColor Cyan
+        $irqMessage = '  [i] Suggestion: Pin network IRQs to early cores (e.g., {0}) for lowest latency.' -f $range
+        Write-Host $irqMessage -ForegroundColor Cyan
     } catch {
         Invoke-ErrorHandler -Context 'Suggesting IRQ core distribution' -ErrorRecord $_
     }
@@ -1493,8 +1494,8 @@ function Set-TcpCongestionProvider {
         if ($bbrAvailable -and (Get-Confirmation "Enable experimental BBR congestion control?" 'n')) {
             try {
                 netsh int tcp set global congestionprovider=bbr | Out-Null
-                Write-Host "  [OK] TCP congestion provider set to BBR (experimental, favors throughput and latency)." -ForegroundColor Green
-                if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log "[NetworkHardcore] TCP congestion provider set to BBR." }
+                Write-Host '  [OK] TCP congestion provider set to BBR (experimental, favors throughput and latency).' -ForegroundColor Green
+                if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log '[NetworkHardcore] TCP congestion provider set to BBR.' }
                 if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                     Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'BBR congestion provider enabled'
                 }
@@ -1713,7 +1714,7 @@ function Invoke-NetworkTweaksHardcore {
 
     $primary = Get-PrimaryNetAdapter
     if (-not $primary) {
-        Write-Host "  [!] Unable to determine primary adapter; using all adapters for tweaks." -ForegroundColor Yellow
+        Write-Host '  [!] Unable to determine primary adapter; using all adapters for tweaks.' -ForegroundColor Yellow
         $primaryAdapters = $adapters
     } else {
         $primaryAdapters = @($primary)
@@ -1801,7 +1802,8 @@ function Invoke-NetworkTweaksHardcore {
                     $linkBits = Convert-LinkSpeedToBits -LinkSpeed $adapter.LinkSpeed
                     if ($linkBits -and $linkBits -lt 1e9) {
                         $speedLabel = "{0} Mbps" -f ([math]::Round($linkBits / 1e6, 0))
-                        Write-Host "  [i] RSS is a Gigabit+ feature; $($adapter.Name) is running at $speedLabel. Skipping RSS quietly." -ForegroundColor Gray
+                        $rssMessage = '  [i] RSS is a Gigabit+ feature; {0} is running at {1}. Skipping RSS quietly.' -f $adapter.Name, $speedLabel
+                        Write-Host $rssMessage -ForegroundColor Gray
                     } else {
                         Write-Host "  [i] RSS not exposed by this hardware; skipping." -ForegroundColor Gray
                     }
@@ -1810,7 +1812,7 @@ function Invoke-NetworkTweaksHardcore {
 
                 Set-NetAdapterRss -Name $adapter.Name -Profile Closest -ErrorAction Stop | Out-Null
                 Write-Host "  [OK] RSS profile set to Closest on $($adapter.Name)." -ForegroundColor Green
-                if ($logger) { Write-Log "[NetworkHardcore] RSS profile set to Closest on $($adapter.Name)." }
+                if ($logger) { Write-Log ('[NetworkHardcore] RSS profile set to Closest on {0}.' -f $adapter.Name) }
             } catch {
                 Invoke-ErrorHandler -Context "Configuring RSS on $($adapter.Name)" -ErrorRecord $_
             }
@@ -1832,17 +1834,17 @@ function Invoke-NetworkTweaksHardcore {
     $ageSummaryLabel = if (-not $ageKnown) { 'Unknown' } elseif ($ageYears -le 0) { 'Less than a year' } else { "~$ageYears years" }
     if ($ageYears -ne $null) {
         $reason = if ($autotuneLevel -eq 'highlyrestricted') {
-            "Older hardware ($ageSummaryLabel) detected; using safer autotuning."
+            'Older hardware ({0}) detected; using safer autotuning.' -f $ageSummaryLabel
         } else {
-            "Modern hardware ($ageSummaryLabel) detected; disabling autotuning for latency."
+            'Modern hardware ({0}) detected; disabling autotuning for latency.' -f $ageSummaryLabel
         }
-        Write-Host "  [i] $reason" -ForegroundColor Cyan
+        Write-Host ("  [i] {0}" -f $reason) -ForegroundColor Cyan
     }
     $netshGlobals = @(
         @{ Command = 'int tcp set global ecncapability=disabled'; Description = 'ECN capability disabled.'; LogMessage = '[NetworkHardcore] ECN capability disabled.' },
         @{ Command = 'int tcp set global timestamps=disabled'; Description = 'TCP timestamps disabled.'; LogMessage = '[NetworkHardcore] TCP timestamps disabled.' },
         @{ Command = 'int tcp set global initialrto=2000'; Description = 'Initial RTO set to 2000ms.'; LogMessage = '[NetworkHardcore] InitialRTO set to 2000ms.' },
-        @{ Command = "int tcp set global autotuninglevel=$autotuneLevel"; Description = "Network autotuning set to $autotuneLevel (hardware age: $ageLabel)."; LogMessage = "[NetworkHardcore] Autotuning level set to $autotuneLevel (hardware age: $ageLabel)." }
+        @{ Command = ('int tcp set global autotuninglevel={0}' -f $autotuneLevel); Description = ('Network autotuning set to {0} (hardware age: {1}).' -f $autotuneLevel, $ageLabel); LogMessage = ('[NetworkHardcore] Autotuning level set to {0} (hardware age: {1}).' -f $autotuneLevel, $ageLabel) }
     )
 
     $netshScriptContent = ($netshGlobals | ForEach-Object { $_.Command }) -join [Environment]::NewLine
@@ -1906,7 +1908,7 @@ function Invoke-NetworkTweaksHardcore {
     Write-RegistryFailureSummary -Tracker $failureTracker
     if ($failureTracker -and $failureTracker.Abort) { return }
 
-    Write-Host "  [OK] Hardcore network tweaks complete." -ForegroundColor Green
+    Write-Host '  [OK] Hardcore network tweaks complete.' -ForegroundColor Green
     Set-NeedsReboot -Context $Context | Out-Null
 }
 

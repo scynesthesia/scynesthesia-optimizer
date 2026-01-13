@@ -1047,10 +1047,10 @@ function Save-NetworkBackupState {
         }
 
         $entry = switch ($Type.ToLower()) {
-            'string' { "\"$Name\"=\"$Value\"" }
+            'string' { "`"$Name`"=`"$Value`"" }
             default {
                 $asInt64 = [int64]$Value
-                "\"$Name\"=dword:$($asInt64.ToString('x8'))"
+                "`"$Name`"=dword:$($asInt64.ToString('x8'))"
             }
         }
         $regRollbackMap[$normalizedPath].Add($entry) | Out-Null

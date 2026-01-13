@@ -833,7 +833,7 @@ function Test-RegistryResultForPresetAbort {
 
     $preset = if (-not [string]::IsNullOrWhiteSpace($PresetName)) { $PresetName } else { 'current preset' }
     $categoryNote = if ($Result -and $Result.ErrorCategory) { " (Category: $($Result.ErrorCategory))" } else { "" }
-    $message = "Critical registry change failed$categoryNote: $operation"
+    $message = "Critical registry change failed${categoryNote}: $operation"
     Write-Host "  [!] $message" -ForegroundColor Red
     Write-Log -Message "[PresetGuard] $message" -Level 'Error'
 
