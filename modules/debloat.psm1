@@ -122,6 +122,7 @@ function New-RestorePointSafe {
         $restoreEnabled = $true
         $disableReasons = @()
         $driveRestoreEnabled = $true
+        $autoEnableRestore = [bool]$global:ScynesthesiaRestoreAutoEnable
 
         $srserviceRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\srservice"
         $driveConfigPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore\Cfg\C:"
@@ -180,7 +181,17 @@ function New-RestorePointSafe {
         if (-not $restoreEnabled -or -not $driveRestoreEnabled) {
             $reasonText = if ($disableReasons) { " ($($disableReasons -join ', '))" } else { "" }
             Write-Warning "System Restore appears to be disabled$reasonText."
-            if (Get-Confirmation "Enable System Restore on drive C: before proceeding?" 'y') {
+            if ($autoEnableRestore) {
+                Write-Host "  [i] Attempting to enable System Restore on C: automatically." -ForegroundColor Gray
+                try {
+                    Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
+                    $restoreEnabled = $true
+                    $driveRestoreEnabled = $true
+                    Write-Host "  [OK] System Restore enabled on C:." -ForegroundColor Gray
+                } catch {
+                    Invoke-ErrorHandler -Context "Enabling System Restore on C:" -ErrorRecord $_
+                }
+            } elseif (Get-Confirmation "Enable System Restore on drive C: before proceeding?" 'y') {
                 try {
                     Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
                     $restoreEnabled = $true

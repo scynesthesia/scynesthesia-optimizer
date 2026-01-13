@@ -270,6 +270,20 @@ function Handle-RestorePointGate {
     return $false
 }
 
+function Invoke-RestorePointWithAutoEnable {
+    param(
+        [switch]$EnableAuto
+    )
+
+    $previous = $global:ScynesthesiaRestoreAutoEnable
+    $global:ScynesthesiaRestoreAutoEnable = [bool]($EnableAuto -or $script:UnsafeMode)
+    try {
+        return New-RestorePointSafe
+    } finally {
+        $global:ScynesthesiaRestoreAutoEnable = $previous
+    }
+}
+
 function Assert-HighImpactAllowed {
     param([string]$ActionLabel)
 
@@ -287,7 +301,7 @@ function Confirm-HighImpactRestoreGate {
         [switch]$AllowUnsafeOverride
     )
 
-    $restoreStatus = New-RestorePointSafe
+    $restoreStatus = Invoke-RestorePointWithAutoEnable
     $gatePassed = Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel $ActionLabel
 
     if ($script:Logger) {
@@ -626,7 +640,7 @@ function Run-SafePreset {
     $HWProfile = Get-HardwareProfile
 
     Write-Section "Starting Preset 1: Safe"
-    $restoreStatus = New-RestorePointSafe
+    $restoreStatus = Invoke-RestorePointWithAutoEnable
     $restoreGatePassed = Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Safe preset"
     if ($script:Logger) {
         Write-Log -Message "Restore point gate evaluated." -Level (if ($restoreGatePassed) { 'Info' } else { 'Warning' }) -Data @{
@@ -713,7 +727,7 @@ function Run-PCSlowPreset {
     $OemServices = Get-OEMServiceInfo
 
     Write-Section "Starting Preset 2: Slow PC / Aggressive"
-    $restoreStatus = New-RestorePointSafe
+    $restoreStatus = Invoke-RestorePointWithAutoEnable -EnableAuto
     $restoreGatePassed = Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "the Aggressive preset"
     if ($script:Logger) {
         $restoreGateLevel = if ($restoreGatePassed) { 'Info' } else { 'Warning' }
@@ -965,7 +979,7 @@ do {
             if (-not (Assert-HighImpactAllowed "Gaming Mode")) { break }
 
             Write-Section "Gaming Mode / FPS Boost"
-            $restoreStatus = New-RestorePointSafe
+            $restoreStatus = Invoke-RestorePointWithAutoEnable
             if (-not (Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "Gaming Mode")) { 
                 Write-Warning "[Safety] Gaming Mode aborted because no restore point is available."
                 break
