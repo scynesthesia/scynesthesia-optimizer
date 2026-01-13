@@ -69,6 +69,17 @@ function Write-Log {
         if (-not $NoConsole) {
             Write-Host "Logging failure: $($_.Exception.Message)" -ForegroundColor Red
         }
+        try {
+            $fallbackPath = $script:DefaultLogPath
+            if ($fallbackPath -and $fallbackPath -ne $logPath) {
+                $fileStream = [System.IO.File]::Open($fallbackPath, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+                $writer = New-Object System.IO.StreamWriter($fileStream)
+                $writer.WriteLine($logLine)
+                $writer.Flush()
+                $writer.Dispose()
+                $fileStream.Dispose()
+            }
+        } catch { }
     }
 }
 

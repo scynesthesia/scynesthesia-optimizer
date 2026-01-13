@@ -184,7 +184,8 @@ if (Get-Confirmation "Enable session logging to a file? (Recommended for service
         Start-Transcript -Path $logFile -Append -ErrorAction Stop
         $TranscriptStarted = $true
         Write-Host "Logging started: $logFile" -ForegroundColor Gray
-        $Global:ScynesthesiaLogPath = $logFile
+        $Global:ScynesthesiaTranscriptPath = $logFile
+        $Global:ScynesthesiaLogPath = Join-Path $logDir "Scynesthesia_Runtime_$timestamp.jsonl"
     } catch {
         Write-Warning "Could not start logging. Check permissions."
     }
