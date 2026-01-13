@@ -75,7 +75,7 @@ try {
             continue
         }
 
-        $importParams = @{ Name = $resolvedPath; ErrorAction = 'Stop' }
+        $importParams = @{ Name = $resolvedPath; ErrorAction = 'Stop'; DisableNameChecking = $true }
         if ($shouldForceReload) { $importParams.Force = $true }
 
         Import-Module @importParams
