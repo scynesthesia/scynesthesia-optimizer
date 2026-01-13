@@ -127,9 +127,41 @@ function New-RestorePointSafe {
     try {
         $restoreEnabled = $true
         $disableReasons = @()
+        $driveRestoreEnabled = $true
+
+        $srserviceRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\srservice"
+        $driveConfigPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore\Cfg\C:"
 
         $policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\SystemRestore"
         $configPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore"
+
+        if (Test-Path $srserviceRegPath) {
+            $srserviceProps = Get-ItemProperty -Path $srserviceRegPath -ErrorAction SilentlyContinue
+            if ($srserviceProps.Start -eq 4) {
+                Write-Warning "System Restore service is disabled in the registry. Attempting to enable it."
+                try {
+                    Set-ItemProperty -Path $srserviceRegPath -Name Start -Value 3 -ErrorAction Stop
+                    $srserviceService = Get-Service -Name 'srservice' -ErrorAction SilentlyContinue
+                    if ($srserviceService) {
+                        Set-Service -Name 'srservice' -StartupType Manual -ErrorAction SilentlyContinue
+                    }
+                    Write-Host "  [OK] System Restore service set to Manual startup." -ForegroundColor Gray
+                } catch {
+                    Invoke-ErrorHandler -Context "Enabling System Restore service startup" -ErrorRecord $_
+                }
+            }
+        }
+
+        if (Test-Path $driveConfigPath) {
+            $driveConfig = Get-ItemProperty -Path $driveConfigPath -ErrorAction SilentlyContinue
+            if ($driveConfig.DisableSR -eq 1) {
+                $driveRestoreEnabled = $false
+                $disableReasons += "Drive C: DisableSR"
+            }
+        } else {
+            $driveRestoreEnabled = $false
+            $disableReasons += "Drive C: config missing"
+        }
 
         if (Test-Path $policyPath) {
             $policyProps = Get-ItemProperty -Path $policyPath -ErrorAction SilentlyContinue
@@ -151,13 +183,14 @@ function New-RestorePointSafe {
             }
         }
 
-        if (-not $restoreEnabled) {
+        if (-not $restoreEnabled -or -not $driveRestoreEnabled) {
             $reasonText = if ($disableReasons) { " ($($disableReasons -join ', '))" } else { "" }
             Write-Warning "System Restore appears to be disabled$reasonText."
             if (Get-Confirmation "Enable System Restore on drive C: before proceeding?" 'y') {
                 try {
                     Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
                     $restoreEnabled = $true
+                    $driveRestoreEnabled = $true
                     Write-Host "  [OK] System Restore enabled on C:." -ForegroundColor Gray
                 } catch {
                     Invoke-ErrorHandler -Context "Enabling System Restore on C:" -ErrorRecord $_
@@ -167,7 +200,7 @@ function New-RestorePointSafe {
             }
         }
 
-        if (-not $restoreEnabled) {
+        if (-not $restoreEnabled -or -not $driveRestoreEnabled) {
             $status.Enabled = $false
             return $status
         }
