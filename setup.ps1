@@ -151,9 +151,11 @@ if (-not $mainScript) {
     exit 1
 }
 
-$scriptRoot = $mainScript.Directory.FullName
-$launchPath = Join-Path $scriptRoot 'scynesthesiaoptimizer.ps1'
+$launchPath = $mainScript.FullName
+$scriptDir = $mainScript.Directory.FullName
 
-Write-Host "[+] Launching Optimizer..." -ForegroundColor Green
-Set-Location $scriptRoot
-Start-Process powershell.exe -ArgumentList "-NoExit", "-ExecutionPolicy Bypass", "-File", "\"$launchPath\"" -WorkingDirectory $scriptRoot
+Write-Host '[+] Launching Optimizer in a new interactive window...' -ForegroundColor Green
+# Usamos una sola cadena para ArgumentList para evitar errores de parseo de arrays
+$argList = "-NoExit -ExecutionPolicy Bypass -File `"$launchPath`""
+
+Start-Process powershell.exe -ArgumentList $argList -WorkingDirectory $scriptDir
