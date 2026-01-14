@@ -383,26 +383,34 @@ function Invoke-OptimizationAudit {
         }
 
         $currentValue = $null
+        $rawPath = [string]$record.Path
+        $registryPath = if ($rawPath -match '^(HKLM|HKCU):\\') {
+            $rawPath
+        } else {
+            $normalizedPath = $rawPath -replace '^HKLM:', 'HKEY_LOCAL_MACHINE' -replace '^HKCU:', 'HKEY_CURRENT_USER'
+            "Registry::$normalizedPath"
+        }
+
         try {
-            $item = Get-ItemProperty -Path "Registry::$($record.Path)" -ErrorAction Stop
+            $item = Get-ItemProperty -Path $registryPath -ErrorAction Stop
             if ($item.PSObject.Properties.Name -contains $propertyName) {
                 $currentValue = $item.$propertyName
             }
         }
         catch [System.UnauthorizedAccessException] {
             $hasBlocked = $true
-            Write-Host "[X] BLOCKED: Could not audit key [$displayName] (possible antivirus/system restriction)." -ForegroundColor Yellow
+            Write-Host "[X] BLOCKED: Could not audit key [$displayName]. Reason: $($_.Exception.Message)" -ForegroundColor Yellow
             continue
         }
         catch [System.Security.SecurityException] {
             $hasBlocked = $true
-            Write-Host "[X] BLOCKED: Could not audit key [$displayName] (possible antivirus/system restriction)." -ForegroundColor Yellow
+            Write-Host "[X] BLOCKED: Could not audit key [$displayName]. Reason: $($_.Exception.Message)" -ForegroundColor Yellow
             continue
         }
         catch {
             $hasDiscrepancy = $true
             $currentDisplay = Format-RegistryDataForLog -Data $currentValue
-            Write-Host "[!] FAILURE: The key [$displayName] was reverted or did not apply. Current value: [$currentDisplay]." -ForegroundColor Red
+            Write-Host "[!] FAILURE: The key [$displayName] was reverted or did not apply. Current value: [$currentDisplay]. Reason: $($_.Exception.Message)" -ForegroundColor Red
             continue
         }
 
