@@ -98,7 +98,8 @@ function Enable-MsiModeSafe {
                 $isInboxDriver = ($isWin10Pre1903 -and $driverProvider -and $driverProvider -match '^(?i)microsoft')
 
                 if ($driverDate) {
-                    if ($driverDate -lt (Get-Date '2014-01-01')) {
+                    $isMicrosoftProvider = ($driverProvider -and $driverProvider -match '(?i)microsoft')
+                    if (-not $isMicrosoftProvider -and $driverDate -lt (Get-Date '2014-01-01')) {
                         Write-Host "  [!] Skipping $($dev.FriendlyName): driver date $driverDate is older than 2014-01-01." -ForegroundColor Yellow
                         if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                             Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message "MSI Mode skipped for $($dev.FriendlyName): driver dated $($driverDate.ToShortDateString())"
