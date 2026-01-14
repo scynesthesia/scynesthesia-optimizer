@@ -262,14 +262,17 @@ function Invoke-PrivacySafe {
 
 function Invoke-PrivacyAggressive {
     param(
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [switch]$SkipParentLayer
     )
 
     $context = Get-RunContext -Context $Context
     Write-Section "Privacy hardening (Aggressive layer)"
 
-    $abort = Invoke-PrivacySafe -Context $context
-    if ($abort) { return $true }
+    if (-not $SkipParentLayer) {
+        $abort = Invoke-PrivacySafe -Context $context
+        if ($abort) { return $true }
+    }
 
     try {
         $autologgers = @(
@@ -333,13 +336,16 @@ function Invoke-PrivacyAggressive {
 
 function Invoke-PrivacyGaming {
     param(
-        [pscustomobject]$Context
+        [pscustomobject]$Context,
+        [switch]$SkipParentLayer
     )
 
     $context = Get-RunContext -Context $Context
 
-    $abort = Invoke-PrivacyAggressive -Context $context
-    if ($abort) { return $true }
+    if (-not $SkipParentLayer) {
+        $abort = Invoke-PrivacyAggressive -Context $context
+        if ($abort) { return $true }
+    }
 
     return Invoke-PrivacyGamingLayerOnly -Context $context
 }

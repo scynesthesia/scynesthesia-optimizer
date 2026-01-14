@@ -821,7 +821,12 @@ function Run-PCSlowPreset {
     }
     Clear-TempFiles -Context $script:Context
 
-    $privacyAbort = Invoke-PrivacyAggressive -Context $script:Context
+    $appliedPresets = @()
+    if ($script:Context.PSObject.Properties.Name.Contains('AppliedPresets')) {
+        $appliedPresets = @($script:Context.AppliedPresets)
+    }
+    $skipParentLayer = $appliedPresets -contains 'Safe'
+    $privacyAbort = Invoke-PrivacyAggressive -Context $script:Context -SkipParentLayer:$skipParentLayer
     if ($privacyAbort) {
         Write-Host "[!] Aggressive preset aborted by user due to critical registry failure." -ForegroundColor Red
         return
@@ -1055,11 +1060,8 @@ do {
             if ($script:Context.PSObject.Properties.Name.Contains('AppliedPresets')) {
                 $appliedPresets = @($script:Context.AppliedPresets)
             }
-            if ($appliedPresets -contains 'Aggressive' -or $appliedPresets -contains 'Safe') {
-                $privacyAbort = Invoke-PrivacyGamingLayerOnly -Context $script:Context
-            } else {
-                $privacyAbort = Invoke-PrivacyGaming -Context $script:Context
-            }
+            $skipParentLayer = ($appliedPresets -contains 'Aggressive' -or $appliedPresets -contains 'Safe')
+            $privacyAbort = Invoke-PrivacyGaming -Context $script:Context -SkipParentLayer:$skipParentLayer
             if ($privacyAbort) {
                 Write-Host "[!] Gaming preset aborted by user due to critical registry failure." -ForegroundColor Red
                 break
