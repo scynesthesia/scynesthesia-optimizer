@@ -145,7 +145,7 @@ function Resolve-RegistryPathComponents {
         throw [System.ArgumentException]::new("Registry path is missing a key name: $Path")
     }
 
-    $fullPath = "${hiveSegment.TrimEnd(':')}\\$subPath"
+    $fullPath = Join-Path -Path "$($hiveSegment.TrimEnd(':')):" -ChildPath $subPath
 
     return [pscustomobject]@{
         Hive = $hiveEnum
