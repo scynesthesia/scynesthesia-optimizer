@@ -31,6 +31,7 @@ function New-RunContext {
         RollbackPersistencePath = $null
         LogPath         = $null
         AppliedTweaks   = @{}
+        AppliedPresets  = @()
         RegistryPermissionFailures = @()
         DebloatRemovalLog = [System.Collections.Generic.List[string]]::new()
     }

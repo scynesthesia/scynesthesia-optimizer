@@ -337,10 +337,20 @@ function Invoke-PrivacyGaming {
     )
 
     $context = Get-RunContext -Context $Context
-    Write-Section "Privacy hardening (Gaming layer)"
 
     $abort = Invoke-PrivacyAggressive -Context $context
     if ($abort) { return $true }
+
+    return Invoke-PrivacyGamingLayerOnly -Context $context
+}
+
+function Invoke-PrivacyGamingLayerOnly {
+    param(
+        [pscustomobject]$Context
+    )
+
+    $context = Get-RunContext -Context $Context
+    Write-Section "Privacy hardening (Gaming layer)"
 
     try {
         $autologgers = @(
@@ -563,4 +573,4 @@ function Invoke-PreferencesSafe {
     return $false
 }
 
-Export-ModuleMember -Function Invoke-DriverTelemetry, Invoke-PrivacyTelemetrySafe, Invoke-PrivacySafe, Invoke-PrivacyAggressive, Invoke-PrivacyGaming, Invoke-PreferencesSafe, Invoke-PrivacyInterfaceSafe, Invoke-PrivacyAppPermissionsAggressive, Invoke-PrivacyContentDeliveryGaming
+Export-ModuleMember -Function Invoke-DriverTelemetry, Invoke-PrivacyTelemetrySafe, Invoke-PrivacySafe, Invoke-PrivacyAggressive, Invoke-PrivacyGaming, Invoke-PrivacyGamingLayerOnly, Invoke-PreferencesSafe, Invoke-PrivacyInterfaceSafe, Invoke-PrivacyAppPermissionsAggressive, Invoke-PrivacyContentDeliveryGaming
