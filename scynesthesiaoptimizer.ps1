@@ -998,7 +998,7 @@ do {
                 Write-Host "[!] Gaming preset aborted by user due to critical registry failure." -ForegroundColor Red
                 break
             }
-            Invoke-GamingOptimizations -Context $script:Context
+            Invoke-GamingServiceOptimization -Context $script:Context
             $msiResult = Invoke-MsiModeOnce -Context $script:Context -Targets @('GPU','STORAGE') -PromptMessage "Enable MSI Mode for GPU and storage controllers? (Recommended for Gaming Mode. NIC can be adjusted separately from the Network Tweaks menu.)" -InvokeOnceId 'MSI:GPU+STORAGE' -DefaultResponse 'y'
             if ($script:Logger -and $msiResult -and $msiResult.Touched -gt 0) {
                 Write-Log "[Gaming] MSI Mode enabled for GPU and storage controllers from main Gaming Mode."
