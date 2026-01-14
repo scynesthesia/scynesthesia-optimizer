@@ -340,7 +340,7 @@ function Confirm-HighImpactRestoreGate {
         }
     }
 
-    if ($AllowUnsafeOverride -and $script:UnsafeMode) {
+    if ($AllowUnsafeOverride) {
         $proceedUnsafely = Get-Confirmation -Question "A restore point could not be created for $ActionLabel. Continue in UNSAFE mode anyway?" -Default 'n'
         if ($script:Logger) {
             $unsafeConfirmLevel = if ($proceedUnsafely) { 'Warning' } else { 'Info' }
@@ -353,7 +353,10 @@ function Confirm-HighImpactRestoreGate {
         }
 
         if ($proceedUnsafely) {
-            Write-Warning "[Safety] Proceeding without a restore point due to -UnsafeMode."
+            if (-not $script:UnsafeMode) {
+                $script:UnsafeMode = $true
+            }
+            Write-Warning "[Safety] Proceeding without a restore point due to unsafe override."
             Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "$ActionLabel forced without restore point (unsafe mode)"
             Reset-HighImpactBlock
             return [pscustomobject]@{
@@ -364,7 +367,7 @@ function Confirm-HighImpactRestoreGate {
         }
     }
 
-    Write-Warning "[Safety] $ActionLabel aborted because a restore point is required. Re-run with -UnsafeMode to override."
+    Write-Warning "[Safety] $ActionLabel aborted because a restore point is required and unsafe override was declined."
     Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "$ActionLabel blocked: restore point unavailable (UnsafeMode=$($script:UnsafeMode))"
     return [pscustomobject]@{
         Proceed = $false
@@ -1006,6 +1009,7 @@ do {
                     break
                 }
                 Write-Warning "[Safety] Proceeding without a restore point at user request."
+                $script:UnsafeMode = $true
                 Reset-HighImpactBlock
             }
             $privacyAbort = Invoke-PrivacyGaming -Context $script:Context
