@@ -255,6 +255,17 @@ function Handle-RestorePointGate {
         [string]$ActionLabel
     )
 
+    if ($RestoreStatus -and -not $RestoreStatus.Enabled) {
+        try {
+            Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
+            Start-Sleep -Seconds 1
+        } catch {
+            Invoke-ErrorHandler -Context "Enabling System Restore on C:" -ErrorRecord $_
+        }
+
+        $RestoreStatus = Invoke-RestorePointWithAutoEnable
+    }
+
     if ($RestoreStatus -and $RestoreStatus.Created) {
         Reset-HighImpactBlock
         return $true
