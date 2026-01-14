@@ -13,76 +13,84 @@ function Disable-ServiceByRegistry {
 
         $servicePath = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\$Name"
         $serviceKeyPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\$Name"
+        $currentStart = $null
+        try {
+            $currentProps = Get-ItemProperty -Path $serviceKeyPath -Name 'Start' -ErrorAction SilentlyContinue
+            if ($currentProps) {
+                $currentStart = $currentProps.Start
+            }
+        } catch { }
+        if ($null -ne $currentStart -and $currentStart -eq 4) {
+            return
+        }
+
+        $adminSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
         $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name"
 
         if ($result -and $result.ErrorCategory -eq 'PermissionDenied') {
-            $adminSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
+            $message = "[Services] $Name registry update denied. Attempting take ownership and grant S-1-5-32-544 full control."
+            Write-Host "  [!] $message" -ForegroundColor Yellow
+            Write-Log -Message $message -Level 'Warning'
 
-            if ($Name -in @('DPS', 'WdiServiceHost', 'WdiSystemHost')) {
-                $message = "[Services] $Name registry update denied. Attempting .NET access control update for S-1-5-32-544."
-                Write-Host "  [!] $message" -ForegroundColor Yellow
-                Write-Log -Message $message -Level 'Warning'
-
-                $netAclApplied = $false
-                try {
-                    $regKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
-                        "SYSTEM\\CurrentControlSet\\Services\\$Name",
-                        [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
-                        [System.Security.AccessControl.RegistryRights]::ChangePermissions
-                    )
-                    if ($regKey) {
-                        $regAcl = $regKey.GetAccessControl()
-                        $regRule = New-Object System.Security.AccessControl.RegistryAccessRule(
-                            $adminSid,
-                            'FullControl',
-                            'ContainerInherit,ObjectInherit',
-                            'None',
-                            'Allow'
-                        )
-                        $regAcl.SetAccessRule($regRule)
-                        $regKey.SetAccessControl($regAcl)
-                        $regKey.Close()
-                        $netAclApplied = $true
-                        Write-Log -Message "[Services] .NET ACL applied for $serviceKeyPath." -Level 'Info'
-                    } else {
-                        Write-Log -Message "[Services] .NET ACL update skipped. Registry key not found for $serviceKeyPath." -Level 'Warning'
-                    }
-                } catch {
-                    Write-Log -Message "[Services] Failed .NET ACL update for $serviceKeyPath. Error: $($_.Exception.Message)" -Level 'Warning'
-                }
-
-                if ($netAclApplied) {
-                    $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name (post-.NET ACL)"
-                }
+            $ownershipApplied = $false
+            try {
+                $acl = Get-Acl -Path $serviceKeyPath -ErrorAction Stop
+                $acl.SetOwner($adminSid)
+                $accessRule = New-Object System.Security.AccessControl.RegistryAccessRule(
+                    $adminSid,
+                    'FullControl',
+                    'ContainerInherit,ObjectInherit',
+                    'None',
+                    'Allow'
+                )
+                $acl.SetAccessRule($accessRule)
+                Set-Acl -Path $serviceKeyPath -AclObject $acl -ErrorAction Stop
+                $ownershipApplied = $true
+                Write-Log -Message "[Services] Ownership updated for $serviceKeyPath." -Level 'Info'
+            } catch {
+                Write-Log -Message "[Services] Failed to update ownership for $serviceKeyPath. Error: $($_.Exception.Message)" -Level 'Warning'
             }
 
-            if ($result -and $result.ErrorCategory -eq 'PermissionDenied') {
-                $message = "[Services] $Name registry update denied. Attempting take ownership and grant S-1-5-32-544 full control."
-                Write-Host "  [!] $message" -ForegroundColor Yellow
-                Write-Log -Message $message -Level 'Warning'
+            if ($ownershipApplied) {
+                $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name (post-ownership)"
+            }
+        }
 
-                $ownershipApplied = $false
-                try {
-                    $acl = Get-Acl -Path $serviceKeyPath -ErrorAction Stop
-                    $acl.SetOwner($adminSid)
-                    $accessRule = New-Object System.Security.AccessControl.RegistryAccessRule(
+        if ($result -and $result.ErrorCategory -eq 'PermissionDenied' -and $Name -in @('DPS', 'WdiServiceHost', 'WdiSystemHost')) {
+            $message = "[Services] $Name registry update denied. Attempting .NET access control update for S-1-5-32-544."
+            Write-Host "  [!] $message" -ForegroundColor Yellow
+            Write-Log -Message $message -Level 'Warning'
+
+            $netAclApplied = $false
+            try {
+                $regKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
+                    "SYSTEM\\CurrentControlSet\\Services\\$Name",
+                    [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+                    [System.Security.AccessControl.RegistryRights]::ChangePermissions
+                )
+                if ($regKey) {
+                    $regAcl = $regKey.GetAccessControl()
+                    $regRule = New-Object System.Security.AccessControl.RegistryAccessRule(
                         $adminSid,
                         'FullControl',
                         'ContainerInherit,ObjectInherit',
                         'None',
                         'Allow'
                     )
-                    $acl.SetAccessRule($accessRule)
-                    Set-Acl -Path $serviceKeyPath -AclObject $acl -ErrorAction Stop
-                    $ownershipApplied = $true
-                    Write-Log -Message "[Services] Ownership updated for $serviceKeyPath." -Level 'Info'
-                } catch {
-                    Write-Log -Message "[Services] Failed to update ownership for $serviceKeyPath. Error: $($_.Exception.Message)" -Level 'Warning'
+                    $regAcl.SetAccessRule($regRule)
+                    $regKey.SetAccessControl($regAcl)
+                    $regKey.Close()
+                    $netAclApplied = $true
+                    Write-Log -Message "[Services] .NET ACL applied for $serviceKeyPath." -Level 'Info'
+                } else {
+                    Write-Log -Message "[Services] .NET ACL update skipped. Registry key not found for $serviceKeyPath." -Level 'Warning'
                 }
+            } catch {
+                Write-Log -Message "[Services] Failed .NET ACL update for $serviceKeyPath. Error: $($_.Exception.Message)" -Level 'Warning'
+            }
 
-                if ($ownershipApplied) {
-                    $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name (post-ownership)"
-                }
+            if ($netAclApplied) {
+                $result = Set-RegistryValueSafe -Path $servicePath -Name 'Start' -Value 4 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel "Disable service $Name (post-.NET ACL)"
             }
         }
 
@@ -108,7 +116,6 @@ function Disable-ServiceByRegistry {
             $isDriver = ($service.ServiceType -band [System.ServiceProcess.ServiceType]::KernelDriver) -or
                 ($service.ServiceType -band [System.ServiceProcess.ServiceType]::FileSystemDriver)
             if ($isDriver) {
-                Write-Host "  [ ] Skipping stop for driver service $Name." -ForegroundColor DarkGray
             } else {
                 Stop-Service -Name $Name -Force -NoWait -ErrorAction SilentlyContinue
             }
@@ -185,23 +192,22 @@ function Invoke-AggressiveServiceOptimization {
 
     $windowsUpdateKey = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\wuauserv"
     if (Test-Path $windowsUpdateKey) {
-        $windowsUpdatePath = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\wuauserv"
-        $wuResult = Set-RegistryValueSafe -Path $windowsUpdatePath -Name 'Start' -Value 3 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Set Windows Update to manual'
-        if ($wuResult -and $wuResult.Success) {
-            Write-Host "  [OK] [Services] wuauserv set to manual start (Start=3)." -ForegroundColor Gray
-            Write-Log -Message "[Services] wuauserv set to manual start (Start=3)." -Level 'Info'
-        } else {
-            Write-Host "  [!] [Services] Failed to set wuauserv to manual start." -ForegroundColor Yellow
-            Write-Log -Message "[Services] Failed to set wuauserv to manual start (Start=3)." -Level 'Warning'
+        $currentWuauserv = Get-ItemProperty -Path $windowsUpdateKey -Name 'Start' -ErrorAction SilentlyContinue
+        if (-not $currentWuauserv -or $currentWuauserv.Start -ne 3) {
+            $windowsUpdatePath = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\wuauserv"
+            $wuResult = Set-RegistryValueSafe -Path $windowsUpdatePath -Name 'Start' -Value 3 -Type ([Microsoft.Win32.RegistryValueKind]::DWord) -Context $Context -ReturnResult -OperationLabel 'Set Windows Update to manual'
+            if ($wuResult -and $wuResult.Success) {
+                Write-Host "  [OK] [Services] wuauserv set to manual start (Start=3)." -ForegroundColor Gray
+                Write-Log -Message "[Services] wuauserv set to manual start (Start=3)." -Level 'Info'
+            } else {
+                Write-Host "  [!] [Services] Failed to set wuauserv to manual start." -ForegroundColor Yellow
+                Write-Log -Message "[Services] Failed to set wuauserv to manual start (Start=3)." -Level 'Warning'
+            }
         }
     }
 
     $skipSpooler = $OemServices -and $OemServices.Count -gt 0
     if ($skipSpooler) {
-        $oemDisplayNames = $OemServices | ForEach-Object { $_.DisplayName } | Where-Object { $_ }
-        $oemLabel = if ($oemDisplayNames) { ($oemDisplayNames -join ', ') } else { 'OEM services' }
-        Write-Host "  [!] OEM services detected: $oemLabel" -ForegroundColor Yellow
-        Write-Host "      Skipping Print Spooler prompt to avoid breaking vendor tooling." -ForegroundColor Yellow
         if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
             Add-SessionSummaryItem -Context $Context -Bucket 'GuardedBlocks' -Message 'Print Spooler preserved due to OEM services safeguard'
         }
@@ -213,11 +219,8 @@ function Invoke-AggressiveServiceOptimization {
             if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                 Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'Print Spooler disabled'
             }
-        } else {
-            Write-Host "  [ ] Print Spooler kept enabled." -ForegroundColor DarkGray
-            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
-                Add-SessionSummaryItem -Context $Context -Bucket 'DeclinedHighImpact' -Message 'Print Spooler disable prompt declined'
-            }
+        } elseif (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+            Add-SessionSummaryItem -Context $Context -Bucket 'DeclinedHighImpact' -Message 'Print Spooler disable prompt declined'
         }
     }
 
@@ -225,8 +228,6 @@ function Invoke-AggressiveServiceOptimization {
         if (Get-Service -Name 'bthserv' -ErrorAction SilentlyContinue) {
             Disable-ServiceByRegistry -Name 'bthserv' -Context $Context
         }
-    } else {
-        Write-Host "  [ ] Bluetooth Support kept enabled." -ForegroundColor DarkGray
     }
 }
 
@@ -239,7 +240,6 @@ function Invoke-GamingServiceOptimization {
     Write-Section "Service tuning (Gaming)"
     Invoke-AggressiveServiceOptimization -Context $Context
 
-    Write-Host "  [!] VPN protocols and DRM (PEAUTH) will be disabled." -ForegroundColor Yellow
     $gamingServices = @(
         'WSearch',
         'WMPNetworkSvc',
@@ -264,12 +264,9 @@ function Invoke-GamingServiceOptimization {
         Disable-ServiceByRegistry -Name $svc -Context $Context
     }
 
-    Write-Host "  [!] Optional network services may impact LAN connectivity." -ForegroundColor Yellow
     if (Get-Confirmation "Deshabilitar LanmanWorkstation y CryptSvc? Advertencia: Pérdida de red local." 'n') {
         Disable-ServiceByRegistry -Name 'LanmanWorkstation' -Context $Context
         Disable-ServiceByRegistry -Name 'CryptSvc' -Context $Context
-    } else {
-        Write-Host "  [ ] LanmanWorkstation/CryptSvc kept enabled." -ForegroundColor DarkGray
     }
 }
 

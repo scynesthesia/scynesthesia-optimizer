@@ -355,6 +355,7 @@ function Confirm-HighImpactRestoreGate {
         if ($proceedUnsafely) {
             Write-Warning "[Safety] Proceeding without a restore point due to -UnsafeMode."
             Add-SessionSummaryItem -Context $script:Context -Bucket 'GuardedBlocks' -Message "$ActionLabel forced without restore point (unsafe mode)"
+            Reset-HighImpactBlock
             return [pscustomobject]@{
                 Proceed = $true
                 Unsafe  = $true
@@ -690,6 +691,7 @@ function Run-SafePreset {
         }
 
         Write-Warning "[Safety] Proceeding without a restore point due to -UnsafeMode." 
+        Reset-HighImpactBlock
     }
     Clear-TempFiles -Context $script:Context
 
@@ -785,6 +787,7 @@ function Run-PCSlowPreset {
         }
 
         Write-Warning "[Safety] Proceeding without a restore point due to -UnsafeMode."
+        Reset-HighImpactBlock
     }
     Clear-TempFiles -Context $script:Context
 
@@ -1003,6 +1006,7 @@ do {
                     break
                 }
                 Write-Warning "[Safety] Proceeding without a restore point at user request."
+                Reset-HighImpactBlock
             }
             $privacyAbort = Invoke-PrivacyGaming -Context $script:Context
             if ($privacyAbort) {

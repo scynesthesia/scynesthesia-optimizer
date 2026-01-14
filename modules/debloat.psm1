@@ -88,7 +88,6 @@ function Confirm-XboxAppRemoval {
     if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
         Add-SessionSummaryItem -Context $Context -Bucket 'DeclinedHighImpact' -Message "User declined removal of Xbox/Game Pass apps: $($xboxNames -join ', ')."
     }
-    Write-Host "  [ ] Keeping Xbox/Game Pass apps by user choice." -ForegroundColor DarkGray
     $result.Targets = @($targetsArray | Where-Object { $xboxNames -notcontains $_.Name })
     return $result
 }
@@ -180,7 +179,6 @@ function New-RestorePointSafe {
         if (-not $restoreEnabled -or -not $driveRestoreEnabled) {
             $reasonText = if ($disableReasons) { " ($($disableReasons -join ', '))" } else { "" }
             Write-Warning "System Restore appears to be disabled$reasonText."
-            Write-Host "  [i] Attempting to enable System Restore on C: automatically." -ForegroundColor Gray
             try {
                 Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
                 Set-Service -Name srservice -StartupType Automatic -ErrorAction SilentlyContinue
@@ -317,7 +315,6 @@ function Clear-TempFiles {
                 }
 
                 if ($skip) {
-                    Write-Host "  [ ] Skipping $full (used by optimizer)" -ForegroundColor DarkGray
                     continue
                 }
 
@@ -393,10 +390,6 @@ function Invoke-DebloatSafe {
     $removed = @()
     $targetNames = $targets.Name
 
-    foreach ($name in $targetNames) {
-        Write-Host "  [OK] Removing $name"
-    }
-
     if ($targets) {
         $removeErrors = @()
         $targets | Remove-AppxPackage -ErrorAction SilentlyContinue -ErrorVariable removeErrors
@@ -410,7 +403,6 @@ function Invoke-DebloatSafe {
                 $uncapturedFailure = $true
             }
             $displayName = if ($failedName) { $failedName } else { 'Unknown package' }
-            Write-Host "  [SKIPPED] $displayName" -ForegroundColor DarkGray
             Write-Log -Message "Skipped protected app: $displayName" -Level 'Info'
         }
 
@@ -426,6 +418,13 @@ function Invoke-DebloatSafe {
         }
 
         $failed = $failedNames
+    }
+
+    foreach ($name in ($removed | Select-Object -Unique)) {
+        Write-Host "  [OK] Removed $name"
+    }
+    foreach ($name in ($failed | Select-Object -Unique)) {
+        Write-Host "  [!] Failed to remove $name" -ForegroundColor Yellow
     }
 
     $failedUnique = $failed | Select-Object -Unique
@@ -474,10 +473,6 @@ function Invoke-DebloatAggressive {
     $removed = @()
     $targetNames = $targets.Name
 
-    foreach ($name in $targetNames) {
-        Write-Host "  [OK] Removing $name"
-    }
-
     if ($targets) {
         $removeErrors = @()
         $targets | Remove-AppxPackage -ErrorAction SilentlyContinue -ErrorVariable removeErrors
@@ -491,7 +486,6 @@ function Invoke-DebloatAggressive {
                 $uncapturedFailure = $true
             }
             $displayName = if ($failedName) { $failedName } else { 'Unknown package' }
-            Write-Host "  [SKIPPED] $displayName" -ForegroundColor DarkGray
             Write-Log -Message "Skipped protected app: $displayName" -Level 'Info'
         }
 
@@ -514,7 +508,7 @@ function Invoke-DebloatAggressive {
             $prov = Get-AppxProvisionedPackage -Online | Where-Object { $effectiveAppList -contains $_.PackageName }
         } catch {
             $warningMessage = "[Debloat] Failed to enumerate provisioned packages: $($_.Exception.Message). Skipping provisioned removal."
-            Write-Host $warningMessage -ForegroundColor Yellow
+            Write-Host "  [!] $warningMessage" -ForegroundColor Yellow
             Write-Log -Message $warningMessage -Level 'Warning'
             $prov = @()
         }
@@ -522,8 +516,6 @@ function Invoke-DebloatAggressive {
         $provisionedNames = $provisionedTargets.PackageName
 
         if ($provisionedNames) {
-            Write-Host "  [OK] Removing provisioned packages: $($provisionedNames -join ', ')"
-
             $provRemoveErrors = @()
             $uncapturedProvFailure = $false
 
@@ -542,7 +534,6 @@ function Invoke-DebloatAggressive {
                     $uncapturedProvFailure = $true
                 }
                 $displayName = if ($failedName) { $failedName } else { 'Unknown package' }
-                Write-Host "  [SKIPPED] $displayName" -ForegroundColor DarkGray
                 Write-Log -Message "Skipped protected app: $displayName" -Level 'Info'
             }
 
@@ -557,6 +548,13 @@ function Invoke-DebloatAggressive {
                 $removed += $provSuccessful
             }
         }
+    }
+
+    foreach ($name in ($removed | Select-Object -Unique)) {
+        Write-Host "  [OK] Removed $name"
+    }
+    foreach ($name in ($failed | Select-Object -Unique)) {
+        Write-Host "  [!] Failed to remove $name" -ForegroundColor Yellow
     }
 
     $failedUnique = $failed | Select-Object -Unique
