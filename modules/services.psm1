@@ -219,8 +219,14 @@ function Invoke-AggressiveServiceOptimization {
             if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
                 Add-SessionSummaryItem -Context $Context -Bucket 'Applied' -Message 'Print Spooler disabled'
             }
-        } elseif (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
-            Add-SessionSummaryItem -Context $Context -Bucket 'DeclinedHighImpact' -Message 'Print Spooler disable prompt declined'
+        } else {
+            if (-not $Context.PSObject.Properties.Name.Contains('AppliedTweaks')) {
+                $Context | Add-Member -Name AppliedTweaks -MemberType NoteProperty -Value @{}
+            }
+            $Context.AppliedTweaks['Service:Spooler'] = 'Preserved'
+            if (Get-Command -Name Add-SessionSummaryItem -ErrorAction SilentlyContinue) {
+                Add-SessionSummaryItem -Context $Context -Bucket 'DeclinedHighImpact' -Message 'Print Spooler disable prompt declined'
+            }
         }
     }
 
@@ -228,6 +234,11 @@ function Invoke-AggressiveServiceOptimization {
         if (Get-Service -Name 'bthserv' -ErrorAction SilentlyContinue) {
             Disable-ServiceByRegistry -Name 'bthserv' -Context $Context
         }
+    } else {
+        if (-not $Context.PSObject.Properties.Name.Contains('AppliedTweaks')) {
+            $Context | Add-Member -Name AppliedTweaks -MemberType NoteProperty -Value @{}
+        }
+        $Context.AppliedTweaks['Service:bthserv'] = 'Preserved'
     }
 }
 
