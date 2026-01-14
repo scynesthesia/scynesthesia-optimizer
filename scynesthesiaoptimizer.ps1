@@ -753,6 +753,14 @@ function Run-SafePreset {
     $Status.RegistryPermissionFailures = @($script:Context.RegistryPermissionFailures)
     Write-OutcomeSummary -Status $Status
     Write-Host "[+] Safe preset applied. Restart when convenient to finalize settings." -ForegroundColor Green
+    if (-not $script:Context.PSObject.Properties.Name.Contains('AppliedPresets')) {
+        $script:Context | Add-Member -Name AppliedPresets -MemberType NoteProperty -Value @()
+    } elseif (-not $script:Context.AppliedPresets) {
+        $script:Context.AppliedPresets = @()
+    }
+    if (-not ($script:Context.AppliedPresets -contains 'Safe')) {
+        $script:Context.AppliedPresets += 'Safe'
+    }
 }
 
 function Run-PCSlowPreset {
@@ -851,6 +859,14 @@ function Run-PCSlowPreset {
     $Status.RegistryPermissionFailures = @($script:Context.RegistryPermissionFailures)
     Write-OutcomeSummary -Status $Status
     Write-Host "[+] Slow PC / Aggressive preset applied. Please restart." -ForegroundColor Green
+    if (-not $script:Context.PSObject.Properties.Name.Contains('AppliedPresets')) {
+        $script:Context | Add-Member -Name AppliedPresets -MemberType NoteProperty -Value @()
+    } elseif (-not $script:Context.AppliedPresets) {
+        $script:Context.AppliedPresets = @()
+    }
+    if (-not ($script:Context.AppliedPresets -contains 'Aggressive')) {
+        $script:Context.AppliedPresets += 'Aggressive'
+    }
 }
 
 function Show-NetworkTweaksMenu {
@@ -1035,7 +1051,15 @@ do {
                 $script:UnsafeMode = $true
                 Reset-HighImpactBlock
             }
-            $privacyAbort = Invoke-PrivacyGaming -Context $script:Context
+            $appliedPresets = @()
+            if ($script:Context.PSObject.Properties.Name.Contains('AppliedPresets')) {
+                $appliedPresets = @($script:Context.AppliedPresets)
+            }
+            if ($appliedPresets -contains 'Aggressive' -or $appliedPresets -contains 'Safe') {
+                $privacyAbort = Invoke-PrivacyGamingLayerOnly -Context $script:Context
+            } else {
+                $privacyAbort = Invoke-PrivacyGaming -Context $script:Context
+            }
             if ($privacyAbort) {
                 Write-Host "[!] Gaming preset aborted by user due to critical registry failure." -ForegroundColor Red
                 break
