@@ -257,6 +257,21 @@ function Handle-RestorePointGate {
 
     if ($RestoreStatus -and -not $RestoreStatus.Enabled) {
         try {
+            $vssService = Get-Service -Name "VSS" -ErrorAction Stop
+            if ($vssService.StartType -eq "Disabled") {
+                Set-Service -Name "VSS" -StartupType Manual -ErrorAction Stop
+            }
+        } catch {
+            Invoke-ErrorHandler -Context "Ensuring VSS service startup type" -ErrorRecord $_
+        }
+
+        try {
+            & vssadmin resize shadowstorage /for=c: /on=c: /maxsize=5% | Out-Null
+        } catch {
+            Invoke-ErrorHandler -Context "Resizing VSS shadow storage on C:" -ErrorRecord $_
+        }
+
+        try {
             Enable-ComputerRestore -Drive "C:\" -ErrorAction Stop
             Start-Sleep -Seconds 1
         } catch {
