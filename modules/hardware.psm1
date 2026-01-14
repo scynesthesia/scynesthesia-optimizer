@@ -78,7 +78,9 @@ function Enable-MsiModeSafe {
                 $driverDate = $null
                 $driverDateProperty = Get-PnpDeviceProperty -InstanceId $dev.InstanceId -KeyName 'DEVPKEY_Device_DriverDate' -ErrorAction SilentlyContinue
                 if ($driverDateProperty -and $driverDateProperty.Data) {
-                    [datetime]::TryParse($driverDateProperty.Data, [ref]$driverDate) | Out-Null
+                    try {
+                        $driverDate = [datetime]$driverDateProperty.Data
+                    } catch { }
                 }
 
                 $hardwareIds = @()
