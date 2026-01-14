@@ -339,7 +339,8 @@ function Invoke-OptimizationAudit {
     [CmdletBinding()]
     param([pscustomobject]$Context)
 
-    if (-not $Context -or -not $Context.PSObject.Properties.Name -contains 'RegistryRollbackActions' -or -not $Context.RegistryRollbackActions -or $Context.RegistryRollbackActions.Count -eq 0) {
+    $records = @(Get-RegistryRollbackRecords -Context $Context)
+    if (-not $records -or $records.Count -eq 0) {
         Write-Host "[ ] No registry audit entries recorded for this session." -ForegroundColor Gray
         return
     }
@@ -367,7 +368,10 @@ function Invoke-OptimizationAudit {
         return ($Expected -eq $Actual)
     }
 
-    foreach ($record in $Context.RegistryRollbackActions) {
+    $hasDiscrepancy = $false
+    $hasBlocked = $false
+
+    foreach ($record in $records) {
         $displayName = if ([string]::IsNullOrWhiteSpace($record.Name)) { '(default)' } else { $record.Name }
         $propertyName = if ($displayName -eq '(default)') { '(default)' } else { $displayName }
         $intendedValue = if ($record.PSObject.Properties.Name -contains 'NewValue') {
@@ -386,14 +390,17 @@ function Invoke-OptimizationAudit {
             }
         }
         catch [System.UnauthorizedAccessException] {
+            $hasBlocked = $true
             Write-Host "[X] BLOCKED: Could not audit key [$displayName] (possible antivirus/system restriction)." -ForegroundColor Yellow
             continue
         }
         catch [System.Security.SecurityException] {
+            $hasBlocked = $true
             Write-Host "[X] BLOCKED: Could not audit key [$displayName] (possible antivirus/system restriction)." -ForegroundColor Yellow
             continue
         }
         catch {
+            $hasDiscrepancy = $true
             $currentDisplay = Format-RegistryDataForLog -Data $currentValue
             Write-Host "[!] FAILURE: The key [$displayName] was reverted or did not apply. Current value: [$currentDisplay]." -ForegroundColor Red
             continue
@@ -405,8 +412,13 @@ function Invoke-OptimizationAudit {
         if (Test-RegistryAuditEquality -Expected $intendedValue -Actual $currentValue) {
             Write-Host "[VERIFIED] The key [$displayName] has the expected value [$intendedDisplay]." -ForegroundColor Green
         } else {
+            $hasDiscrepancy = $true
             Write-Host "[!] FAILURE: The key [$displayName] was reverted or did not apply. Current value: [$currentDisplay]." -ForegroundColor Red
         }
+    }
+
+    if (-not $hasDiscrepancy -and -not $hasBlocked) {
+        Write-Host "[VERIFIED] Audit completed without discrepancies. System configuration is verified." -ForegroundColor Green
     }
 }
 
