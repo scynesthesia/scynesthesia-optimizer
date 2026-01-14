@@ -1015,6 +1015,10 @@ do {
         '1' { Run-SafePreset }
         '2' { Run-PCSlowPreset }
         '3' {
+            if (-not (Ensure-ModuleCommand -CommandName 'Save-NetworkBackupState' -ModuleRelativePath 'modules/network.psm1')) {
+                Write-Warning "[Gaming] Required network module command Save-NetworkBackupState is unavailable. Gaming Mode cannot continue safely."
+                break
+            }
             Write-Section "Gaming Mode / FPS Boost"
             $restoreStatus = Invoke-RestorePointWithAutoEnable
             if (-not (Handle-RestorePointGate -RestoreStatus $restoreStatus -ActionLabel "Gaming Mode")) {
