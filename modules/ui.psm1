@@ -383,16 +383,13 @@ function Invoke-OptimizationAudit {
         }
 
         $currentValue = $null
-        $rawPath = [string]$record.Path
-        $registryPath = if ($rawPath -match '^(HKLM|HKCU):\\') {
-            $rawPath
-        } else {
-            $normalizedPath = $rawPath -replace '^HKLM:', 'HKEY_LOCAL_MACHINE' -replace '^HKCU:', 'HKEY_CURRENT_USER'
-            "Registry::$normalizedPath"
-        }
-
         try {
-            $item = Get-ItemProperty -Path $registryPath -ErrorAction Stop
+            $lookupPath = $record.Path
+            if (-not $lookupPath.Contains(':')) {
+                $lookupPath = $lookupPath -replace '^\\+', ''
+                $lookupPath = "HKLM:\$lookupPath"
+            }
+            $item = Get-ItemProperty -Path $lookupPath -ErrorAction Stop
             if ($item.PSObject.Properties.Name -contains $propertyName) {
                 $currentValue = $item.$propertyName
             }
