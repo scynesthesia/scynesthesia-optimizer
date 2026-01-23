@@ -155,6 +155,13 @@ These presets intentionally push past default Windows safety margins. They are b
 - Contributions are welcome in English and should document any new flags or safety considerations.
 
 ## Troubleshooting
+### Run diagnostics to identify blocked commands
+If parts of the optimizer are failing or not applying, run the diagnostics script from an elevated PowerShell session to see which commands, modules, or OS features are unavailable:
+```powershell
+./scripts/runtime_diagnostics.ps1
+```
+The report will flag missing Windows utilities, unavailable cmdlets, and module file issues so you can focus on what is blocked before re-running a preset.
+
 ### Antivirus or endpoint protection false positives
 Because this project modifies system settings and can disable/enable network adapters, some antivirus or EDR tools may flag it as suspicious (false positive). If the optimizer fails to launch, exits unexpectedly, or specific actions are blocked:
 - Temporarily allowlist the folder where you extracted the optimizer (including `scynesthesiaoptimizer.ps1` and `modules/`).
