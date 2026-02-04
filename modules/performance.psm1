@@ -69,8 +69,9 @@ function Get-HardwareProfile {
         OnBatteryPower = $onBatteryPower
         TotalMemoryGB  = $memoryGB
         MemoryCategory = if ($memoryGB -lt 6) { 'Low' } else { 'Normal' }
-        HasSSD         = $hasSSD
-        HasHDD         = if ($hasDiskData) { $hasHDD } else { $false }
+        HasSSD         = if ($hasDiskData) { $hasSSD } else { $null }
+        HasHDD         = if ($hasDiskData) { $hasHDD } else { $null }
+        DiskInfoAvailable = $hasDiskData
     }
 }
 
@@ -95,11 +96,21 @@ function Invoke-SysMainOptimization {
     )
 
     Write-Section "SysMain (Superfetch)"
-    $hasHdd = [bool]$HardwareProfile.HasHDD
-    $hint = if ($hasHdd) { 'Mechanical disk detected: keeping SysMain enabled is recommended to improve launch times.' } else { 'SSD-only system detected: you can disable SysMain to reduce unnecessary writes.' }
+    $diskInfoAvailable = $HardwareProfile.PSObject.Properties.Name -contains 'DiskInfoAvailable' -and $HardwareProfile.DiskInfoAvailable
+    $hasHdd = $diskInfoAvailable -and [bool]$HardwareProfile.HasHDD
+    $hasSsd = $diskInfoAvailable -and [bool]$HardwareProfile.HasSSD
+    $hint = if (-not $diskInfoAvailable) {
+        'Disk type could not be detected: SysMain changes are optional; leaving defaults is safest.'
+    } elseif ($hasHdd) {
+        'Mechanical disk detected: keeping SysMain enabled is recommended to improve launch times.'
+    } elseif ($hasSsd) {
+        'SSD-only system detected: you can disable SysMain to reduce unnecessary writes.'
+    } else {
+        'Storage type appears mixed/unknown; review SysMain choice carefully.'
+    }
     Write-Host $hint -ForegroundColor Gray
 
-    $defaultChoice = if ($hasHdd) { 'n' } else { 'y' }
+    $defaultChoice = if (-not $diskInfoAvailable -or $hasHdd) { 'n' } else { 'y' }
     if (Get-Confirmation "Disable SysMain to prioritize resources?" $defaultChoice) {
         try {
             Stop-Service -Name "SysMain" -ErrorAction SilentlyContinue

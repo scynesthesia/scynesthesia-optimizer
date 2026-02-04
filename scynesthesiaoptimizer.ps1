@@ -40,7 +40,7 @@ try {
 
     $moduleMap = Import-PowerShellDataFile -Path $moduleMapPath -ErrorAction Stop
     if ($null -eq $moduleMap -or $moduleMap.Count -eq 0) {
-        throw 'El mapa de módulos está vacío o es inválido. Revisa modules/modules.map.psd1.'
+        throw 'Module map is empty or invalid. Check modules/modules.map.psd1.'
     }
     $orderedModules = @()
 
