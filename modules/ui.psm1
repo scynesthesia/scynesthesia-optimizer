@@ -564,7 +564,7 @@ function Get-Confirmation {
     $defaultNormalized = if ([string]::IsNullOrWhiteSpace($Default)) { 'n' } else { [string]$Default }
     $defaultText = if ($defaultNormalized.ToLowerInvariant() -eq 'y' -or $defaultNormalized.ToLowerInvariant() -eq 'yes') { '[Y/n]' } else { '[y/N]' }
 
-    $questionText = $Question.Trim()
+    $questionText = if ([string]::IsNullOrWhiteSpace($Question)) { 'Continue?' } else { $Question.Trim() }
     $appendPrompt = -not ($questionText -match '\[[yYnN]/?[yYnN]?\]$')
     $prompt = if ($appendPrompt) { "$questionText $defaultText".Trim() } else { $questionText }
 
@@ -941,7 +941,7 @@ function Write-OutcomeSummary {
     Write-Host "[OK] Debloat: $debloatStatus" -ForegroundColor Green
     Write-Host "[OK] Performance tweaks: $performanceStatus" -ForegroundColor Green
 
-    if ($Status.PackagesFailed.Count -gt 0) {
+    if ($Status -and $Status.ContainsKey('PackagesFailed') -and $Status.PackagesFailed.Count -gt 0) {
         Write-Host "[X] Some packages could not be removed ($($Status.PackagesFailed -join ', '))" -ForegroundColor Yellow
     } else {
         Write-Host "[OK] All targeted packages removed" -ForegroundColor Green
